@@ -24,7 +24,7 @@ from fastfusion.exploration.per_einsum_mapper_snowcat import (
     per_einsum_mapper_snowcat,
     get_hardware_levels,
 )
-from fastfusion.sim import Tiling, Loop, TensorStorage
+from fastfusion.joining.sim import Mapping, Loop, TensorStorage
 from fastfusion.pareto import (
     LOGSTRING,
     MAPPING,
@@ -36,7 +36,7 @@ from fastfusion.exploration.process_results import Metrics
 
 from pytimeloop.timeloopfe.v4 import Ert
 from pytimeloop.timeloopfe.common.backend_calls import call_accelergy_verbose
-from fastfusion.sim import SIM
+from fastfusion.joining.sim import SIM
 
 
 def mapper(
@@ -203,7 +203,7 @@ def generate_data(
 ):
     def convert(sim):
         return SIM(
-            _convert_tiling(sim.tiling, rank_renaming, tensor_renaming),
+            _convert_mapping(sim.mapping, rank_renaming, tensor_renaming),
             _convert_stats(
                 from_einsum, to_einsum, sim.mapping, rank_renaming, tensor_renaming
             ),
@@ -212,15 +212,15 @@ def generate_data(
     return [convert(sim) for sim in data]
 
     return {
-        _convert_tiling(tiling, rank_renaming, tensor_renaming): _convert_stats(
+        _convert_mapping(mapping, rank_renaming, tensor_renaming): _convert_stats(
             from_einsum, to_einsum, stats, rank_renaming, tensor_renaming
         )
-        for tiling, stats in data.items()
+        for mapping, stats in data.items()
     }
 
 
-def _convert_tiling(tiling: Tiling, rank_renaming, tensor_renaming):
-    return tiling.rename(rank_renaming, tensor_renaming)
+def _convert_mapping(mapping: Mapping, rank_renaming, tensor_renaming):
+    return mapping.rename(rank_renaming, tensor_renaming)
 
 
 def _convert_stats(
@@ -306,5 +306,5 @@ def get_ffmt_separated_einsums(workload):
 
 
 def _convert_rank_renaming(rank_renaming, equiv_ranks):
-    # The Tiling class uses string ids
+    # The Mapping class uses string ids
     return {str(r1): str(r2) for r1, r2 in rank_renaming.items()}

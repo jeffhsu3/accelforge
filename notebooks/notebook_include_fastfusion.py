@@ -6,7 +6,7 @@ import time
 logging.basicConfig(level=logging.WARN)
 
 import numpy as np
-from fastfusion.sim import SIM, TensorStorage
+from fastfusion.joining.sim import SIM, TensorStorage
 from tests.util import TEST_TMP_DIR
 
 import logging
@@ -225,7 +225,7 @@ class Experiment:
 
     @property
     def total_mappings_from_intra(self):
-        return sum(len(s.mapping.data) for sims in self.intra_result.values() for s in sims)
+        return sum(len(s.mappings.data) for sims in self.intra_result.values() for s in sims)
 
     def run_intra(self, tag=True, prune=True, dataflow=None):
         config_str = self.workload_config + "\n" + self.arch_config + "\n"
@@ -312,7 +312,7 @@ def filter_first_mapping(e):
         e.intra_result[k] = [
             s
             for s in sims
-            if not s.tiling.has_tensor(TensorStorage("I_I_to_Q_K_V", "*", 1, "*"))
+            if not s.compatibility.has_tensor(TensorStorage("I_I_to_Q_K_V", "*", 1, "*"))
         ]
 
 
@@ -326,28 +326,28 @@ def filter_storage(e, storage_filter):
     
 def filter_layernorm(e):
     for k, sims in e.intra_result.items():
-        e.intra_result[k] = [s for s in sims if "LAYERNORM_INVALID" not in s.tiling.tags]
+        e.intra_result[k] = [s for s in sims if "LAYERNORM_INVALID" not in s.compatibility.tags]
         for s in e.intra_result[k]:
-            s.set_tags(*(t for t in s.tiling.tags if "LAYERNORM" not in t))
+            s.set_tags(*(t for t in s.compatibility.tags if "LAYERNORM" not in t))
 
 
 def tileflow(e):
     filter_layernorm(e)
     for k, sims in e.intra_result.items():
         # print(f"Mappings for Einsum {k}")
-        e.intra_result[k] = [s for s in sims if "TILEFLOW_VALID" in s.tiling.tags]
+        e.intra_result[k] = [s for s in sims if "TILEFLOW_VALID" in s.compatibility.tags]
         for s in e.intra_result[k]:
-            s.set_tags(*(t for t in s.tiling.tags if "LOOPS_ABOVE_GLB" in t))
-            # print(f"\t{s.tiling}")
+            s.set_tags(*(t for t in s.compatibility.tags if "LOOPS_ABOVE_GLB" in t))
+            # print(f"\t{s.compatibility}")
 
 def looptree(e):
     filter_layernorm(e)
     for k, sims in e.intra_result.items():
         # print(f"Mappings for Einsum {k}")
-        e.intra_result[k] = [s for s in sims if "LOOPTREE_VALID" in s.tiling.tags]
+        e.intra_result[k] = [s for s in sims if "LOOPTREE_VALID" in s.compatibility.tags]
         for s in e.intra_result[k]:
-            s.set_tags(*(t for t in s.tiling.tags if "FUSED_LOOPS" in t))
-            # print(f"\t{s.tiling}")
+            s.set_tags(*(t for t in s.compatibility.tags if "FUSED_LOOPS" in t))
+            # print(f"\t{s.compatibility}")
 
 def rearrange_wrap(order, f):
     def wrapped(e):
@@ -388,15 +388,15 @@ def ffmt(e):
         sims = [
             s
             for s in sims
-            if "FFMT_VALID" in s.tiling.tags
-            and "FFMT_WEIGHTS_INVALID" not in s.tiling.tags
+            if "FFMT_VALID" in s.compatibility.tags
+            and "FFMT_WEIGHTS_INVALID" not in s.compatibility.tags
         ]
         r = []
         for s in sims:
             # The tag is actually a set of tags, all of which must match, so we
             # combine them into a frozenset in a tuple. In the tag class, we'll
             # get a frozenset(frozenset(tag0, tag1...)).
-            tags = frozenset(t for t in s.tiling.tags if t in WEIGHT_TAGS)
+            tags = frozenset(t for t in s.compatibility.tags if t in WEIGHT_TAGS)
             assert len(tags) <= 1, "Only one weight tag should be present"
             tag = next(iter(tags)) if tags else None
             if tag is None:
@@ -406,16 +406,16 @@ def ffmt(e):
             else:
                 s.set_tags(tag)
                 r.append(s)
-            # print(f'\t{s.tiling}')
+            # print(f'\t{s.compatibility}')
         e.intra_result[k] = r
         
 def filter_optimus(e):
     filter_layernorm(e)
     for k, sims in e.intra_result.items():
         # print(f"Mappings for Einsum {k}")
-        e.intra_result[k] = [s for s in sims if "OPTIMUS_VALID" in s.tiling.tags]
+        e.intra_result[k] = [s for s in sims if "OPTIMUS_VALID" in s.compatibility.tags]
         for s in e.intra_result[k]:
-            s.set_tags(*(t for t in s.tiling.tags if "OPTIMUS" in t))
+            s.set_tags(*(t for t in s.compatibility.tags if "OPTIMUS" in t))
     print(e)
 
 def run_experiment(

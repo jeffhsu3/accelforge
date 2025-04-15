@@ -17,8 +17,8 @@ from fastfusion.exploration.per_einsum_subspaces.snowcat import make_subspaces
 from fastfusion.exploration.per_einsum_subspaces.snowcat_ffmt import make_ffmt_subspaces
 from fastfusion.exploration.per_einsum_subspaces.four_level_arch import make_subspaces as make_four_level_subspaces
 from fastfusion.pareto import MAPPING, Pareto, makepareto
-from fastfusion.sim import SIM, Loop, Tiling, TensorStorage
-from fastfusion.util.util import fzs, parallel
+from fastfusion.joining.sim import SIM, Loop, Mapping, TensorStorage
+from fastfusion.util import fzs, parallel
 from pytimeloop.looptree.equivalent_ranks import EquivalentGroups
 from pytimeloop.looptree.mapping_utilities import get_intermediate_tensors
 from fastfusion.exploration.process_results import Metrics, process_result
@@ -330,11 +330,11 @@ def per_worker_exploration(
     #             ) for l, b in zip(all_loops, key)
     #         )
     #         group = group.drop(columns=fused_loop_cols)
-    #         tiling = Tiling(loops=loops, storage=backing_storage)
-    #         if tiling in result:
-    #             result[tiling] = makepareto(pd.concat([result[tiling], group]).fillna(0))
+    #         mapping = Mapping(loops=loops, storage=backing_storage)
+    #         if mapping in result:
+    #             result[mapping] = makepareto(pd.concat([result[mapping], group]).fillna(0))
     #         else:
-    #             result[tiling] = group
+    #             result[mapping] = group
     #         total_added += len(group)
     
     # t1 = time.time()
@@ -594,16 +594,16 @@ def per_einsum_mapper_snowcat(
         for k, v in result.items():
             d[k].append(v)
 
-    def makesim(einsum_id, tiling, data):
-        return einsum_id, SIM(tiling, makepareto(data))
+    def makesim(einsum_id, mapping, data):
+        return einsum_id, SIM(mapping, makepareto(data))
     
     def makepareto(data):
         return Pareto(pd.concat(data).fillna(0), skip_pareto=len(data) == 1 or not prune)
 
     jobs = []
-    for einsum_id, tilings in data.items():
-        for tiling, dfs in tilings.items():
-            jobs.append(delayed(makesim)(einsum_id, tiling, dfs))
+    for einsum_id, mappings in data.items():
+        for mapping, dfs in mappings.items():
+            jobs.append(delayed(makesim)(einsum_id, mapping, dfs))
 
     # Free memory by:
     # - Deleting data dict, replace with new fresh dict

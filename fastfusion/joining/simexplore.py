@@ -9,9 +9,9 @@ from joblib import delayed
 
 from pytimeloop.looptree.equivalent_ranks import PairwiseEquivalentRanks
 
-from fastfusion.sim import SIM, Loop, Tiling
+from fastfusion.joining.sim import SIM, Loop, Mapping
 from fastfusion.pareto import MAPPING, VALID, Pareto
-from fastfusion.util.util import fzs, parallel, debugger_active
+from fastfusion.util import fzs, parallel, debugger_active
 
 
 def explore_fusion(
@@ -40,7 +40,7 @@ def paretofy(k, v):
 
 
 def get_possible_translations(
-    t: Tiling,
+    t: Mapping,
     pairwise_equivalent_ranks: dict[str, set[str]],
     full_equivalent_ranks: dict[str, set[str]],
     right_ranks: set[str],
@@ -68,7 +68,7 @@ def get_possible_translations(
             yield Loop(fzs((n,)), l.bound, l.is_spatial)
 
     for loops in itertools.product(*map(translate_loop, t.loops)):
-        yield Tiling(loops, t.storage, t.tags)
+        yield Mapping(loops, t.storage, t.tags)
 
 
 prev_time = 0
@@ -133,7 +133,7 @@ class GroupOfSIMsHolder:
     def __init__(self, einsum_id: str, sim_list: list[SIM]):
         self.einsum_id: str = einsum_id
         self.sims: list[SIM] = sim_list
-        self.tensor_names: set[str] = set(sim_list[0].tensor_names)
+        self.names: set[str] = set(sim_list[0].names)
 
     def __getitem__(self, i):
         return self.sims[i]
@@ -168,8 +168,8 @@ def fuse_sims(
 
     for einsum_name, sim_list in sims.items():
         for s in sim_list:
-            if VALID in s.mapping.data:
-                s.mapping.data = s.mapping.data[s.mapping.data[VALID] == 1]
+            if VALID in s.mappings.data:
+                s.mappings.data = s.mappings.data[s.mappings.data[VALID] == 1]
 
     print(
         f"Do the optimization where we put all the full mappings in a dict and grab them later"
@@ -210,12 +210,12 @@ def fuse_sims(
         if i == 0:
             continue
         t0 = time.time()
-        left_tensors = set.union(set(), *[s.tensor_names for s in sims[:i]])
-        right_tensors = set.union(set(), *[s.tensor_names for s in sims[i + 1 :]])
+        left_tensors = set.union(set(), *[s.names for s in sims[:i]])
+        right_tensors = set.union(set(), *[s.names for s in sims[i + 1 :]])
         live_tensors = right_tensors
-        shared_tensors = left_tensors & sim_holder.tensor_names
+        shared_tensors = left_tensors & sim_holder.names
         sim_holder.sims = sorted(
-            sim_holder.sims, key=lambda x: len(x.mapping.data), reverse=True
+            sim_holder.sims, key=lambda x: len(x.mappings.data), reverse=True
         )
         sim_holder.sims = SIM.right_consolidate(
             sim_holder.sims,
@@ -230,7 +230,7 @@ def fuse_sims(
             combine_reservations=combine_reservations,
         )
         n_mappings["Post Intra-Layer"] += sum(
-            len(s.mapping.data) for s in sim_holder.sims
+            len(s.mappings.data) for s in sim_holder.sims
         )
         if i > 0:
             sim_holder.sims = SIM.group_right(
@@ -244,11 +244,11 @@ def fuse_sims(
     n_iterations = 0
     total_iterations = len(sims)
 
-    def grab_sim_holder() -> tuple[dict[Tiling, list[SIM]], str, set[str]]:
+    def grab_sim_holder() -> tuple[dict[Mapping, list[SIM]], str, set[str]]:
         nonlocal n_iterations
         n_iterations += 1
         holder = sims.pop(0)
-        return holder.sims, holder.einsum_id, holder.tensor_names
+        return holder.sims, holder.einsum_id, holder.names
 
     if sims:
         left, left_einsum, left_tensors = grab_sim_holder()
@@ -261,14 +261,14 @@ def fuse_sims(
         # tensors that will be live after this Einsum.
         # ======================================================================
         nbuckets.append(len(left))
-        # nmappings.append(sum(len(s.mapping.data) for s in left))
+        # nmappings.append(sum(len(s.mappings.data) for s in left))
         right, right_einsum, right_tensors = grab_sim_holder()
         right_ranks = einsum2ranks[right_einsum]
         print(f"\nEinsum {right_einsum} ({n_iterations}/{total_iterations})")
 
         partial_mapping_size += 1
 
-        live_tensors = set.union(set(), *[s.tensor_names for s in sims])
+        live_tensors = set.union(set(), *[s.names for s in sims])
         shared_tensors = set(left_tensors) & set(right_tensors)
 
         # ======================================================================
@@ -288,9 +288,9 @@ def fuse_sims(
                 for s in left
                 if len(
                     set(
-                        l.memory_name
-                        for l in s.tiling.storage
-                        if l.tensor_name in live_tensors
+                        l.resource_name
+                        for l in s.compatibility.storage
+                        if l.name in live_tensors
                     )
                 )
                 <= 1
@@ -325,9 +325,9 @@ def fuse_sims(
 
         # Optimus doesn't do compatibility-based bagging. Compares every mapping to every other mapping.
         if optimus_optimizations_only:
-            n_left_mappings = sum(len(s.mapping.data) for k in left.values() for s in k)
+            n_left_mappings = sum(len(s.mappings.data) for k in left.values() for s in k)
             n_right_mappings = sum(
-                len(s.mapping.data) for k in right.values() for s in k
+                len(s.mappings.data) for k in right.values() for s in k
             )
             n_evaluations += partial_mapping_size * n_left_mappings * n_right_mappings
 
@@ -342,25 +342,25 @@ def fuse_sims(
                 k, pairwise_equivalent_ranks, full_equivalent_ranks, right_ranks
             ):
                 for a, b in itertools.product(left[k], right.get(k_translated, [])):
-                    if a.tiling.tags.are_compatible_with(b.tiling.tags):
+                    if a.compatibility.tags.are_compatible_with(b.compatibility.tags):
                         found = True
                         combined.append(a.merge_next(b, live_tensors, delay=DELAY))
                         if not DELAY and not optimus_optimizations_only:
-                            cur_nmappings += len(a.mapping.data) * len(b.mapping.data)
+                            cur_nmappings += len(a.mappings.data) * len(b.mappings.data)
                         if DO_PRINT:
-                            s = f"\t{a.tiling} <--> {b.tiling}"
-                            s += f" --> {combined[-1].tiling}"
-                            s += f"({len(a.mapping.data)})x({len(b.mapping.data)})"
+                            s = f"\t{a.compatibility} <--> {b.compatibility}"
+                            s += f" --> {combined[-1].compatibility}"
+                            s += f"({len(a.mappings.data)})x({len(b.mappings.data)})"
                             print(s)
             if DO_PRINT and not found:
                 for a in left[k]:
-                    print(f"\tNo match for {a.tiling}")
+                    print(f"\tNo match for {a.compatibility}")
 
         if DO_PRINT:
             for k in right:
                 if k not in left:
                     for b in right[k]:
-                        print(f"\tREVERSE: No match for {b.tiling}")
+                        print(f"\tREVERSE: No match for {b.compatibility}")
 
         print_time("Bucket merging")
 
@@ -372,7 +372,7 @@ def fuse_sims(
         # compatibilty problems
         if sims and lookahead_filter and not optimus_optimizations_only:
             prev_len = len(combined)
-            next_right_tensors = sims[0].tensor_names
+            next_right_tensors = sims[0].names
             next_right_ranks = einsum2ranks[sims[0].einsum_id]
             combined = SIM.group_left(combined, next_right_tensors, drop_tags=True)
             for k in list(combined):
@@ -393,7 +393,7 @@ def fuse_sims(
                     )
                     if DO_PRINT:
                         for b in combined[k]:
-                            print(f"\tLOOKAHEAD: No match for {b.tiling}")
+                            print(f"\tLOOKAHEAD: No match for {b.compatibility}")
                     del combined[k]
             if not combined:
                 raise ValueError("No match found for any bucket")
@@ -411,20 +411,20 @@ def fuse_sims(
         # ======================================================================
         if DELAY:
             mappings = parallel(
-                [c.mapping for c in combined],
+                [c.compatibility for c in combined],
                 pbar=f"Merging mappings {left_einsum} <--> {right_einsum}",
                 return_as="generator",
             )
             for c, mapping in zip(combined, mappings):
-                c.mapping = mapping
+                c.compatibility = mapping
                 cur_nmappings += c.n_pre_prune_mappings
         print_time("Mapping merging")
 
         prev_nmappings = cur_nmappings
         if not skip_invalid:
-            left_nmappings = sum(len(s.mapping.data) for k in left.values() for s in k)
+            left_nmappings = sum(len(s.mappings.data) for k in left.values() for s in k)
             right_nmappings = sum(
-                len(s.mapping.data) for k in right.values() for s in k
+                len(s.mappings.data) for k in right.values() for s in k
             )
             cur_nmappings = left_nmappings * right_nmappings
         n_mappings[f"{left_einsum} → {right_einsum}"] = cur_nmappings
@@ -443,7 +443,7 @@ def fuse_sims(
             f"\tCombining {sum(len(s) for s in left)}({len(left)}) x {sum(len(s) for s in right)}({len(right)}) -> {len(combined)}"
         )
 
-        nmappings = sum(len(s.mapping.data) for s in combined)
+        nmappings = sum(len(s.mappings.data) for s in combined)
         for_einsum_text = f"for Einsum {right_einsum}"
         print(f"\tNumber of buckets {for_einsum_text}: {len(combined)}")
         print(f"\tNumber of mappings {for_einsum_text}: {nmappings}")
@@ -463,13 +463,13 @@ def fuse_sims(
     left = SIM.left_consolidate(left, None, resource2capacity, pbar="Final consolidate")
     s_final = SIM.combine_combineable(left, set(), drop_tags=True)
     assert len(s_final) == 1
-    data = s_final[0].mapping.data
+    data = s_final[0].mappings.data
     # check_correctness(data, set())
 
-    # einsum2tiling = data.iloc[3]["__LOOPNEST"]
-    # from fastfusion.visualization.reservationtree import tilings2looptree
+    # einsum2mapping = data.iloc[3]["__LOOPNEST"]
+    # from fastfusion.visualization.reservationtree import mappings2looptree
     # import pydot
-    # tree = tilings2looptree(einsum2tiling)
+    # tree = mappings2looptree(einsum2mapping)
     # graph = pydot.Dot(graph_type="digraph", ranksep="0.2", nodesep="0.2")
     # tree.to_pydot(graph)
     # with open(f"test2.png", "wb") as f:

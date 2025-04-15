@@ -1,8 +1,8 @@
 from collections import defaultdict
 import pydot
 from typing import Any, Iterable
-from fastfusion.sim import Tiling, TensorStorage, Loop
-from fastfusion.util.util import expfmt
+from fastfusion.joining.sim import Mapping, TensorStorage, Loop
+from fastfusion.util import expfmt
 from fastfusion.pareto import IN_PROGRESS_STATS, col2nameloop
 
 PYDOT_NODE_DEFAULTS = {
@@ -75,7 +75,7 @@ class Node:
                 reservations[k] = max(reservations[k], v)
         for t in self.this_level:
             if isinstance(t, TensorStorage):
-                reservations[str(t.memory_name)] += t.tile_size
+                reservations[str(t.resource_name)] += t.tile_size
         return dict(reservations)
 
     def get_all_storage(
@@ -140,8 +140,8 @@ class Node:
         return True
 
 
-def tilings2reservationtree(
-    mappings: dict[str, Tiling],
+def mappings2reservationtree(
+    mappings: dict[str, Mapping],
     stats: dict[str, Any] = None,
     skip_backing_tensors_in_right_branch: Iterable[str] = (),
     still_live_tensors: set[str] = (),
@@ -149,7 +149,7 @@ def tilings2reservationtree(
     per_component_energy: dict[dict[str, float]] = None,
     add_reservations: dict[str, Any] = None,
 ) -> Node:
-    prev_tilings = []
+    prev_mappings = []
     root = Node()
     einsum_ids = list(mappings.keys())
     if stats is not None:
@@ -167,7 +167,7 @@ def tilings2reservationtree(
         last_appearance = max(
             i for i, ts in enumerate(mappings.values()) if t in ts.storage
         )
-        if t.tensor_name in still_live_tensors:
+        if t.name in still_live_tensors:
             last_appearance = len(einsum_ids) - 1
         for i, l in enumerate(tensors_lifetimes.values()):
             if first_appearance <= i <= last_appearance and t not in l:
@@ -175,10 +175,10 @@ def tilings2reservationtree(
 
     # Add each Einsum to the tree
     for i, einsum_id in enumerate(einsum_ids):
-        tiling = mappings[einsum_id]
+        mapping = mappings[einsum_id]
         index = -1
         n = root.access_level(index)
-        loops = tiling.loops[index:] if index != -1 else tiling.loops
+        loops = mapping.loops[index:] if index != -1 else mapping.loops
         for l in loops:
             n.children.append(Node())
             n = n.children[-1]
@@ -191,8 +191,8 @@ def tilings2reservationtree(
             for k, v in per_component_energy[einsum_id].items():
                 n.children[-1].this_level.append(f"{k} energy: {expfmt(v)}")
         id2tensor = defaultdict(set)
-        for t in sorted(tiling.storage) + tensors_lifetimes[einsum_id]:
-            id2tensor[t.tensor_name].add(t)
+        for t in sorted(mapping.storage) + tensors_lifetimes[einsum_id]:
+            id2tensor[t.name].add(t)
         id2tensor = {k: sorted(v) for k, v in id2tensor.items()}
         for tensor_name, storage in id2tensor.items():
             for tensor in storage:
@@ -202,7 +202,7 @@ def tilings2reservationtree(
                     n.this_level.append(tensor)
         if stats is not None:
             root.add_stats(stats[einsum_id])
-        prev_tilings.append(tiling)
+        prev_mappings.append(mapping)
 
     # Start at the root. Iterate through each leaf. Recursively:
     # - If two leaves have the same tensor and this tensor is a backing tensor,
@@ -216,7 +216,7 @@ def tilings2reservationtree(
                 shared_tensors |= set(
                     c
                     for c in children[i].get_all_storage(start_at=1)
-                    if c.tensor_name in still_live_tensors
+                    if c.name in still_live_tensors
                 )
                 if shared_tensors & set(backers):
                     while j != i:
@@ -247,7 +247,7 @@ def tilings2reservationtree(
         i = 0
         while i < len(n.this_level):
             t = n.this_level[i]
-            if t in backers and t.tensor_name in skip_backing_tensors_in_right_branch:
+            if t in backers and t.name in skip_backing_tensors_in_right_branch:
                 n.this_level.pop(i)
             else:
                 i += 1
@@ -266,12 +266,12 @@ def tilings2reservationtree(
     return root
 
 
-def tilings2svg(
-    mappings: dict[str, Tiling],
+def mappings2svg(
+    mappings: dict[str, Mapping],
     stats: dict[str, Any],
     per_component_energy: dict[dict[str, float]] = None,
 ):
-    root = tilings2reservationtree(
+    root = mappings2reservationtree(
         mappings, stats, per_component_energy=per_component_energy
     )
     graph = pydot.Dot(graph_type="digraph", ranksep="0.2", nodesep="0.2")
@@ -279,6 +279,6 @@ def tilings2svg(
     return graph.create_svg()
 
 
-def tilings2yaml(mappings: dict[str, Tiling], stats: dict[str, Any]):
-    root = tilings2reservationtree(mappings, stats)
+def mappings2yaml(mappings: dict[str, Mapping], stats: dict[str, Any]):
+    root = mappings2reservationtree(mappings, stats)
     return root.to_yaml()

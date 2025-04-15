@@ -2,7 +2,7 @@ from collections import defaultdict
 from itertools import permutations, product
 
 from pytimeloop.looptree.mapping_utilities import get_intermediate_tensors
-from fastfusion.util.util import fzs
+from fastfusion.util import fzs
 
 
 def group_similar_einsums(workload, analyzer):

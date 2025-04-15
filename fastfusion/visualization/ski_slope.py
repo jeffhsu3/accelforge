@@ -70,14 +70,14 @@ def _make_staircase(x: np.array, y: np.array):
 
 
 def _add_dataflow_to_data(data: pd.DataFrame):
-    data[DATAFLOW_COLUMN] = data["__Mappings"].apply(_dataflow_from_fulltiling)
+    data[DATAFLOW_COLUMN] = data["__Mappings"].apply(_dataflow_from_fullmapping)
 
 
-def _dataflow_from_fulltiling(fulltiling: str):
-    fulltiling = fulltiling.strip("[")
-    fulltiling = fulltiling.strip("]")
+def _dataflow_from_fullmapping(fullmapping: str):
+    fullmapping = fullmapping.strip("[")
+    fullmapping = fullmapping.strip("]")
     dataflow = []
-    for term in fulltiling.split(","):
+    for term in fullmapping.split(","):
         if term[0] == "T":
             dataflow.append(int(term[1:].split(" size ")))
     return tuple(dataflow)

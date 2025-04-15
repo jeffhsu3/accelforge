@@ -9,9 +9,9 @@ from ipywidgets import Output, VBox, HBox
 import pandas as pd
 import plotly.express as px
 
-from fastfusion.sim import Loop, TensorStorage, Tiling
-from fastfusion.util.util import expfmt
-from fastfusion.visualization.reservationtree import tilings2svg
+from fastfusion.joining.sim import Loop, TensorStorage, Mapping
+from fastfusion.util import expfmt
+from fastfusion.visualization.reservationtree import mappings2svg
 from fastfusion.pareto import (
     MAPPING,
     STATS,
@@ -26,7 +26,7 @@ import pandas as pd
 
 def mapping2svg(mapping: pd.Series):
     return SVG(
-        tilings2svg(
+        mappings2svg(
             mapping[MAPPING],
             mapping.get(STATS, None),
             mapping.get(PER_COMPONENT_ACCESSES_ENERGY, None),

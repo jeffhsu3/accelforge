@@ -1,4 +1,4 @@
-from fastfusion.util.util import fzs
+from fastfusion.util import fzs
 
 
 class TagClass(fzs):
@@ -25,9 +25,6 @@ class Tags(fzs):
 
     def matches(self, tag2):
         return self == tag2
-
-    def to_tuple(self):
-        return tuple(sorted(self))
 
     @staticmethod
     def from_tuple(t: tuple):

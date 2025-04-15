@@ -9,7 +9,7 @@ from typing import Optional, Tuple, Union
 
 from joblib import delayed
 
-from fastfusion.util.util import fzs
+from fastfusion.util import fzs
 
 sys.modules["numba"] = None
 
@@ -288,9 +288,9 @@ def paretofy_by(data: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
 
 
 def draw_looptree(row: pd.DataFrame, live_tensors: set[int]):
-    from fastfusion.visualization.reservationtree import tilings2looptree
+    from fastfusion.visualization.reservationtree import mappings2looptree
 
-    looptree = tilings2looptree(
+    looptree = mappings2looptree(
         row[MAPPING],
         row.get(STATS, None),
         skip_backing_tensors_in_right_branch=live_tensors,
@@ -305,8 +305,8 @@ def draw_looptree(row: pd.DataFrame, live_tensors: set[int]):
 
 
 def check_correctness(data: pd.DataFrame, live_tensors: set[int]):
-    from fastfusion.visualization.reservationtree import tilings2looptree
-    from fastfusion.sim import TensorStorage
+    from fastfusion.visualization.reservationtree import mappings2looptree
+    from fastfusion.joining.sim import TensorStorage
 
     def fail(index):
         draw_looptree(data.iloc[index], live_tensors)
@@ -317,7 +317,7 @@ def check_correctness(data: pd.DataFrame, live_tensors: set[int]):
 
     df_check = _free_to_loop_index(data.copy(), -1)
     for i, r in df_check.iterrows():
-        looptree = tilings2looptree(
+        looptree = mappings2looptree(
             r[MAPPING],
             r.get(STATS, None),
             skip_backing_tensors_in_right_branch=live_tensors,
@@ -335,7 +335,7 @@ def check_correctness(data: pd.DataFrame, live_tensors: set[int]):
             if r[col] != v:
                 got = r[[c for c in df_check.columns if col2nameloop(c) is not None]]
                 fail(i)
-                looptree = tilings2looptree(
+                looptree = mappings2looptree(
                     r[MAPPING],
                     r.get(STATS, None),
                     skip_backing_tensors_in_right_branch=live_tensors,
@@ -403,7 +403,7 @@ def merge_cross(
 
     # PIPELINE CHANGES REQUIRED:
     # - Latency above above loop index (first tile), below (all subsequent tiles)
-    # - Tiling includes information for how may be fused:
+    # - Mapping includes information for how may be fused:
     #   - Pipelined: Max below latencies,
     #   - Non-pipelined:
     # Shared resources:
@@ -580,28 +580,6 @@ class Pareto:
         return tuple(
             sorted(c for c in self.data.columns if col2nameloop(c) is not None)
         )
-
-    def tuplefy_data(self):
-        if self.data.empty:
-            return
-        from fastfusion.sim import Tiling
-
-        for col in self.data.columns:
-            if col in TUPLABE_COLUMNS:
-                self.data[col] = self.data[col].apply(
-                    lambda x: {k: v.to_tuple() for k, v in x.items()}
-                )
-
-    def detuplefy_data(self):
-        if self.data.empty:
-            return
-        from fastfusion.sim import Tiling
-
-        for col in self.data.columns:
-            if col in TUPLABE_COLUMNS:
-                self.data[col] = self.data[col].apply(
-                    lambda x: {k: Tiling.from_dict_small(v) for k, v in x.items()}
-                )
 
 
 import unittest

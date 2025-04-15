@@ -4,7 +4,7 @@ import logging.handlers
 from pathlib import Path
 import logging
 
-from fastfusion.util.util import parallel
+from fastfusion.util import parallel
 logger = logging.getLogger(__name__)
 
 from ruamel.yaml import YAML
@@ -20,7 +20,7 @@ from fastfusion.exploration.constraints import *
 from fastfusion.layerdeduplication import is_equivalent
 from fastfusion.exploration.logging import make_queue_and_listener
 from fastfusion.exploration.per_einsum_mapper import get_top_loop_jobs, mapper_place_fusion_level
-from fastfusion.sim import Tiling, Loop, TensorStorage
+from fastfusion.joining.sim import Mapping, Loop, TensorStorage
 from fastfusion.pareto import LOGSTRING, MAPPING, STATS, DICT_COLUMNS, TENSORS
 from fastfusion.exploration.process_results import Metrics
 
@@ -138,15 +138,15 @@ def mapper(
 
 def generate_data(from_einsum: int, to_einsum: int, data, rank_renaming, tensor_renaming):
     return {
-        _convert_tiling(tiling, rank_renaming, tensor_renaming)
+        _convert_mapping(mapping, rank_renaming, tensor_renaming)
         :
         _convert_stats(from_einsum, to_einsum, stats, rank_renaming, tensor_renaming)
-        for tiling, stats in data.items()
+        for mapping, stats in data.items()
     }
 
 
-def _convert_tiling(tiling: Tiling, rank_renaming, tensor_renaming):
-    return tiling.rename(rank_renaming, tensor_renaming)
+def _convert_mapping(mapping: Mapping, rank_renaming, tensor_renaming):
+    return mapping.rename(rank_renaming, tensor_renaming)
 
 
 def _convert_stats(from_einsum: int, to_einsum: int, stats, rank_renaming, tensor_renaming):
@@ -196,7 +196,7 @@ def convert_rank_to_group_renaming(ref_to_to_einsums, equiv_ranks):
 
 
 def _convert_rank_renaming(rank_renaming, equiv_ranks):
-    # The Tiling class uses string ids
+    # The Mapping class uses string ids
     return {
         str(equiv_ranks.rank_to_group_id[r1])
         :

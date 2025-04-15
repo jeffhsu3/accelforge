@@ -165,7 +165,7 @@ def mapper_place_fusion_level(
                         tensor_name_to_name={v: k for k, v in tensor_name_to_id.items()},
                     )
                     if count % 1e4 == 0:
-                        print(f"Einsum {einsum_id} #{count}, fulltiling: {fulltiling}")
+                        print(f"Einsum {einsum_id} #{count}, fullmapping: {fullmapping}")
                     # shape_subspace.register_result(is_pareto, results)
     # assert False
     return einsum_id, data, count
