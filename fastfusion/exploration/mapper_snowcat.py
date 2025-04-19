@@ -203,9 +203,9 @@ def generate_data(
 ):
     def convert(sim):
         return SIM(
-            _convert_mapping(sim.mapping, rank_renaming, tensor_renaming),
+            _convert_mapping(sim.compatibility, rank_renaming, tensor_renaming),
             _convert_stats(
-                from_einsum, to_einsum, sim.mapping, rank_renaming, tensor_renaming
+                from_einsum, to_einsum, sim.mappings, rank_renaming, tensor_renaming
             ),
         )
 

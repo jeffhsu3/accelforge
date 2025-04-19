@@ -138,6 +138,16 @@ class Node:
                 if n_ranks_in_einsum > 1:
                     return False
         return True
+    
+    def deduplicate_reservations(self, to_deduplicate):
+        for c in self.children:
+            c.deduplicate_reservations(to_deduplicate)
+        i = 0
+        while i < len(self.this_level):
+            if self.this_level[i] in self.this_level[:i] and self.this_level[i] in to_deduplicate:
+                self.this_level.pop(i)
+            else:
+                i += 1
 
 
 def mappings2reservationtree(
@@ -167,7 +177,7 @@ def mappings2reservationtree(
         last_appearance = max(
             i for i, ts in enumerate(mappings.values()) if t in ts.storage
         )
-        if t.name in still_live_tensors:
+        if t.name in still_live_tensors or still_live_tensors == "all":
             last_appearance = len(einsum_ids) - 1
         for i, l in enumerate(tensors_lifetimes.values()):
             if first_appearance <= i <= last_appearance and t not in l:
@@ -216,7 +226,7 @@ def mappings2reservationtree(
                 shared_tensors |= set(
                     c
                     for c in children[i].get_all_storage(start_at=1)
-                    if c.name in still_live_tensors
+                    if c.name in still_live_tensors or still_live_tensors == "all"
                 )
                 if shared_tensors & set(backers):
                     while j != i:
@@ -262,6 +272,8 @@ def mappings2reservationtree(
                 name, _ = nameloop
                 node = root.find_node_with(get_einsum_key(einsum))
                 node.this_level.append(TensorStorage("Reservation", -1, name, size))
+                
+    root.deduplicate_reservations(backers)
 
     return root
 

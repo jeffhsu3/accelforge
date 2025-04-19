@@ -599,7 +599,7 @@ def per_einsum_mapper_snowcat(
     
     def makepareto(data):
         multiple_data = len(data) > 1
-        return Pareto(pd.concat(data), skip_pareto=not multiple_data or not prune, fill_reservations=multiple_data)
+        return Pareto(pd.concat(data), skip_pareto=not multiple_data or not prune, fill_reservation_cols='auto')
 
     jobs = []
     for einsum_id, mappings in data.items():

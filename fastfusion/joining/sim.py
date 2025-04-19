@@ -34,7 +34,12 @@ class SIM:
         return SIM(self.compatibility, self.mappings.copy())
 
     def merge_next(
-        self, right: "SIM", live_tensors: set[str], delay: bool = False
+        self, 
+        right: "SIM", 
+        live_tensors: set[str], 
+        live_tensors_with_right: set[str],
+        aliased_tensors: dict[str, str],
+        delay: bool = False,
     ) -> "SIM":
         shared_loop_index = self.compatibility.shared_loop_index(
             right.compatibility.tensor_names | live_tensors
@@ -42,9 +47,20 @@ class SIM:
         compatibility = self.compatibility.merge_next(right.compatibility, live_tensors)
         next_shared_loop_index = compatibility.shared_loop_index(live_tensors)
         shared_storage = self.compatibility.storage & right.compatibility.storage
+        
+        still_live_reservations = [r for r in self.compatibility.storage if r.name in live_tensors and r.name not in right.compatibility.tensor_names]
+        
+        duplicated_aliased_tensors = set()
+        for name, my_tensor in self.storage.items():
+            aliased_tensor = right.storage.get(aliased_tensors.get(name, None), None)
+            if aliased_tensor is None:
+                continue
+            if my_tensor.resource_name == aliased_tensor.resource_name:
+                duplicated_aliased_tensors.add(aliased_tensor)
+        
         mapping = delayed(
             self.mappings.merge_next
-        )(right.mappings, shared_loop_index, live_tensors, shared_storage)
+        )(right.mappings, shared_loop_index, live_tensors_with_right, shared_storage, still_live_reservations, duplicated_aliased_tensors)
 
         if not delay:
             mapping = mapping[0](*mapping[1], **mapping[2])
@@ -66,10 +82,11 @@ class SIM:
         self,
         index: Optional[int],
         resource2capacity: dict[str, int] = None,
+        live_tensors: set[str] = None,
     ):
         needs_pareto = False
         needs_pareto = (
-            self.mappings.free_to_loop_index(index) or needs_pareto
+            self.mappings.free_to_loop_index(index, live_tensors=live_tensors) or needs_pareto
         )
         needs_pareto = self.mappings.squish_left_right(index) or needs_pareto
         if needs_pareto:
@@ -91,9 +108,9 @@ class SIM:
             # )
 
         if live_tensors is None:
-            self.free_squish(0, resource2capacity)
+            self.free_squish(0, resource2capacity, live_tensors=live_tensors)
         else:
-            self.free_squish(shared_loop_index + 1, resource2capacity)
+            self.free_squish(shared_loop_index + 1, resource2capacity, live_tensors=live_tensors)
         return self
 
     def _left_consolidate(
@@ -114,12 +131,18 @@ class SIM:
                 #     t.resource_name, t.size, t.above_loop_index, resource2capacity
                 # )
                 tensors_to_add.append(t)
-        if live_tensors is None:
-            self.free_squish(-1, resource2capacity)
-        else:
-            self.free_squish(shared_loop_index + 1, resource2capacity)
+        # if live_tensors is None:
+        #     self.free_squish(-1, resource2capacity)
+        # else:
+        #     self.free_squish(shared_loop_index + 1, resource2capacity)
         for t in tensors_to_add:
             self.mappings.add_tensor(t)
+        
+        # # These tensors will be re-added by the next Einsum and we don't want to
+        # # double count them
+        # for t in shared_tensors:
+        #     self.mappings.subtract_duplicated(self.storage[t])
+            
         return self
 
     @staticmethod

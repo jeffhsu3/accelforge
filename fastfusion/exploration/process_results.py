@@ -8,6 +8,7 @@ from fastfusion.pareto import (
     MAPPING,
     MAPPING_HASH,
     STATS,
+    col2nameloop,
     nameloop2col,
     DICT_COLUMNS,
     RESERVED_COLUMNS,
@@ -120,7 +121,7 @@ def process_result(
             store = TensorStorage(
                 tensor_id_to_name[dspace],
                 len(full_mapping),
-                node["target"],
+                f"{node['target']}_{bindings[node['target']]}",
                 int(result.occupancy[(node["target"], dspace)]),
             )
             all_storage.append(store)
@@ -171,15 +172,14 @@ def process_result(
 
     # If this Einsum is a copy op and the source and destination locations are
     # the same, then it is a null operation. Assume that the input tensors are
-    # the output tensors. We don't want to double count, so get rid of the input
-    # tensor occupancies. Note that we would like to keep the output tensor
-    # occupancies in case their reservatinos get propagated to later Einsums.
+    # the output tensors. We don't want to double count, so get rid of the output
+    # tensor occupancies.
     null_copy_einsum = (
         copy_einsum and len(set(t.resource_name for t in backing_storage)) == 1
     )
     if null_copy_einsum:
         for i, r in enumerate(backing_storage):
-            if r.name in input_tensors:
+            if r.name in output_tensors:
                 backing_storage[i] = TensorStorage(
                     name=r.name,
                     above_loop_index=r.above_loop_index,
@@ -240,22 +240,21 @@ def process_result(
     # Only record non-backing reservations. We'll reserve backing storage later
     # when we free the tensors & we know all operations for which the tensor must
     # be backed.
-    if not copy_einsum:
-        all_keys = set()
-        for r in all_storage:
-            r: TensorStorage
-            key = nameloop2col(r.resource_name, min(r.above_loop_index, n_fused_loops))
-            all_keys.add(key)
+    all_keys = set()
+    for r in all_storage:
+        r: TensorStorage
+        key = nameloop2col(r.resource_name, min(r.above_loop_index, n_fused_loops))
+        all_keys.add(key)
 
-        for r in all_storage:
-            r: TensorStorage
-            for i in range(min(r.above_loop_index, n_fused_loops), n_fused_loops + 1):
-                key = nameloop2col(r.resource_name, i)
-                if key not in all_keys:
-                    continue
-                if key not in results:
-                    results[key] = 0
-                results[key] += r.size
+    for r in all_storage:
+        r: TensorStorage
+        for i in range(min(r.above_loop_index, n_fused_loops), n_fused_loops + 1):
+            key = nameloop2col(r.resource_name, i)
+            if key not in all_keys:
+                continue
+            if key not in results:
+                results[key] = 0
+            results[key] += r.size
 
     if Metrics.LATENCY in metrics and Metrics.DEBUG in metrics:
         logstring.append(f"L={results['Latency']:.2e}")
@@ -272,7 +271,9 @@ def process_result(
     if einsum_name in copy_einsums:
         if null_copy_einsum:
             for k, v in list(results.items()):
-                results[k] = {} if k in DICT_COLUMNS else 0
+                if col2nameloop(k) is not None:
+                    results[k] = 0
+                # results[k] = {} if k in DICT_COLUMNS else 0
 
     key = (mapping_compatibility, fzs(results.keys()))
     if prune:

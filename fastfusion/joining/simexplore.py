@@ -153,6 +153,20 @@ def fuse_sims(
     skip_invalid: bool = True,
     size_scale: float = 1.0,
 ):
+    """
+    CONTRACT FOR MAPPINGS GETTING TO THIS POINT:
+    
+    - Reservations at a level include reservations at all levels above it.
+    - If one Einsum uses an aliased tensor more than once, then only one
+      reservation is made for it. If overlapping lifetimes cause the aliases to
+      be alive at the same time, then it is handled here.
+    - Memory names should be sorted with higher memory names representing
+      memories lower in the hierarchy. e.g., memory 0 is the largest,
+      memory 1 the next largest, and memory N is the smallest.
+    """
+    
+    
+    aliased_tensors = {"I_n_to_I": "I_I_to_Q_K_V"}
     resource2capacity = None
     full_equivalent_ranks = {k: set(v) for k, v in pairwise_equivalent_ranks.items()}
     changed = True
@@ -271,6 +285,7 @@ def fuse_sims(
 
         live_tensors = set.union(set(), *[s.tensor_names for s in sims])
         shared_tensors = set(left_tensors) & set(right_tensors)
+        live_tensors_with_right = live_tensors | right_tensors
 
         # ======================================================================
         # Clean up the previously-combined SIMs. Consolidate, combine, group
@@ -345,7 +360,7 @@ def fuse_sims(
                 for a, b in itertools.product(left[k], right.get(k_translated, [])):
                     if a.compatibility.tags.are_compatible_with(b.compatibility.tags):
                         found = True
-                        combined.append(a.merge_next(b, live_tensors, delay=DELAY))
+                        combined.append(a.merge_next(b, live_tensors, live_tensors_with_right, aliased_tensors, delay=DELAY))
                         if not DELAY and not optimus_optimizations_only:
                             cur_nmappings += len(a.mappings.data) * len(b.mappings.data)
                         if DO_PRINT:
