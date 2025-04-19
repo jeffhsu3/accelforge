@@ -228,7 +228,7 @@ class Pareto:
             
         if check_format:
             self.check_format()
-            
+
             
     def fill_reservation_cols(self, columns: set | str):
         targets = []
@@ -260,6 +260,7 @@ class Pareto:
             max_to_col(self.data, below, above)
 
     def check_format(self):
+        assert not self.data.isnull().values.any(), f"NaN in {self.data}"
         targets = []
         for left, reservations_dict in [
             (True, self.left_reservations),
@@ -403,15 +404,16 @@ class Pareto:
                 self.data.rename(columns={source: target}, inplace=True)
     
     @staticmethod
-    def _get_target_path():
+    def _get_target_path(suffix: str = None) -> str:
         import os
         f = "./images"
         os.makedirs(f, exist_ok=True)
+        suffix = "" if suffix is None else f".{suffix}"
         i = 0
-        while os.path.exists(os.path.join(f, f"test_{i}.png")):
+        while os.path.exists(os.path.join(f, f"test_{i}{suffix}.png")):
             i += 1
         assert i <= 50, "Too many images"
-        return os.path.join(f, f"test_{i}.png")
+        return os.path.join(f, f"test_{i}{suffix}.png")
     
     def merge_next(
         self,
@@ -540,13 +542,13 @@ class Pareto:
         df = df.drop(columns=dropcols)
         try:
             result = Pareto(df, skip_pareto=True)
+            # result._draw_index(0, live_tensors, self._get_target_path())
             # Remove tensors that were allocated in both branches and got added
             # together. We can do this after pareto calculation because it affects
             # all mappings equally.
             result.free(s for s in shared_storage if s.above_loop_index <= shared_loop_index)
             result.alloc(s for s in still_live_reservations if s.above_loop_index > shared_loop_index)
             result.max_right_to_left()
-            # result._draw_index(0, live_tensors, self._get_target_path())
             if not CHECK_CORRECTNESS:
                 result.make_pareto()
 
@@ -598,10 +600,9 @@ class Pareto:
         )
         graph = pydot.Dot(graph_type="digraph", ranksep="0.2", nodesep="0.2")
         looptree.to_pydot(graph)
-        # Add all my stats to the graph
         row = self.data.iloc[index]
         all_data = [
-            f"{k}: {v}" for k, v in row.items() if k not in DICT_COLUMNS and k != LOGSTRING and "MainMemory" in k
+            f"{k}: {v}" for k, v in row.items() if k not in DICT_COLUMNS and k != LOGSTRING
         ]
         data_str = "\n".join(all_data)
         graph.add_node(pydot.Node("data", label=data_str, shape="plaintext"))
@@ -644,11 +645,13 @@ class Pareto:
     def check_correctness(self, live_tensors: set[int]):
         from fastfusion.visualization.reservationtree import mappings2reservationtree
         from fastfusion.joining.sim import TensorStorage
-        
+        assert not self.data.isnull().values.any(), f"NaN in {self.data}"
+
         self = self.copy()
 
         def fail(index):
-            draw_looptree(self.data.iloc[index], live_tensors)
+            # draw_looptree(self.data.iloc[index], live_tensors)
+            self._draw_index(index, live_tensors, self._get_target_path(suffix="fail"))
             all_tensors = set(t for tn in r[MAPPING].values() for t in tn.storage)
             all_tensors = TensorStorage.get_backing_stores(all_tensors)
             for t in sorted(all_tensors):
@@ -824,9 +827,7 @@ class Pareto:
         required_cols = set.union(*[set(p.data.columns) for p in paretos])
         shared_cols = set.intersection(*[set(p.data.columns) for p in paretos])
         fill_cols = required_cols - shared_cols
-            
         
-        # TODO: Fill reservations only for specific columns
         p = Pareto(
             pd.concat([p.data for p in paretos]).fillna(0),
             skip_pareto=len(paretos) == 1 or skip_pareto,
