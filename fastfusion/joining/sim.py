@@ -39,6 +39,7 @@ class SIM:
         live_tensors: set[str], 
         live_tensors_with_right: set[str],
         aliased_tensors: dict[str, str],
+        resource2capacity: dict[str, int] = None,
         delay: bool = False,
     ) -> "SIM":
         shared_loop_index = self.compatibility.shared_loop_index(
@@ -60,7 +61,7 @@ class SIM:
         
         mapping = delayed(
             self.mappings.merge_next
-        )(right.mappings, shared_loop_index, live_tensors_with_right, shared_storage, still_live_reservations, duplicated_aliased_tensors)
+        )(right.mappings, shared_loop_index, live_tensors_with_right, shared_storage, still_live_reservations, duplicated_aliased_tensors, resource2capacity)
 
         if not delay:
             mapping = mapping[0](*mapping[1], **mapping[2])
@@ -259,10 +260,6 @@ class SIM:
         if isinstance(sims, dict):
             return {k: v for k, v in sims.items() if check(k.storage)}
         raise ValueError(f"Invalid type {type(sims)}")
-
-    def filter_by_mapping_hashes(self, hashes: set[str]) -> Optional["SIM"]:
-        self = SIM(self.compatibility, self.mappings.filter_by_mapping_hashes(hashes))
-        return self if len(self.mappings.data) > 0 else None
 
     @staticmethod
     def group_left(

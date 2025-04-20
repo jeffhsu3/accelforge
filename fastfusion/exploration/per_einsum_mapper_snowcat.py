@@ -16,7 +16,7 @@ from fastfusion.exploration.per_einsum_mapper import explore_tile_shape, process
 from fastfusion.exploration.per_einsum_subspaces.snowcat import make_subspaces
 from fastfusion.exploration.per_einsum_subspaces.snowcat_ffmt import make_ffmt_subspaces
 from fastfusion.exploration.per_einsum_subspaces.four_level_arch import make_subspaces as make_four_level_subspaces
-from fastfusion.pareto import MAPPING, Pareto, makepareto
+from fastfusion.pareto import MAPPING, Pareto
 from fastfusion.joining.sim import SIM, Loop, Mapping, TensorStorage
 from fastfusion.util import fzs, parallel
 from pytimeloop.looptree.equivalent_ranks import EquivalentGroups
@@ -332,7 +332,7 @@ def per_worker_exploration(
     #         group = group.drop(columns=fused_loop_cols)
     #         mapping = Mapping(loops=loops, storage=backing_storage)
     #         if mapping in result:
-    #             result[mapping] = makepareto(pd.concat([result[mapping], group]).fillna(0))
+    #             result[mapping] = Pareto(pd.concat([result[mapping], group]).fillna(0))
     #         else:
     #             result[mapping] = group
     #         total_added += len(group)
@@ -390,7 +390,7 @@ def per_worker_exploration(
             )
             
     if prune:
-        return einsum_id, {k[0]: makepareto(pd.DataFrame(v).fillna(0)) for k, v in result.items()}, n_mappings
+        return einsum_id, {k[0]: Pareto(pd.DataFrame(v).fillna(0)).data for k, v in result.items()}, n_mappings
     return einsum_id, {k[0]: pd.DataFrame(v).fillna(0) for k, v in result.items()}, n_mappings
 
 def _per_einsum_mapper_snowcat(

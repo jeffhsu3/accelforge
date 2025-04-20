@@ -80,6 +80,11 @@ def nameloop2col(name, nloops, left: bool = False):
         return f"RESOURCE_{name}_LEFT_LEVEL_{nloops}"
     return f"RESOURCE_{name}_LEVEL_{nloops}"
 
+@dict_cached
+def col2nameloopleft(x):
+    m = _resource_name_nloops_reg.match(x)
+    return (m.group(1), int(m.group(2)), is_left_col(x)) if m is not None else None
+
 
 @dict_cached
 def is_left_col(x):
@@ -135,68 +140,13 @@ def quick_pareto(df):
 
 
 def makepareto(data: pd.DataFrame) -> pd.DataFrame:
-    # Drop any columns that are all zeros or all equal
     columns = [
         c for c in data.columns if c not in RESERVED_COLUMNS and not is_merge_col(c)
     ]
-    # TODO: Drop columns that don't add info AND are the same as the reservation
-    # above
-    # for c in list(columns):
-    #     if not data[c].any():
-    #         data = data.drop(columns=[c])
-    #         columns.remove(c)
-    #     elif data[c].nunique() == 1:
-    #         columns.remove(c)
-
     if len(data) == 1:
         return data
 
     return data[paretoset(data[columns])].reset_index(drop=True)
-
-
-def squish_left_right(
-    data: pd.DataFrame, shared_loop_index: int = None, return_needs_pareto: bool = False
-) -> Union[pd.DataFrame, Tuple[pd.DataFrame, bool]]:
-    nloops2left = defaultdict(set)
-    dropcols = []
-    needs_pareto = False
-    for c in data.columns:
-        if (name_nloops := col2nameloop(c)) is not None:
-            if is_left_col(c):
-                name, nloops = name_nloops
-                if shared_loop_index is None or nloops == shared_loop_index:
-                    nloops2left[nloops].add((c, name))
-                    dropcols.append(c)
-                    needs_pareto = True
-
-    for n in nloops2left.keys():
-        for c, name in nloops2left[n]:
-            target = nameloop2col(name, n)
-            max_to_col(data, target, c)
-    if return_needs_pareto:
-        return data[[c for c in data.columns if c not in dropcols]], needs_pareto
-    return data[[c for c in data.columns if c not in dropcols]]
-
-
-def paretofy_by(data: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
-    return data[paretoset(data[columns])].reset_index(drop=True)
-
-
-def draw_looptree(row: pd.DataFrame, live_tensors: set[int]):
-    from fastfusion.visualization.reservationtree import mappings2reservationtree
-
-    looptree = mappings2reservationtree(
-        row[MAPPING],
-        row.get(STATS, None),
-        # skip_backing_tensors_in_right_branch=live_tensors,
-        still_live_tensors=live_tensors,
-    )
-    import pydot
-
-    graph = pydot.Dot(graph_type="digraph", ranksep="0.2", nodesep="0.2")
-    looptree.to_pydot(graph)
-    with open(f"test.png", "wb") as f:
-        f.write(graph.create_png())
 
 class Pareto:
     def __init__(
@@ -204,7 +154,7 @@ class Pareto:
             data: pd.DataFrame, 
             skip_pareto: bool = False, 
             fill_reservation_cols: set | str = fzs(),
-            check_format: bool = CHECK_CORRECTNESS,
+            check_above_subset_below: bool = CHECK_CORRECTNESS,
             max_right_to_left: bool = False,
         ):
         self._data: pd.DataFrame = data
@@ -216,18 +166,18 @@ class Pareto:
         
         if fill_reservation_cols: # Affects Pareto so must go before
             self.fill_reservation_cols(fill_reservation_cols)
-        if check_format:
-            self.check_format()
+        if check_above_subset_below:
+            self.check_above_subset_below()
         if max_right_to_left: # Affects Pareto so must go before
             self.max_right_to_left()
-        if check_format:
-            self.check_format()
+        if check_above_subset_below:
+            self.check_above_subset_below()
 
         if not skip_pareto:
-            self._data = makepareto(self.data)
+            self.make_pareto()
             
-        if check_format:
-            self.check_format()
+        if check_above_subset_below:
+            self.check_above_subset_below()
 
             
     def fill_reservation_cols(self, columns: set | str):
@@ -239,7 +189,7 @@ class Pareto:
             ]:
                 for resource, reservations in reservations_dict.items():
                     for r in sorted(reservations):
-                        above = self.get_reservation_at_level(resource, r - 1)
+                        above = self.get_reservation_or_parent(resource, r - 1)
                         if above is not None:
                             below = nameloop2col(resource, r, left=left)
                             targets.append((r, above, below))
@@ -248,7 +198,7 @@ class Pareto:
                 if (name_nloops := col2nameloop(below)) is None:
                     raise ValueError(f"{below} is not a valid reservation column")
                 name, nloops = name_nloops
-                above = self.get_reservation_at_level(name, nloops - 1)
+                above = self.get_reservation_or_parent(name, nloops - 1)
                 if above is not None:
                     targets.append((nloops, above, below))
 
@@ -258,36 +208,11 @@ class Pareto:
             assert above in self.data.columns
             assert below in self.data.columns
             max_to_col(self.data, below, above)
-
-    def check_format(self):
-        assert not self.data.isnull().values.any(), f"NaN in {self.data}"
-        targets = []
-        for left, reservations_dict in [
-            (True, self.left_reservations),
-            (False, self.right_reservations),
-        ]:
-            for resource, reservations in reservations_dict.items():
-                for r in reservations:
-                    above = self.get_reservation_at_level(resource, r - 1)
-                    if above is not None:
-                        below = nameloop2col(resource, r, left=left)
-                        targets.append((above, below))
-                
-        for above, below in targets:
-            if (self.data[below] < self.data[above]).any():
-                first_failing_index = (self.data[below] < self.data[above]).idxmax()
-                fail_row = self.data.iloc[first_failing_index]
-                error = f"""
-                {below} column is less than {above} column. A reservation at
-                a level should include all reservations above it. There were {len(fail_row)} rows
-                with this error. One example: {fail_row}
-                """
-                raise ValueError(error)
             
     def max_right_to_left(self):
         for resource, reservations in self.left_reservations.items():
             for r in reservations:
-                source = self.get_reservation_at_level(resource, r)
+                source = self.get_reservation_or_parent(resource, r)
                 if source is None:
                     continue
                 target = nameloop2col(resource, r, left=True)
@@ -344,7 +269,6 @@ class Pareto:
         drop_columns = []
         for resource in set(self.left_reservations) | set(self.right_reservations):
             max_columns = []
-            
             left_reservations = self.left_reservations.get(resource, set())
             right_reservations = self.right_reservations.get(resource, set())
             left_big_enough = [l for l in left_reservations if l >= loop_index + 1]
@@ -373,18 +297,32 @@ class Pareto:
                 drop_columns += [m for m in max_columns if m != target]
         self.data.drop(columns=drop_columns, inplace=True)
         self._make_reservations()
+
         if check_correctness and live_tensors is not None:
-            self.copy().check_correctness(live_tensors=live_tensors)
+            self.copy().check_reservations(live_tensors=live_tensors)
+
         return len(drop_columns) != 0
     
-    def get_reservation_at_level(self, name: str, level: int, left: bool = False) -> Optional[str]:
+    def get_reservation_or_parent(
+            self, 
+            name: str, 
+            level: int, 
+            left: bool = False,
+            return_name_level_left: bool = False,
+        ) -> Optional[Union[str, Tuple[str, int, bool]]]:
         reservations = self.left_reservations if left else self.right_reservations
         if name not in reservations:
             return None
         reservations = reservations[name]
         while level >= 0:
             if level in reservations:
+                if return_name_level_left:
+                    return name, level, left
                 return nameloop2col(name, level, left)
+            # The parent of left nodes are right nodes, so if we don't find a
+            # left node immediately then we're back on the right nodes
+            reservations = self.right_reservations.get(name, set())
+            left = False
             level -= 1
         return None
 
@@ -423,6 +361,7 @@ class Pareto:
         shared_storage: set[TensorStorage],
         still_live_reservations: set[TensorStorage],
         duplicated_aliased_tensors: set[TensorStorage],
+        resource2capacity: dict[str, int] = None,
         _raise_exceptions: bool = False,
     ) -> "Pareto":
         """
@@ -456,12 +395,12 @@ class Pareto:
             self.free_to_loop_index(shared_loop_index, live_tensors=live_tensors)
         except Exception as e:
             print(e)
-            self.parents[0].merge_next(*self.parents[1:], _raise_exceptions=True).check_correctness(self.parents[3])
+            self.parents[0].merge_next(*self.parents[1:], _raise_exceptions=True).check_reservations(self.parents[3])
             raise e
         self.shift_bottom_reservation_left(shared_loop_index)
         self._make_reservations()
         right._make_reservations()
-
+        
         # if duplicated_aliased_tensors:
         #     right = right.copy()
         #     right.free(duplicated_aliased_tensors)
@@ -498,7 +437,7 @@ class Pareto:
             # tree, add the above-this-level reservation from the left tree. If there is a matching
             # node in the left tree, then we'll add this node to it in the next step.
             for resource in iter_reservations(right.right_reservations):
-                if (source := self.get_reservation_at_level(resource, nloops - 1)) is None:
+                if (source := self.get_reservation_or_parent(resource, nloops - 1)) is None:
                     continue
                 target = nameloop2col(resource, nloops)
                 # If there's a merged version column, then it's in both trees
@@ -508,7 +447,7 @@ class Pareto:
             # For LEFT tree, LEFT reservations: Add the immediately-above
             # reservation from the right tree.
             for resource in iter_reservations(self.left_reservations):
-                if (source := right.get_reservation_at_level(resource, nloops - 1)) is None:
+                if (source := right.get_reservation_or_parent(resource, nloops - 1)) is None:
                     continue
                 right_merge_source = source + "_RIGHT_MERGE"
                 target = nameloop2col(resource, nloops, left=True)
@@ -518,7 +457,7 @@ class Pareto:
             # the right tree. This will double-count reservations that are in both branches,
             # so we remove them later.
             for resource in iter_reservations(self.right_reservations):
-                if (source := right.get_reservation_at_level(resource, nloops)) is None:
+                if (source := right.get_reservation_or_parent(resource, nloops)) is None:
                     continue
                 right_merge_source = source + "_RIGHT_MERGE"
                 target = nameloop2col(resource, nloops)
@@ -541,12 +480,27 @@ class Pareto:
                 df.loc[:, target] += df[source]
         df = df.drop(columns=dropcols)
         try:
-            result = Pareto(df, skip_pareto=True)
+            result = Pareto(df, skip_pareto=True, check_above_subset_below=False)
+            if not CHECK_CORRECTNESS:
+                result.limit_capacity(resource2capacity)
             # result._draw_index(0, live_tensors, self._get_target_path())
+            result.check_above_subset_below(live_tensors)
             # Remove tensors that were allocated in both branches and got added
             # together. We can do this after pareto calculation because it affects
             # all mappings equally.
-            result.free(s for s in shared_storage if s.above_loop_index <= shared_loop_index)
+            # print(f"Freeing {[s for s in shared_storage if s.above_loop_index <= shared_loop_index]}")
+            # print(f"Freeing {list(duplicated_aliased_tensors)}")
+            # print(f"Allocating {[s for s in still_live_reservations if s.above_loop_index > shared_loop_index]}")
+            
+            shared_to_free = [s for s in shared_storage if s.above_loop_index <= shared_loop_index]
+            live_to_alloc = [ s for s in still_live_reservations if s.above_loop_index > shared_loop_index]
+            # self.adjust_reservations(
+            #     alloc=live_to_alloc,
+            #     free=itertools.chain(shared_to_free, duplicated_aliased_tensors),
+            # )
+            
+            result.free((s for s in shared_storage if s.above_loop_index <= shared_loop_index))
+            result.free(duplicated_aliased_tensors)
             result.alloc(s for s in still_live_reservations if s.above_loop_index > shared_loop_index)
             result.max_right_to_left()
             if not CHECK_CORRECTNESS:
@@ -560,14 +514,17 @@ class Pareto:
                 right,
                 shared_loop_index,
                 live_tensors,
-                shared_storage=shared_storage,
+                shared_storage,
+                still_live_reservations,
+                duplicated_aliased_tensors,
                 _raise_exceptions=True,
             )
 
 
         if CHECK_CORRECTNESS:
             try:
-                result.check_correctness(live_tensors)
+                result.check_above_subset_below(live_tensors)
+                result.check_reservations(live_tensors)
                 # result.parents = [self, right, shared_loop_index, live_tensors, shared_storage, still_live_reservations, duplicated_aliased_tensors]
             except Exception as e:
                 if _raise_exceptions:
@@ -601,137 +558,85 @@ class Pareto:
         graph = pydot.Dot(graph_type="digraph", ranksep="0.2", nodesep="0.2")
         looptree.to_pydot(graph)
         row = self.data.iloc[index]
-        all_data = [
+        all_data = sorted(
             f"{k}: {v}" for k, v in row.items() if k not in DICT_COLUMNS and k != LOGSTRING
-        ]
+        )
         data_str = "\n".join(all_data)
         graph.add_node(pydot.Node("data", label=data_str, shape="plaintext"))
         with open(to_file, "wb") as f:
             f.write(graph.create_png())
     
-    def free(self, tensors: Iterable[TensorStorage]):
-        self.alloc(tensors, _negate=True)
-
-    def alloc(self, tensors: Iterable[TensorStorage], _negate: bool = False):
-        if isinstance(tensors, TensorStorage):
-            self.alloc([t], _negate=_negate)
-            return
-
+    def _adjust_reservations_one_resource(
+        self,
+        resource: str,
+        alloc: Iterable[TensorStorage],
+        free: Iterable[TensorStorage],
+    ):
+        # Iterate through each reservation and level
         targets = defaultdict(int)
-        for t in tensors:
-            # Right: Must reserve at the above_loop_index level. If there are
-            # reservations at lower levels, add to those too
-            resource, above_loop_index = t.resource_name, t.above_loop_index
-            self.right_reservations.setdefault(resource, set()).add(above_loop_index)
-            right_targets = [r for r in self.right_reservations[resource] if r >= above_loop_index]
-
-            # Left: If there are reservations at lower levels, add to those too
-            left_targets = [r for r in self.left_reservations.get(resource, set()) if r > above_loop_index]
-            
-            for r in right_targets:
-                targets[nameloop2col(resource, r)] += t.size
-            for r in left_targets:
-                targets[nameloop2col(resource, r, left=True)] += t.size
+        for tensors, negate in [
+            (alloc, False),
+            (free, True),
+        ]:
+            if not tensors:
+                continue
                 
-        for col, size in targets.items():
-            if _negate:
-                size = -size
-            
-            if col in self.data:
-                self.data.loc[:, col] += size
-            else:
-                self.data.loc[:, col] = size
-
-    def check_correctness(self, live_tensors: set[int]):
-        from fastfusion.visualization.reservationtree import mappings2reservationtree
-        from fastfusion.joining.sim import TensorStorage
-        assert not self.data.isnull().values.any(), f"NaN in {self.data}"
-
-        self = self.copy()
-
-        def fail(index):
-            # draw_looptree(self.data.iloc[index], live_tensors)
-            self._draw_index(index, live_tensors, self._get_target_path(suffix="fail"))
-            all_tensors = set(t for tn in r[MAPPING].values() for t in tn.storage)
-            all_tensors = TensorStorage.get_backing_stores(all_tensors)
-            for t in sorted(all_tensors):
-                print(f"{t.__repr__()},")
+            cur_tensors = [t for t in tensors if t.resource_name == resource]
+            if not cur_tensors:
+                continue
                 
-        self.free_to_loop_index(-1, check_correctness=False)
-        self.squish_left_right(-1)
-
-        for i, r in self.data.iterrows():
-            looptree = mappings2reservationtree(
-                r[MAPPING],
-                r.get(STATS, None),
-                # skip_backing_tensors_in_right_branch=live_tensors,
-                still_live_tensors=live_tensors,
-            )
-            reservations = dict(looptree.get_reservations())
-            
-            """
-            # In intra-layer mapper:
-            # - For null copy Einsums, reserve one and only one of the copies
-            # - For null copy Einsums, get rid of all non-reservation columns
-            # 
-            # In inter-layer mapper:
-            # - If there's no non-reservation columns then it's a copy Einsum
-            
-            Scratch that, there's some weirdness going on. We do need to reserve if
-            it's a non-null copy Einsum, but it's looking like those reservations aren't
-            going through.
-            """
-
-            # If r doesn't have any columns, continue. It's a copy Einsum so it has no
-            # stats.
-            if r.empty:
+            # We also allocate at any levels below the above_loop_index level
+            for t in cur_tensors:
+                targets[t.above_loop_index, False] += -t.size if negate else t.size
+                for level in self.right_reservations[resource]:
+                    if level > t.above_loop_index:
+                        targets[level, False] += -t.size if negate else t.size
+                for level in self.left_reservations.get(resource, set()):
+                    if level > t.above_loop_index:
+                        targets[level, True] += -t.size if negate else t.size
+                        
+        # Now apply the allocations. Sort so we go from top to bottom in case
+        # there are maxes that propagate down.
+        for (level, left), size in sorted(targets.items(), key=lambda x: x[0], reverse=True):
+            target = nameloop2col(resource, level, left=left)
+            if target in self.data:
+                self.data.loc[:, target] += size
                 continue
 
-            for k, v in reservations.items():
-                col = self.get_reservation_at_level(k, 0)
-                if str(k) == "0":
-                    continue
-                if col not in self.data.columns:
-                    got = r[[c for c in self.data.columns if col2nameloop(c) is not None]]
-                    fail(i)
-                    raise ValueError(f"Missing {k}: Expected {reservations}. Got: {got}")
-                if r[col] != v:
-                    got = r[[c for c in self.data.columns if col2nameloop(c) is not None]]
-                    fail(i)
-                    looptree = mappings2reservationtree(
-                        r[MAPPING],
-                        r.get(STATS, None),
-                        # skip_backing_tensors_in_right_branch=live_tensors,
-                        still_live_tensors=live_tensors,
-                    )
-                    raise ValueError(
-                        f"Mismatched {k}: {v} != {r[col]}. Expected {reservations}. Got: {got}"
-                    )
-        return
-
-
-        # df = pd.merge(left, right, how="cross", suffixes=MERGE_SUFFIXES)
-        # shared_columns = set(left.columns) & set(right.columns) - RESERVED_COLUMNS
-        # dropcols = []
+            # We're creating a new column, so copy allocations from any parents
+            source = self.get_reservation_or_parent(resource, level-1)
+            # source is None -> We're at the top level, no one to inherit from
+            if source is not None:
+                size = self.data[source] + size
+            self.data[target] = size
         
-        # prev_left = None
-        # prev_right = None
-        # for resource_name in resources:
-        #     for loop_index in range(shared_loop_index):
-        #         left = nameloop2col(resource_name, loop_index, left=True) + MERGE_SUFFIXES[0]
-        #         right = nameloop2col(resource_name, loop_index) + MERGE_SUFFIXES[1]
-        #         df.iloc[:, right] = df[left] + df[right]
+    def adjust_reservations(
+            self,
+            alloc: Iterable[TensorStorage],
+            free: Iterable[TensorStorage],
+        ):
+        # Get all unique resources
+        all_resources = set()
+        for tensors in [alloc, free]:
+            all_resources.update(t.resource_name for t in tensors)
+            
+        # Handle each resource separately
+        for resource in all_resources:
+            cur_alloc = [t for t in alloc if t.resource_name == resource]
+            cur_free = [t for t in free if t.resource_name == resource]
+            self._adjust_reservations_one_resource(resource, cur_alloc, cur_free)
                 
-        
-        # resource2column_left, resource2column_right = {}, {}
-        # for source, target in [
-        #     (left, resource2column_left),
-        #     (right, resource2column_right),
-        # ]:
-        #     for c in source.columns:
-        #         if (name_nloops := col2nameloop(c)) is not None:
-        #             name, nloops = name_nloops
-        #             target.setdefault(name, {})[nloops] = c
+    def fail(self, index, live_tensors):
+        from fastfusion.visualization.reservationtree import mappings2reservationtree
+        from fastfusion.joining.sim import TensorStorage
+        r = self.data.iloc[index]
+        assert not self.data.isnull().values.any(), f"NaN in {self.data}"
+        self = self.copy()
+        self._draw_index(index, live_tensors, self._get_target_path(suffix="fail"))
+        all_tensors = set(t for tn in r[MAPPING].values() for t in tn.storage)
+        all_tensors = TensorStorage.get_backing_stores(all_tensors)
+        for t in sorted(all_tensors):
+            print(f"{t.__repr__()},")
 
         # Pipeline:
         # - Need to share temporal loops up to the spatial loop index
@@ -764,48 +669,6 @@ class Pareto:
         # - Sequentially: Fetch any below-shared-loop resources for the first iteration of all operations
         # - In parallel: Fetch all below-shared-loop resources for all operations in all subsequent iterations
 
-        # df = free_to_loop_index(df, next_shared_loop_index + 1)
-        # for resource, capacity in resource2capacity.items():
-        #     colname = nameloop2col(resource, 0)
-        #     if colname in df:
-        #         if capacity is not None:
-        #             df = df[df[colname] <= capacity]
-        #         del df[colname]
-
-        df.drop(columns=dropcols, inplace=True)
-        if not CHECK_CORRECTNESS:
-            cols = [c for c in df.columns if c in RESERVED_COLUMNS or not is_merge_col(c)]
-            if pareto_prune:
-                df = makepareto(df)
-
-        for k in DICT_COLUMNS:
-            if k not in left.columns:
-                continue
-            c0, c1 = k + MERGE_SUFFIXES[0], k + MERGE_SUFFIXES[1]
-            df[k] = (
-                df.apply(lambda row: {**row[c0], **row[c1]}, axis=1) if len(df) > 0 else []
-            )
-        df = df[[c for c in df.columns if not is_merge_col(c)]]
-
-        cols = [c for c in df.columns if c not in DICT_COLUMNS]
-
-        if IN_PROGRESS_STATS in df.columns:
-            first_row = df.iloc[0]
-            einsums = list(first_row[IN_PROGRESS_STATS].keys())
-            last = einsums[-1]
-            for i, r in df[cols].iterrows():
-                df.at[i, IN_PROGRESS_STATS][last] = r.to_dict()
-
-        if CHECK_CORRECTNESS:
-            check_correctness(df, live_tensors)
-            if pareto_prune:
-                df = makepareto(df)
-
-        # Assert no NaNs
-        assert not df.isnull().values.any()
-
-        return Pareto(df, skip_pareto=True) if as_pareto else df
-
     def add_tensor(self, tensor):
         if len(self.data) == 0:
             return
@@ -837,28 +700,34 @@ class Pareto:
         return p
 
     def copy(self) -> "Pareto":
-        p = Pareto(self.data.copy(), skip_pareto=True)
+        p = Pareto(self.data.copy(), skip_pareto=True, check_above_subset_below=False)
         p.parents = copy.deepcopy(self.parents)
         return p
 
-    def limit_capacity(
-        self, n: int, resource2capacity: dict[str, Optional[int]]
-    ) -> bool:
+    def limit_capacity(self, resource2capacity: dict[str, Optional[int]]) -> bool:
+        # TODO: Incorporate next shared loop index
         resource2capacity = resource2capacity or {}
-        if resource2capacity:
-            assert all(isinstance(v, str) for v in resource2capacity.keys())
-        for c in self.data.columns:
-            if (name_nloops := col2nameloop(c)) is not None:
-                name, nloops = name_nloops
-                if name in resource2capacity:
-                    capacity = resource2capacity.get(name)
-                    if capacity is not None:
-                        self.data = self.data[self.data[c] <= capacity]
-                        if nloops == n:
-                            del self.data[c]
-                else:
-                    del self.data[c]
-        self._make_reservations()
+        for resource, capacity in resource2capacity.items():
+            if capacity is None:
+                continue
+
+            # Right reservations: Only check the greatest-index level
+            right_loops = self.right_reservations.get(resource, set())
+            if right_loops:
+                n = max(right_loops)
+                col = nameloop2col(resource, n)
+                self.data = self.data[self.data[col] <= capacity]
+
+            # Left reservations: Check all levels. If a loop is 0,
+            # then we can drop the column.
+            left_loops = self.left_reservations.get(resource, set())
+            for l in sorted(left_loops):
+                col = nameloop2col(resource, l, left=True)
+                if col in self.data:
+                    self.data = self.data[self.data[col] <= capacity]
+                    if l == 0:
+                        del self.data[col]
+                        self.left_reservations[resource].discard(l)
 
     def squish_left_right(self, shared_loop_index: int = None) -> bool:
         needs_pareto = False
@@ -879,177 +748,89 @@ class Pareto:
             
         return needs_pareto
 
-    def filter_by_mapping_hashes(self, hashes: set[int]):
-        self.data = self.data[
-            self.data[MAPPING_HASH].apply(
-                lambda x: all(i in hashes for i in x.values())
-            )
-        ]
-        return self
-
     def make_pareto(self):
-        self._data = makepareto(self.data)
-        self._make_reservations()
+        if len(self._data) <= 1:
+            return
+        columns = [
+            c for c in self.data.columns if c not in RESERVED_COLUMNS and not is_merge_col(c)
+        ]
+        self._data = self.data[paretoset(self.data[columns])].reset_index(drop=True)
 
     def has_reservations(self):
         return any(col2nameloop(c) is not None for c in self.data.columns)
 
-    def get_reservations(self):
-        return tuple(
-            sorted(c for c in self.data.columns if col2nameloop(c) is not None)
-        )
 
+    # ============================================================================
+    # Checking functions
+    # ============================================================================
+    def check_above_subset_below(self, live_tensors: set[str]=fzs()):
+        assert not self.data.isnull().values.any(), f"NaN in {self.data}"
+        targets = []
+        for left, reservations_dict in [
+            (True, self.left_reservations),
+            (False, self.right_reservations),
+        ]:
+            for resource, reservations in reservations_dict.items():
+                for r in reservations:
+                    above = self.get_reservation_or_parent(resource, r - 1)
+                    if above is not None:
+                        below = nameloop2col(resource, r, left=left)
+                        targets.append((above, below))
+                
+        for above, below in targets:
+            if (self.data[below] < self.data[above]).any():
+                first_failing_index = (self.data[below] < self.data[above]).idxmax()
+                fail_row = self.data.iloc[first_failing_index]
+                error = f"""
+                {below} column is less than {above} column. A reservation at
+                a level should include all reservations above it. There were {len(fail_row)} rows
+                with this error. One example: {fail_row}
+                """
+                self.fail(first_failing_index, live_tensors)
+                raise ValueError(error)
+            
 
-import unittest
+    def check_reservations(self, live_tensors: set[int]):
+        from fastfusion.visualization.reservationtree import mappings2reservationtree
+        from fastfusion.joining.sim import TensorStorage
+        assert not self.data.isnull().values.any(), f"NaN in {self.data}"
 
+        self = self.copy()
 
-class ParetoTest(unittest.TestCase):
-    def test_pareto(self):
-        occ_key = nameloop2col("GLB", 5)
-        data = pd.DataFrame({"A": [1, 2], occ_key: [2, 1], LOGSTRING: [{"A": "A"}] * 2})
-        Pareto(data)
+        self.free_to_loop_index(-1, check_correctness=False)
+        self.squish_left_right(-1)
 
-    def test_vertical_combine(self):
-        occ_key = nameloop2col("GLB", 5)
-        data1 = pd.DataFrame(
-            {
-                "A": [1, 3, 3],
-                "B": [3, 1, 3],
-                occ_key: [3, 3, 3],
-                LOGSTRING: [{"A": "A"}] * 3,
-            }
-        )
-        data2 = pd.DataFrame(
-            {
-                "A": [3, 3, 3],
-                "B": [3, 3, 3],
-                occ_key: [3, 3, 1],
-                LOGSTRING: [{"A": "A"}] * 3,
-            }
-        )
+        for i, r in self.data.iterrows():
+            looptree = mappings2reservationtree(
+                r[MAPPING],
+                r.get(STATS, None),
+                # skip_backing_tensors_in_right_branch=live_tensors,
+                still_live_tensors=live_tensors,
+            )
+            reservations = dict(looptree.get_reservations())
+            
+            # If r doesn't have any columns, continue. It's a copy Einsum so it has no
+            # stats.
+            if r.empty:
+                continue
 
-        p1 = Pareto(data1)
-        self.assertEqual(len(p1.data), 2)
-        p2 = Pareto(data2)
-        self.assertEqual(len(p2.data), 1)
-        pd12 = Pareto.concat([p1, p2])
-        self.assertEqual(len(pd12.data), 3)
-
-    def test_merge(self):
-        data1 = pd.DataFrame(
-            {"A": [1, 3, 3], "B": [3, 1, 3], LOGSTRING: [{"A": "A"}] * 3}
-        )
-        data2 = pd.DataFrame(
-            {"A": [3, 3, 3], "B": [3, 3, 3], LOGSTRING: [{"A": "A"}] * 3}
-        )
-        p = Pareto(data1).merge_next(Pareto(data2), 0)
-        d = p.data
-        self.assertEqual(d["A"].tolist(), [4, 6])
-        self.assertEqual(d["B"].tolist(), [6, 4])
-
-    def test_merge_shared_resources(self):
-        occ_key = nameloop2col("GLB", 4)
-        data1 = pd.DataFrame(
-            {
-                "A": [1, 3, 3],
-                "B": [3, 1, 3],
-                LOGSTRING: [{"A": "A"}] * 3,
-                occ_key: [3, 3, 3],
-            }
-        )
-        data2 = pd.DataFrame(
-            {
-                "A": [3, 3, 3],
-                "B": [3, 3, 3],
-                LOGSTRING: [{"A": "A"}] * 3,
-                occ_key: [2, 2, 2],
-            }
-        )
-        p = Pareto(data1).merge_next(Pareto(data2), 5)
-        d = p.data
-        self.assertEqual(d["A"].tolist(), [4, 6])
-        self.assertEqual(d["B"].tolist(), [6, 4])
-        self.assertEqual(d[occ_key].tolist(), [5, 5])
-
-        p2 = Pareto(data1).merge_next(Pareto(data2), 3)
-        d = squish_left_right(p2.data)
-        self.assertEqual(d["A"].tolist(), [4, 6])
-        self.assertEqual(d["B"].tolist(), [6, 4])
-        self.assertEqual(d[occ_key].tolist(), [3, 3])
-
-    def test_merge_shared_resources_2nloops(self):
-        occ_key_1 = nameloop2col("GLB", 0)
-        occ_key_2 = nameloop2col("GLB", 1)
-        data1 = pd.DataFrame(
-            {
-                "A": [1, 3, 3],
-                "B": [3, 1, 3],
-                LOGSTRING: [{"A": "A"}] * 3,
-                occ_key_1: [3, 3, 3],
-                occ_key_2: [8, 8, 8],
-            }
-        )
-        data2 = pd.DataFrame(
-            {
-                "A": [3, 3, 3],
-                "B": [3, 3, 3],
-                LOGSTRING: [{"A": "A"}] * 3,
-                occ_key_1: [4, 4, 4],
-                occ_key_2: [6, 6, 6],
-            }
-        )
-
-        # 0 --> GLOBAL RESOURCE
-        # 1 --> Shared with all who share ONE loop
-
-        # occ_key_1       occ_key_1    Level 0 shared
-        # for             for          Co-tiled with nloops 1 merge
-        # occ_key_2       occ_key_2    Level 1 shared
-        # for             for          Co-tiled with nloops 2 merge
-
-        # Untiled fused --> Max everything
-        d = Pareto(data1).merge_next(Pareto(data2), -1).data
-        d = squish_left_right(d)
-        self.assertEqual(d[occ_key_1].tolist(), [11, 11])
-
-        # Tiled at nloops 1 --> Sum everything stored at 0
-        d = Pareto(data1).merge_next(Pareto(data2), 0).data
-        d = squish_left_right(d)
-        self.assertEqual(d[occ_key_1].tolist(), [7, 7])
-        self.assertEqual(d[occ_key_2].tolist(), [8, 8])
-
-        # Tiled at nloops 2 --> Sum everything stored at 0 and 1
-        d = Pareto(data1).merge_next(Pareto(data2), 1).data
-        d = squish_left_right(d)
-        self.assertEqual(d[occ_key_1].tolist(), [7, 7])
-        self.assertEqual(d[occ_key_2].tolist(), [14, 14])
-
-    def test_free_to_loop_index(self):
-        # 0 --> Untiled fused
-        occ_key_1 = nameloop2col("GLB", 0)
-        occ_key_2 = nameloop2col("GLB", 1)
-        data1 = pd.DataFrame(
-            {
-                "A": [1, 3, 3],
-                "B": [3, 1, 3],
-                LOGSTRING: [{"A": "A"}] * 3,
-                occ_key_1: [3, 3, 3],
-                occ_key_2: [8, 8, 8],
-            }
-        )
-
-        p = Pareto(data1)
-        d = p.data
-        p.free_to_loop_index(2)
-        self.assertEqual(
-            d.columns.tolist(), ["A", "B", LOGSTRING, occ_key_1, occ_key_2]
-        )
-
-        p.free_to_loop_index(0)
-        d = p.data
-        self.assertEqual(d.columns.tolist(), ["A", "B", LOGSTRING, occ_key_1])
-        self.assertEqual(d[occ_key_1].tolist(), [11, 11])
-
-
-if __name__ == "__main__":
-    unittest.main()
+            for k, v in reservations.items():
+                col = self.get_reservation_or_parent(k, 0)
+                if str(k) == "0":
+                    continue
+                if col not in self.data.columns:
+                    got = r[[c for c in self.data.columns if col2nameloop(c) is not None]]
+                    self.fail(i, live_tensors)
+                    raise ValueError(f"Missing {k}: Expected {reservations}. Got: {got}")
+                if r[col] != v:
+                    got = r[[c for c in self.data.columns if col2nameloop(c) is not None]]
+                    self.fail(i, live_tensors)
+                    looptree = mappings2reservationtree(
+                        r[MAPPING],
+                        r.get(STATS, None),
+                        # skip_backing_tensors_in_right_branch=live_tensors,
+                        still_live_tensors=live_tensors,
+                    )
+                    raise ValueError(
+                        f"Mismatched {k}: {v} != {r[col]}. Expected {reservations}. Got: {got}"
+                    )
