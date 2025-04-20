@@ -64,9 +64,32 @@ def dict_cached(func):
 
     return wrapper
 
-
-# TODO: Make these tuples?
-
+def error_check_wrapper(func):
+    if not CHECK_CORRECTNESS:
+        return func
+    
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        try:
+            prev_args, prev_kwargs = copy.deepcopy(args), copy.deepcopy(kwargs)
+            return func(*args, **kwargs)
+        except Exception as e:
+            print(f'EXCEPTION: {e}')
+            live_tensors = set()
+            if 'live_tensors' in kwargs:
+                live_tensors = kwargs['live_tensors']
+            else:
+                argnames = func.__code__.co_varnames[:func.__code__.co_argcount]
+                if 'live_tensors' in argnames:
+                    idx = argnames.index('live_tensors')
+                    if idx < len(args):
+                        live_tensors = args[idx]
+            for prev_arg in itertools.chain(prev_args, prev_kwargs.values()):
+                if isinstance(prev_arg, Pareto):
+                    prev_arg.fail(0, live_tensors)
+                break
+            func(*args, **kwargs) # For debugging
+    return wrapper
 
 @dict_cached
 def col2nameloop(x):
@@ -99,21 +122,46 @@ def is_merge_col(c):
 
 
 def add_to_col(df, target, source):
-    if target in df:
-        df.loc[:, target] = df[target] + df[source]
-    else:
-        df.loc[:, target] = df[source]
+    df.loc[:, target] = df[target] + df[source] if target in df else df[source]
 
 
 def max_to_col(df, target, source):
-    if target in df:
-        df.loc[:, target] = df[[target, source]].max(axis=1)
-    else:
-        df.loc[:, target] = df[source]
+    df.loc[:, target] = df[[target, source]].max(axis=1) if target in df else df[source]
 
 
 def is_special_col(c):
     return c in RESERVED_COLUMNS or col2nameloop(c) is not None
+
+# Pipeline:
+# - Need to share temporal loops up to the spatial loop index
+#   Resources:
+#   - Energy
+#   - PE utilization
+#   - Buf utilization
+#   - Buf accesses (for BW calculation later)
+
+# - Options:
+#   - Non-pipelined: Sum resources above shared loops, max below.
+#   - Pipelined: Sum resources above shared loops, max below. Sum
+#     PE utilization. Latency is pipeline latency summed.
+#
+#  *  Can't bake into compatiblity unless we have a notion of left vs.
+#     right pipelined.
+
+# PIPELINE CHANGES REQUIRED:
+# - Latency above above loop index (first tile), below (all subsequent tiles)
+# - Mapping includes information for how may be fused:
+#   - Pipelined: Max below latencies,
+#   - Non-pipelined:
+# Shared resources:
+# -
+# SEQUENTIAL:
+# - In parallel: Fetch all above-shared-loop resources for all operations
+# - Sequentially: Fetch any below-shared-loop resources for all operations
+# PIPELINE:
+# - In parallel: Fetch all above-shared-loop resources for all operations
+# - Sequentially: Fetch any below-shared-loop resources for the first iteration of all operations
+# - In parallel: Fetch all below-shared-loop resources for all operations in all subsequent iterations
 
 
 # Above index 0: Freed when Einsum fully terminates
@@ -124,20 +172,6 @@ def is_special_col(c):
 
 # Shared index -1: Sum -1 resources, max everyone below
 # Shared index 0: Sum 0 resources, max everyone below
-
-
-def quick_pareto(df):
-    df["chosen"] = False
-    i = 0
-    while i != len(df):
-        i += 1
-        # Pick the entry which is not chosen & has the lowest first columns
-        idx = df.loc[~df["chosen"], df.columns[0]].idxmin()
-        df.loc[idx, "chosen"] = True
-        dominated = (df.iloc[:, :-1] >= df.loc[idx, df.columns[:-1]]).all(axis=1)
-        df = df[~dominated]
-    return df.drop(columns=["chosen"])
-
 
 def makepareto(data: pd.DataFrame) -> pd.DataFrame:
     columns = [
@@ -179,7 +213,7 @@ class Pareto:
         if check_above_subset_below:
             self.check_above_subset_below()
 
-            
+    @error_check_wrapper
     def fill_reservation_cols(self, columns: set | str):
         targets = []
         if columns == "auto":
@@ -208,7 +242,8 @@ class Pareto:
             assert above in self.data.columns
             assert below in self.data.columns
             max_to_col(self.data, below, above)
-            
+
+    @error_check_wrapper
     def max_right_to_left(self):
         for resource, reservations in self.left_reservations.items():
             for r in reservations:
@@ -221,7 +256,8 @@ class Pareto:
     @property
     def data(self) -> pd.DataFrame:
         return self._data
-        
+
+    @error_check_wrapper
     def _make_reservations(self) -> Tuple[dict[str, list], dict[str, list]]:
         """
         Create a dictionary of reservations for each resource.
@@ -235,12 +271,13 @@ class Pareto:
                 target = self.left_reservations if is_left_col(c) else self.right_reservations
                 target.setdefault(name, set()).add(nloops)
                 assert nloops >= 0
-                
+
+    @error_check_wrapper
     def free_to_loop_index(
             self, 
             loop_index: int, 
             live_tensors: set[int] = None,
-            check_correctness=CHECK_CORRECTNESS,
+            check_correctness: bool = CHECK_CORRECTNESS,
         ) -> bool:
         """
            A  B
@@ -262,9 +299,6 @@ class Pareto:
         if loop_index == self._prev_free_to_loop_index:
             return False
         self._prev_free_to_loop_index = loop_index
-        
-        if check_correctness:
-            before = self.copy()
 
         drop_columns = []
         for resource in set(self.left_reservations) | set(self.right_reservations):
@@ -303,6 +337,7 @@ class Pareto:
 
         return len(drop_columns) != 0
     
+    @error_check_wrapper
     def get_reservation_or_parent(
             self, 
             name: str, 
@@ -326,7 +361,18 @@ class Pareto:
             level -= 1
         return None
 
+    @error_check_wrapper
     def shift_bottom_reservation_left(self, shared_loop_index: int):
+        """
+        Shifts the bottom reservation from right to left.
+        Example:
+            Before:                After:
+            A  B                   A  B
+             / | --- 0             / | --- 0
+            C  D                  C  D
+               | --- 1             /   --- 1
+               E                  E  
+        """
         for resource in self.right_reservations:
             if shared_loop_index + 1 not in self.right_reservations[resource]:
                 continue
@@ -340,7 +386,7 @@ class Pareto:
                 self.data.drop(columns=[source], inplace=True)
             else:
                 self.data.rename(columns={source: target}, inplace=True)
-    
+
     @staticmethod
     def _get_target_path(suffix: str = None) -> str:
         import os
@@ -352,17 +398,24 @@ class Pareto:
             i += 1
         assert i <= 50, "Too many images"
         return os.path.join(f, f"test_{i}{suffix}.png")
-    
+
+    def get_max_loop_index(self):
+        return max(
+            max((max(r, default=-1) for r in self.right_reservations.values()), default=-1),
+            max((max(r, default=-1) for r in self.left_reservations.values()), default=-1),
+        )
+
+    @error_check_wrapper
     def merge_next(
         self,
         right: "Pareto",
         shared_loop_index: int,
+        next_shared_loop_index: int,
         live_tensors: set[int],
         shared_storage: set[TensorStorage],
         still_live_reservations: set[TensorStorage],
         duplicated_aliased_tensors: set[TensorStorage],
         resource2capacity: dict[str, int] = None,
-        _raise_exceptions: bool = False,
     ) -> "Pareto":
         """
             A  B            A2
@@ -381,29 +434,8 @@ class Pareto:
                |
                F2+D
         """
-        left = self
-        prev_right = right
-        self = copy.deepcopy(self)
-        right = copy.deepcopy(right)
-
-        # # These tensors will be re-added by the next Einsum and we don't want to
-        # # double count them
-        # for t in shared_storage:
-        #     self.free(t)
-        
-        try:
-            self.free_to_loop_index(shared_loop_index, live_tensors=live_tensors)
-        except Exception as e:
-            print(e)
-            self.parents[0].merge_next(*self.parents[1:], _raise_exceptions=True).check_reservations(self.parents[3])
-            raise e
+        self.free_to_loop_index(shared_loop_index, live_tensors=live_tensors)
         self.shift_bottom_reservation_left(shared_loop_index)
-        self._make_reservations()
-        right._make_reservations()
-        
-        # if duplicated_aliased_tensors:
-        #     right = right.copy()
-        #     right.free(duplicated_aliased_tensors)
 
         assert not right.left_reservations, f"{right.left_reservations} is not None"
 
@@ -417,10 +449,8 @@ class Pareto:
             
         max_nloops = max(
             shared_loop_index,
-            max((max(r, default=-1) for r in self.right_reservations.values()), default=-1),
-            max((max(r, default=-1) for r in self.left_reservations.values()), default=-1),
-            max((max(r, default=-1) for r in right.right_reservations.values()), default=-1),
-            max((max(r, default=-1) for r in right.left_reservations.values()), default=-1),
+            self.get_max_loop_index(),
+            right.get_max_loop_index()
         )
 
         df = pd.merge(self.data, right.data, how="cross", suffixes=MERGE_SUFFIXES)
@@ -479,93 +509,30 @@ class Pareto:
             else:
                 df.loc[:, target] += df[source]
         df = df.drop(columns=dropcols)
-        try:
-            result = Pareto(df, skip_pareto=True, check_above_subset_below=False)
-            if not CHECK_CORRECTNESS:
-                result.limit_capacity(resource2capacity)
-            # result._draw_index(0, live_tensors, self._get_target_path())
-            result.check_above_subset_below(live_tensors)
-            # Remove tensors that were allocated in both branches and got added
-            # together. We can do this after pareto calculation because it affects
-            # all mappings equally.
-            # print(f"Freeing {[s for s in shared_storage if s.above_loop_index <= shared_loop_index]}")
-            # print(f"Freeing {list(duplicated_aliased_tensors)}")
-            # print(f"Allocating {[s for s in still_live_reservations if s.above_loop_index > shared_loop_index]}")
-            
-            shared_to_free = [s for s in shared_storage if s.above_loop_index <= shared_loop_index]
-            live_to_alloc = [ s for s in still_live_reservations if s.above_loop_index > shared_loop_index]
-            # self.adjust_reservations(
-            #     alloc=live_to_alloc,
-            #     free=itertools.chain(shared_to_free, duplicated_aliased_tensors),
-            # )
-            
-            result.free((s for s in shared_storage if s.above_loop_index <= shared_loop_index))
-            result.free(duplicated_aliased_tensors)
-            result.alloc(s for s in still_live_reservations if s.above_loop_index > shared_loop_index)
-            result.max_right_to_left()
-            if not CHECK_CORRECTNESS:
-                result.make_pareto()
-
-        except Exception as e:
-            if _raise_exceptions:
-                raise e
-            print(e)
-            self.merge_next(
-                right,
-                shared_loop_index,
-                live_tensors,
-                shared_storage,
-                still_live_reservations,
-                duplicated_aliased_tensors,
-                _raise_exceptions=True,
-            )
-
+        result = Pareto(df, skip_pareto=True, check_above_subset_below=False)
+        result.check_above_subset_below(live_tensors)
+        # Remove tensors that were allocated in both branches and got added
+        # together. We can do this after pareto calculation because it affects
+        # all mappings equally.
+        shared_to_free = [s for s in shared_storage if s.above_loop_index <= shared_loop_index]
+        live_to_alloc = [s for s in still_live_reservations if s.above_loop_index > shared_loop_index]
+        result.adjust_reservations(
+            alloc=live_to_alloc,
+            free=itertools.chain(shared_to_free, duplicated_aliased_tensors),
+        )
 
         if CHECK_CORRECTNESS:
-            try:
-                result.check_above_subset_below(live_tensors)
-                result.check_reservations(live_tensors)
-                # result.parents = [self, right, shared_loop_index, live_tensors, shared_storage, still_live_reservations, duplicated_aliased_tensors]
-            except Exception as e:
-                if _raise_exceptions:
-                    raise e
-                # raise e
-                print(e)
-                # result.free(shared_storage)
-                # x = self.parents[0].merge_next(*self.parents[1:])
-                # y = x.merge_next(right, shared_loop_index, live_tensors, shared_storage)
-                left.merge_next(
-                    prev_right,
-                    shared_loop_index,
-                    live_tensors,
-                    shared_storage=shared_storage,
-                    still_live_reservations=still_live_reservations,
-                    duplicated_aliased_tensors=duplicated_aliased_tensors,
-                    _raise_exceptions=True,
-                )
-            result.make_pareto()
+            result.check_above_subset_below(live_tensors)
+            result.check_reservations(live_tensors)
+
+        result.free_to_loop_index(next_shared_loop_index, live_tensors=live_tensors)
+        result.limit_capacity(resource2capacity)
+        result.max_right_to_left()
+        result.make_pareto()
         
         return result
-    
-    def _draw_index(self, index: int, live_tensors, to_file: str = "test.png"):
-        from fastfusion.visualization.reservationtree import mappings2reservationtree
-        import pydot
-        looptree = mappings2reservationtree(
-            self.data.iloc[index][MAPPING],
-            self.data.iloc[index].get(STATS, None),
-            still_live_tensors=live_tensors,
-        )
-        graph = pydot.Dot(graph_type="digraph", ranksep="0.2", nodesep="0.2")
-        looptree.to_pydot(graph)
-        row = self.data.iloc[index]
-        all_data = sorted(
-            f"{k}: {v}" for k, v in row.items() if k not in DICT_COLUMNS and k != LOGSTRING
-        )
-        data_str = "\n".join(all_data)
-        graph.add_node(pydot.Node("data", label=data_str, shape="plaintext"))
-        with open(to_file, "wb") as f:
-            f.write(graph.create_png())
-    
+
+    @error_check_wrapper
     def _adjust_reservations_one_resource(
         self,
         resource: str,
@@ -574,26 +541,21 @@ class Pareto:
     ):
         # Iterate through each reservation and level
         targets = defaultdict(int)
-        for tensors, negate in [
-            (alloc, False),
-            (free, True),
-        ]:
-            if not tensors:
-                continue
-                
-            cur_tensors = [t for t in tensors if t.resource_name == resource]
-            if not cur_tensors:
-                continue
-                
-            # We also allocate at any levels below the above_loop_index level
-            for t in cur_tensors:
-                targets[t.above_loop_index, False] += -t.size if negate else t.size
-                for level in self.right_reservations[resource]:
-                    if level > t.above_loop_index:
-                        targets[level, False] += -t.size if negate else t.size
-                for level in self.left_reservations.get(resource, set()):
-                    if level > t.above_loop_index:
-                        targets[level, True] += -t.size if negate else t.size
+        
+        # Must allocate at the above_loop_index level
+        for t in itertools.chain(alloc, free):
+            self.right_reservations.setdefault(resource, set()).add(t.above_loop_index)
+
+        for t, negate in [(t, False) for t in alloc] + [(t, True) for t in free]:
+            size = -t.size if negate else t.size
+            targets[t.above_loop_index, False] += size
+            # Allocate at any levels below the above_loop_index level
+            for level in self.right_reservations[resource]:
+                if level > t.above_loop_index:
+                    targets[level, False] += size
+            for level in self.left_reservations.get(resource, set()):
+                if level > t.above_loop_index:
+                    targets[level, True] += size
                         
         # Now apply the allocations. Sort so we go from top to bottom in case
         # there are maxes that propagate down.
@@ -606,68 +568,24 @@ class Pareto:
             # We're creating a new column, so copy allocations from any parents
             source = self.get_reservation_or_parent(resource, level-1)
             # source is None -> We're at the top level, no one to inherit from
-            if source is not None:
-                size = self.data[source] + size
-            self.data[target] = size
-        
+            self.data[target] = size + (self.data[source] if source else 0)
+
+    @error_check_wrapper
     def adjust_reservations(
             self,
             alloc: Iterable[TensorStorage],
             free: Iterable[TensorStorage],
         ):
-        # Get all unique resources
-        all_resources = set()
-        for tensors in [alloc, free]:
-            all_resources.update(t.resource_name for t in tensors)
+        alloc, free = list(alloc), list(free)
+        
+        all_resources = {t.resource_name for t in alloc} | {t.resource_name for t in free}
             
         # Handle each resource separately
         for resource in all_resources:
             cur_alloc = [t for t in alloc if t.resource_name == resource]
             cur_free = [t for t in free if t.resource_name == resource]
-            self._adjust_reservations_one_resource(resource, cur_alloc, cur_free)
-                
-    def fail(self, index, live_tensors):
-        from fastfusion.visualization.reservationtree import mappings2reservationtree
-        from fastfusion.joining.sim import TensorStorage
-        r = self.data.iloc[index]
-        assert not self.data.isnull().values.any(), f"NaN in {self.data}"
-        self = self.copy()
-        self._draw_index(index, live_tensors, self._get_target_path(suffix="fail"))
-        all_tensors = set(t for tn in r[MAPPING].values() for t in tn.storage)
-        all_tensors = TensorStorage.get_backing_stores(all_tensors)
-        for t in sorted(all_tensors):
-            print(f"{t.__repr__()},")
-
-        # Pipeline:
-        # - Need to share temporal loops up to the spatial loop index
-        #   Resources:
-        #   - Energy
-        #   - PE utilization
-        #   - Buf utilization
-        #   - Buf accesses (for BW calculation later)
-
-        # - Options:
-        #   - Non-pipelined: Sum resources above shared loops, max below.
-        #   - Pipelined: Sum resources above shared loops, max below. Sum
-        #     PE utilization. Latency is pipeline latency summed.
-        #
-        #  *  Can't bake into compatiblity unless we have a notion of left vs.
-        #     right pipelined.
-
-        # PIPELINE CHANGES REQUIRED:
-        # - Latency above above loop index (first tile), below (all subsequent tiles)
-        # - Mapping includes information for how may be fused:
-        #   - Pipelined: Max below latencies,
-        #   - Non-pipelined:
-        # Shared resources:
-        # -
-        # SEQUENTIAL:
-        # - In parallel: Fetch all above-shared-loop resources for all operations
-        # - Sequentially: Fetch any below-shared-loop resources for all operations
-        # PIPELINE:
-        # - In parallel: Fetch all above-shared-loop resources for all operations
-        # - Sequentially: Fetch any below-shared-loop resources for the first iteration of all operations
-        # - In parallel: Fetch all below-shared-loop resources for all operations in all subsequent iterations
+            if cur_alloc or cur_free:
+                self._adjust_reservations_one_resource(resource, cur_alloc, cur_free)
 
     def add_tensor(self, tensor):
         if len(self.data) == 0:
@@ -789,10 +707,9 @@ class Pareto:
                 self.fail(first_failing_index, live_tensors)
                 raise ValueError(error)
             
-
+    @error_check_wrapper
     def check_reservations(self, live_tensors: set[int]):
         from fastfusion.visualization.reservationtree import mappings2reservationtree
-        from fastfusion.joining.sim import TensorStorage
         assert not self.data.isnull().values.any(), f"NaN in {self.data}"
 
         self = self.copy()
@@ -804,8 +721,7 @@ class Pareto:
             looptree = mappings2reservationtree(
                 r[MAPPING],
                 r.get(STATS, None),
-                # skip_backing_tensors_in_right_branch=live_tensors,
-                still_live_tensors=live_tensors,
+                still_live_tensors=live_tensors
             )
             reservations = dict(looptree.get_reservations())
             
@@ -834,3 +750,33 @@ class Pareto:
                     raise ValueError(
                         f"Mismatched {k}: {v} != {r[col]}. Expected {reservations}. Got: {got}"
                     )
+
+    def fail(self, index, live_tensors):
+        from fastfusion.joining.sim import TensorStorage
+        r = self.data.iloc[index]
+        assert not self.data.isnull().values.any(), f"NaN in {self.data}"
+        self = self.copy()
+        self._draw_index(index, live_tensors, self._get_target_path(suffix="fail"))
+        all_tensors = set(t for tn in r[MAPPING].values() for t in tn.storage)
+        all_tensors = TensorStorage.get_backing_stores(all_tensors)
+        for t in sorted(all_tensors):
+            print(f"{t.__repr__()},")
+    
+    def _draw_index(self, index: int, live_tensors, to_file: str = "test.png"):
+        from fastfusion.visualization.reservationtree import mappings2reservationtree
+        import pydot
+        looptree = mappings2reservationtree(
+            self.data.iloc[index][MAPPING],
+            self.data.iloc[index].get(STATS, None),
+            still_live_tensors=live_tensors,
+        )
+        graph = pydot.Dot(graph_type="digraph", ranksep="0.2", nodesep="0.2")
+        looptree.to_pydot(graph)
+        row = self.data.iloc[index]
+        all_data = sorted(
+            f"{k}: {v}" for k, v in row.items() if k not in DICT_COLUMNS and k != LOGSTRING
+        )
+        data_str = "\n".join(all_data)
+        graph.add_node(pydot.Node("data", label=data_str, shape="plaintext"))
+        with open(to_file, "wb") as f:
+            f.write(graph.create_png())

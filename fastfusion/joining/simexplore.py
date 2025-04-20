@@ -101,25 +101,7 @@ def print_total_time():
     print(f"============================\n")
 
 
-def consolidate(
-    x,
-    left: bool,
-    live_tensors: set,
-    resource2capacity: dict,
-    shared_tensors: set,
-):
-    # taret = "left_consolidate" if left else "consolidate"
-    # pbar = "Left consolidate" if left else "Right consolidate"
-    # x = parallel(
-    #     [delayed(getattr(x2, taret))(live_tensors, resource2capacity, shared_tensors) for x2 in x],
-    #     pbar=pbar
-    # )
-
-    # for x2 in x:
-    #     if left:
-    #         x2.left_consolidate(live_tensors, resource2capacity, shared_tensors)
-    #     else:
-    #         x2.consolidate(live_tensors, resource2capacity, shared_tensors)
+def consolidate(x, live_tensors: set):
     x = SIM.combine_combineable(x, live_tensors)
     # We freed these
     for x2 in x:
@@ -164,7 +146,6 @@ def fuse_sims(
       memories lower in the hierarchy. e.g., memory 0 is the largest,
       memory 1 the next largest, and memory N is the smallest.
     """
-    
     
     aliased_tensors = {"I_n_to_I": "I_I_to_Q_K_V"}
     resource2capacity = None
@@ -222,11 +203,16 @@ def fuse_sims(
     # ======================================================================
     n_mappings["Post Intra-Layer"] = 0
     for i, sim_holder in enumerate(sims):
+        right_tensors = set.union(set(), *[s.tensor_names for s in sims[i + 1 :]])
         if i == 0:
-            continue
+            sim_holder.sims = SIM.left_consolidate(
+                sim_holder.sims,
+                set(),
+                resource2capacity,
+                pbar=f"Inital consolidate {sim_holder.einsum_id}",
+            )
         t0 = time.time()
         left_tensors = set.union(set(), *[s.tensor_names for s in sims[:i]])
-        right_tensors = set.union(set(), *[s.tensor_names for s in sims[i + 1 :]])
         live_tensors = right_tensors
         shared_tensors = left_tensors & sim_holder.tensor_names
         sim_holder.sims = sorted(
@@ -480,16 +466,6 @@ def fuse_sims(
     s_final = SIM.combine_combineable(left, set(), drop_tags=True)
     assert len(s_final) == 1
     data = s_final[0].mappings.data
-    # check_correctness(data, set())
-
-    # einsum2mapping = data.iloc[3]["__LOOPNEST"]
-    # from fastfusion.visualization.reservationtree import mappings2looptree
-    # import pydot
-    # tree = mappings2looptree(einsum2mapping)
-    # graph = pydot.Dot(graph_type="digraph", ranksep="0.2", nodesep="0.2")
-    # tree.to_pydot(graph)
-    # with open(f"test2.png", "wb") as f:
-    #     f.write(graph.create_png())
 
     print_total_time()
     if evaluations_tracker is not None:

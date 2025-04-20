@@ -61,7 +61,7 @@ class SIM:
         
         mapping = delayed(
             self.mappings.merge_next
-        )(right.mappings, shared_loop_index, live_tensors_with_right, shared_storage, still_live_reservations, duplicated_aliased_tensors, resource2capacity)
+        )(right.mappings, shared_loop_index, next_shared_loop_index, live_tensors_with_right, shared_storage, still_live_reservations, duplicated_aliased_tensors, resource2capacity)
 
         if not delay:
             mapping = mapping[0](*mapping[1], **mapping[2])
@@ -104,9 +104,6 @@ class SIM:
         shared_loop_index = self.compatibility.shared_loop_index(check_tensors)
         for t in dead_tensors:
             t = self.storage.pop(t)
-            # self.mappings.alloc(
-            #     t.resource_name, t.size, t.above_loop_index, resource2capacity
-            # )
 
         if live_tensors is None:
             self.free_squish(0, resource2capacity, live_tensors=live_tensors)
@@ -117,33 +114,11 @@ class SIM:
     def _left_consolidate(
         self,
         live_tensors: set[str] = None,
-        resource2capacity: dict[str, int] = None,
-        shared_tensors: set[str] = None,
+        shared_tensors: set[str] = None
     ):
         check_tensors = (shared_tensors or set()) | (live_tensors or set())
         shared_loop_index = self.compatibility.shared_loop_index(check_tensors)
-        tensors_to_add = []
-        for t in self.storage.values():
-            if (
-                t.above_loop_index > shared_loop_index
-                or t.name not in check_tensors
-            ):
-                # self.mappings.alloc(
-                #     t.resource_name, t.size, t.above_loop_index, resource2capacity
-                # )
-                tensors_to_add.append(t)
-        # if live_tensors is None:
-        #     self.free_squish(-1, resource2capacity)
-        # else:
-        #     self.free_squish(shared_loop_index + 1, resource2capacity)
-        for t in tensors_to_add:
-            self.mappings.add_tensor(t)
-        
-        # # These tensors will be re-added by the next Einsum and we don't want to
-        # # double count them
-        # for t in shared_tensors:
-        #     self.mappings.subtract_duplicated(self.storage[t])
-            
+        self.mappings.free_to_loop_index(shared_loop_index, live_tensors=live_tensors)
         return self
 
     @staticmethod
@@ -168,7 +143,7 @@ class SIM:
         pbar: str = None,
     ) -> list["SIM"]:
         def job(s):
-            return s._left_consolidate(live_tensors, resource2capacity, shared_tensors)
+            return s._left_consolidate(live_tensors, shared_tensors)
 
         return parallel([delayed(job)(s) for s in sims], pbar=pbar)
 

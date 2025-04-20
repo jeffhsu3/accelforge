@@ -271,9 +271,8 @@ def process_result(
     if einsum_name in copy_einsums:
         if null_copy_einsum:
             for k, v in list(results.items()):
-                if col2nameloop(k) is not None:
+                if col2nameloop(k) is None and results[k] not in DICT_COLUMNS:
                     results[k] = 0
-                # results[k] = {} if k in DICT_COLUMNS else 0
 
     key = (mapping_compatibility, fzs(results.keys()))
     if prune:
