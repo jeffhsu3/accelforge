@@ -7,110 +7,36 @@ from bindings.looptree import LooptreeWorkload, LooptreeDependencyAnalyzer
 from pytimeloop.looptree.mapping_utilities import get_intermediate_tensors
 from fastfusion.util import fzs
 
-
-class GroupedEinsumsInName:
-    def __init__(self, workload: LooptreeWorkload):
-        self.reference_to_similar_einsums = {}
-        self.workload = workload
-
-    @property
-    def reference_einsums(self) -> Iterable[str]:
-        return self.reference_to_similar_einsums.keys()
-    
-    def add_reference_einsum(self, reference_einsum: str):
-        self.reference_to_similar_einsums[reference_einsum] = {}
-
-    def add_einsum_similar_to_reference(
-        self,
-        reference_einsum: str,
-        similar_einsum: str,
-        rank_renaming: dict[str, str],
-        tensor_renaming: dict[str, str]
-    ):
-        self.reference_to_similar_einsums[reference_einsum][similar_einsum] = \
-            (rank_renaming, tensor_renaming)
-
-
-class GroupedEinsumsInId:
-    def __init__(self, workload: LooptreeWorkload):
-        self.reference_to_similar_einsums = {}
-        self.workload = workload
-
-    @property
-    def reference_einsums(self) -> Iterable[int]:
-        return self.reference_to_similar_einsums.keys()
-    
-    def add_reference_einsum(self, reference_einsum: int):
-        self.reference_to_similar_einsums[reference_einsum] = {}
-
-    def add_einsum_similar_to_reference(
-        self,
-        reference_einsum: int,
-        similar_einsum: int,
-        rank_renaming: int,
-        tensor_renaming: int
-    ):
-        self.reference_to_similar_einsums[reference_einsum][similar_einsum] = \
-            (rank_renaming, tensor_renaming)
-
-    def get_einsums_similar_to_reference(
-        self,
-        reference_einsum: int
-    ) -> dict[int, tuple[dict[int, int], dict[int, int]]]:
-        """
-        Returns:
-            A dictionary of `(other_similar_einsum, renamings)` where
-            `renamings` is a tuple `(rank_renaming, tensor_renaming)`.
-        
-        See:
-            Renaming convention: `layerdeduplication.is_equivalent`
-        """
-        raise NotImplementedError()
-
-    def make_grouped_einsums_in_name(self) -> GroupedEinsumsInName:
-        grouped_einsums_in_name = GroupedEinsumsInName(self.workload)
-        einsum_id_to_name = self.workload.EinsumIdToName()
-        raise NotImplementedError()
-
-        for ref_einsum_id in self.reference_einsums:
-            grouped_einsums_in_name.add_reference_einsum(
-                self.workload.EinsumIdToName()[ref_einsum_id]
-            )
-
-            for similar_einsum, renamings \
-                in self.get_einsums_similar_to_reference(ref_einsum_id) \
-            :
-                grouped_einsums_in_name.add_einsum_similar_to_reference(
-
-                )
-                
-
-
+from .grouped_einsums import GroupOfSimilarEinsums, Id
 
 
 def group_similar_einsums(
     einsum_ids: Iterable[int],
     workload: LooptreeWorkload,
     analyzer: LooptreeDependencyAnalyzer
-) -> GroupedEinsumsInId:
-    grouped_einsums = GroupedEinsumsInId(workload)
+) -> list[GroupOfSimilarEinsums[Id]]:
+    """
+    Groups similar Einsums in `einsum_ids`.
+    """
+    grouped_einsums: list[GroupOfSimilarEinsums[Id]] = []
     for einsum_id in einsum_ids:
         found = False
-        for einsum_ref_id in grouped_einsums.reference_einsums:
+        for einsum_group in grouped_einsums:
+            einsum_ref_id = einsum_group.reference_einsum
             rank_renaming, tensor_renaming = is_equivalent(einsum_ref_id,
                                                            einsum_id,
                                                            workload,
                                                            analyzer)
             if rank_renaming is not None:
-                grouped_einsums.add_einsum_similar_to_reference(einsum_ref_id,
-                                                                einsum_id,
-                                                                rank_renaming,
-                                                                tensor_renaming)
+                einsum_group.add_similar_einsum(einsum_id,
+                                                rank_renaming,
+                                                tensor_renaming)
                 found = True
                 break
 
         if not found:
-            grouped_einsums.add_reference_einsum(einsum_id)
+            grouped_einsums.append(GroupOfSimilarEinsums(einsum_id,
+                                                         workload))
     return grouped_einsums
 
 
