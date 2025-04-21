@@ -1,16 +1,139 @@
 from collections import defaultdict
+from collections.abc import Iterable
 from itertools import permutations, product
+
+from bindings.looptree import LooptreeWorkload, LooptreeDependencyAnalyzer
 
 from pytimeloop.looptree.mapping_utilities import get_intermediate_tensors
 from fastfusion.util import fzs
 
 
-def group_similar_einsums(workload, analyzer):
-    ref_to_others = {}
+class GroupedEinsumsInName:
+    def __init__(self, workload: LooptreeWorkload):
+        self.reference_to_similar_einsums = {}
+        self.workload = workload
+
+    @property
+    def reference_einsums(self) -> Iterable[str]:
+        return self.reference_to_similar_einsums.keys()
+    
+    def add_reference_einsum(self, reference_einsum: str):
+        self.reference_to_similar_einsums[reference_einsum] = {}
+
+    def add_einsum_similar_to_reference(
+        self,
+        reference_einsum: str,
+        similar_einsum: str,
+        rank_renaming: dict[str, str],
+        tensor_renaming: dict[str, str]
+    ):
+        self.reference_to_similar_einsums[reference_einsum][similar_einsum] = \
+            (rank_renaming, tensor_renaming)
+
+
+class GroupedEinsumsInId:
+    def __init__(self, workload: LooptreeWorkload):
+        self.reference_to_similar_einsums = {}
+        self.workload = workload
+
+    @property
+    def reference_einsums(self) -> Iterable[int]:
+        return self.reference_to_similar_einsums.keys()
+    
+    def add_reference_einsum(self, reference_einsum: int):
+        self.reference_to_similar_einsums[reference_einsum] = {}
+
+    def add_einsum_similar_to_reference(
+        self,
+        reference_einsum: int,
+        similar_einsum: int,
+        rank_renaming: int,
+        tensor_renaming: int
+    ):
+        self.reference_to_similar_einsums[reference_einsum][similar_einsum] = \
+            (rank_renaming, tensor_renaming)
+
+    def get_einsums_similar_to_reference(
+        self,
+        reference_einsum: int
+    ) -> dict[int, tuple[dict[int, int], dict[int, int]]]:
+        """
+        Returns:
+            A dictionary of `(other_similar_einsum, renamings)` where
+            `renamings` is a tuple `(rank_renaming, tensor_renaming)`.
+        
+        See:
+            Renaming convention: `layerdeduplication.is_equivalent`
+        """
+        raise NotImplementedError()
+
+    def make_grouped_einsums_in_name(self) -> GroupedEinsumsInName:
+        grouped_einsums_in_name = GroupedEinsumsInName(self.workload)
+        einsum_id_to_name = self.workload.EinsumIdToName()
+        raise NotImplementedError()
+
+        for ref_einsum_id in self.reference_einsums:
+            grouped_einsums_in_name.add_reference_einsum(
+                self.workload.EinsumIdToName()[ref_einsum_id]
+            )
+
+            for similar_einsum, renamings \
+                in self.get_einsums_similar_to_reference(ref_einsum_id) \
+            :
+                grouped_einsums_in_name.add_einsum_similar_to_reference(
+
+                )
+                
 
 
 
-def is_equivalent(einsum_id1, einsum_id2, workload, analyzer):
+
+def group_similar_einsums(
+    einsum_ids: Iterable[int],
+    workload: LooptreeWorkload,
+    analyzer: LooptreeDependencyAnalyzer
+) -> GroupedEinsumsInId:
+    grouped_einsums = GroupedEinsumsInId(workload)
+    for einsum_id in einsum_ids:
+        found = False
+        for einsum_ref_id in grouped_einsums.reference_einsums:
+            rank_renaming, tensor_renaming = is_equivalent(einsum_ref_id,
+                                                           einsum_id,
+                                                           workload,
+                                                           analyzer)
+            if rank_renaming is not None:
+                grouped_einsums.add_einsum_similar_to_reference(einsum_ref_id,
+                                                                einsum_id,
+                                                                rank_renaming,
+                                                                tensor_renaming)
+                found = True
+                break
+
+        if not found:
+            grouped_einsums.add_reference_einsum(einsum_id)
+    return grouped_einsums
+
+
+def is_equivalent(
+    einsum_id1: int,
+    einsum_id2: int,
+    workload: LooptreeWorkload,
+    analyzer: LooptreeDependencyAnalyzer
+) -> tuple[dict[int, int], dict[int, int]]:
+    """
+    Determines whether two Einsums are equivalent in tensor shapes and
+    tensor indexing expressions.
+
+    If the two Einsums are equivalent, the rank and tensor renamings are
+    returned.
+
+    Returns:
+      If the two Einsums are equivalent, the function returns two dicts,
+      `rank_renaming` and `tensor_renaming`, representing how to rename
+      ranks (tensors) of `einsum_id1` to `einsum_id2`.
+
+      Otherwise, a tuple `(None, None)` is returned.
+    """
     einsum1_ranks = workload.einsum_ospace_dimensions(einsum_id1)
     einsum2_ranks = workload.einsum_ospace_dimensions(einsum_id2)
 
