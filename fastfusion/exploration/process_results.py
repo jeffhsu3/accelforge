@@ -1,7 +1,6 @@
 from collections import defaultdict
-from enum import auto, Flag
 from functools import reduce
-from operator import or_, mul
+from operator import mul
 
 from fastfusion.pareto import (
     LOGSTRING,
@@ -23,20 +22,7 @@ from fastfusion.util import fzs
 from pytimeloop.looptree.energy import gather_actions, get_accesses
 from pytimeloop.looptree.equivalent_ranks import EquivalentGroups
 
-class Metrics(Flag):
-    LATENCY = auto()
-    ENERGY = auto()
-    # OCCUPANCY = auto()
-    OFF_CHIP_ACCESSES = auto()
-    OP_INTENSITY = auto()
-    DEBUG = auto()
-    VALID = auto()
-    PER_COMPONENT_ACCESSES_ENERGY = auto()
-    MAPPING = auto()
-
-    @classmethod
-    def all_metrics(cls):
-        return reduce(or_, iter(cls), cls.LATENCY) ^ Metrics.OP_INTENSITY
+from .metrics import Metrics
 
 
 # DEBUG_VISUALIZATION = Metrics.ALL_TENSORS | METRICS.PARTIAL_STATS
