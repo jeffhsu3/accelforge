@@ -1,29 +1,74 @@
+from operator import le, lt, ge, gt, eq
 import re
 
 from combinatorics.integer import integer_factorizations_to_n_parts
 
 
-def parse_constraint(constraint_str: str):
-    parser = re.compile('^(>=|>|<|<=|==)\s*(\d+)')
-    match = parser.match(constraint_str)
+CONSTRAINT_RE_PARSER = re.compile('^(>=|>|<|<=|==)\s*(\d+)')
+
+
+STRING_TO_OPERATOR = {
+    '==': eq,
+    '>=': ge,
+    '>':  gt,
+    '<=': le,
+    '<':  lt
+}
+
+
+def get_propagated_constraint(comparison: str, limit):
+    if comparison == '>=':
+        return lambda x: x >= limit
+    elif comparison == '>':
+        return lambda x: x > limit
+    elif comparison == '<=':
+        return None
+    elif comparison == '<':
+        return None
+    elif comparison == '==':
+        return lambda x: x >= limit
+
+
+def parse_tile_constraint(constraint_str: str):
+    match = CONSTRAINT_RE_PARSER.match(constraint_str)
     if match is None:
         raise RuntimeError(f'Cannot parse constraint {constraint_str}')
+
     comparison, limit = match.groups()
+
     limit = int(limit)
     if limit == 128:
         comparison = "=="
-    if comparison == '>=':
-        return lambda x: x >= limit, lambda x: x >= limit
-    elif comparison == '>':
-        return lambda x: x > limit, lambda x: x > limit
-    elif comparison == '<=':
-        return lambda x: x <= limit, None
-    elif comparison == '<':
-        return lambda x: x < limit, None
-    elif comparison == '==':
-        return lambda x: x == limit, lambda x: x >= limit
+
+    if comparison in STRING_TO_OPERATOR:
+        operator = STRING_TO_OPERATOR[comparison]
+        main_constraint = lambda x: operator(x, limit)
     else:
         raise RuntimeError(f'Unknown comparison operator {comparison}')
+
+    propagated_constraint = get_propagated_constraint(comparison, limit)
+
+    return main_constraint, propagated_constraint
+
+
+def parse_factor_constraint(constraint_str: str):
+    match = CONSTRAINT_RE_PARSER.match(constraint_str)
+    if match is None:
+        raise RuntimeError(f'Cannot parse constraint {constraint_str}')
+
+    comparison, limit = match.groups()
+
+    limit = int(limit)
+    if limit == 128:
+        comparison = "=="
+
+    if comparison in STRING_TO_OPERATOR:
+        operator = STRING_TO_OPERATOR[comparison]
+        main_constraint = lambda x: operator(x, limit)
+    else:
+        raise RuntimeError(f'Unknown comparison operator {comparison}')
+
+    return main_constraint, None
 
 
 class ShapeSubspace:
@@ -40,30 +85,9 @@ class ShapeSubspace:
         self.n_fusion_relevant_loops = n_fusion_relevant_loops
         self.fill_position_to_last()
         # print(f'Made shape subspace with tile constraints {self.tile_constraints} and factor constraints {self.factor_constraints}')
-        
-        self.tile_constraints = [[] for _ in self.ranks]
-        self.factor_constraints = [[] for _ in self.ranks]
 
-        if tile_constraints is not None:
-            for i, constraints in enumerate(tile_constraints):
-                for constraint in constraints:
-                    constraint, upward_prop_constraint = parse_constraint(constraint)
-                    self.tile_constraints[i].append(constraint)
-                    if upward_prop_constraint is not None:
-                        last = self.position_to_last[i]
-                        while last is not None:
-                            self.tile_constraints[last].append(upward_prop_constraint)
-                            last = self.position_to_last[last]
-        if factor_constraints is not None:
-            for i, constraints in enumerate(factor_constraints):
-                for constraint in constraints:
-                    constraint, upward_prop_constraint = parse_constraint(constraint)
-                    self.factor_constraints[i].append(constraint)
-                    if upward_prop_constraint is not None:
-                        last = self.position_to_last[i]
-                        while last is not None:
-                            self.tile_constraints[last].append(upward_prop_constraint)
-                            last = self.position_to_last[last]
+        self.parse_tile_constraints(self, tile_constraints)
+        self.parse_factor_constraints(self, factor_constraints)
 
     def fill_position_to_last(self):
         self.rank_to_last = {}
@@ -74,8 +98,37 @@ class ShapeSubspace:
                 self.position_to_last[i] = None
             self.rank_to_last[r] = i
 
-    def __iter__(self) -> 'ShapeSubspaceIterator':
-        return ShapeSubspaceIterator(self)
+    def parse_tile_constraints(self, tile_constraints):
+        self.tile_constraints = [[] for _ in self.ranks]
+        if tile_constraints is not None:
+            for i, constraints in enumerate(tile_constraints):
+                for constraint in constraints:
+                    constraint, upward_prop_constraint = parse_tile_constraint(constraint)
+                    self.add_tile_constraint(i, constraint, upward_prop_constraint)
+
+    def parse_factor_constraints(self, factor_constraints):
+        self.factor_constraints = [[] for _ in self.ranks]
+        if factor_constraints is not None:
+            for i, constraints in enumerate(factor_constraints):
+                for constraint in constraints:
+                    constraint, upward_prop_constraint = parse_factor_constraint(constraint)
+                    self.add_factor_constraint(i, constraint, upward_prop_constraint)
+
+    def add_tile_constraint(self, rank_idx, constraint, propagated_constraint):
+        self.tile_constraints[rank_idx].append(constraint)
+        if propagated_constraint is not None:
+            last = self.position_to_last[rank_idx]
+            while last is not None:
+                self.tile_constraints[last].append(propagated_constraint)
+                last = self.position_to_last[last]
+
+    def add_factor_constraint(self, rank_idx, constraint, propagated_constraint):
+        self.factor_constraints[rank_idx].append(constraint)
+        if propagated_constraint is not None:
+            last = self.position_to_last[rank_idx]
+            while last is not None:
+                self.factor_constraints[last].append(propagated_constraint)
+                last = self.position_to_last[last]
 
 def check_add_to_pareto(a, pareto):
     for b in pareto:
@@ -83,7 +136,7 @@ def check_add_to_pareto(a, pareto):
             return False
     return True
 
-class ShapeSubspaceIterator:
+class SkippableDfsIterator:
     def __init__(self, shape_subspace: ShapeSubspace):
         self.shapes = shape_subspace.rank_shapes
         self.ranks = shape_subspace.ranks

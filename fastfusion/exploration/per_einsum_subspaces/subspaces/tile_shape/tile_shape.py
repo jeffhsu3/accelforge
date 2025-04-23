@@ -2,7 +2,7 @@ from collections import defaultdict
 from functools import reduce
 from operator import mul
 
-from .shape_subspace import ShapeSubspace
+from .shape_subspace import ShapeSubspace, SkippableDfsIterator
 
 from pytimeloop.looptree.des import LooptreeOutput
 
@@ -44,15 +44,17 @@ def explore_tile_shape(
     num_tile_shapes = 0
     num_valid_tile_shapes = 0
 
-    shape_subspace = iter(ShapeSubspace(
+    shape_subspace = ShapeSubspace(
             rank_shapes,
             ranks,
             tile_constraints=tile_constraints,
             factor_constraints=factor_constraints,
             n_fusion_relevant_loops=n_fusion_relevant_loops
-    ))
-    yield shape_subspace
-    for shape in shape_subspace:
+    )
+
+    shape_subspace_iter = SkippableDfsIterator(shape_subspace)
+    yield shape_subspace_iter
+    for shape in shape_subspace_iter:
         num_tile_shapes += 1
         if only_count:
             continue
@@ -79,7 +81,7 @@ def explore_tile_shape(
 
         if skip and prune:
             try:
-                shape_subspace.skip_current_rank_iteration()
+                shape_subspace_iter.skip_current_rank_iteration()
                 continue
             except StopIteration:
                 break
