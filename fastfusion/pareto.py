@@ -47,7 +47,7 @@ RESERVED_COLUMNS = set([VALID]) | DICT_COLUMNS
 
 TUPLABE_COLUMNS = set([MAPPING, TENSORS])
 
-CHECK_CORRECTNESS = True
+CHECK_CORRECTNESS = False
 
 _resource_name_nloops_reg = re.compile(r"RESOURCE_(.+?)(?:_LEFT)?_LEVEL_(-?\d+)")
 
