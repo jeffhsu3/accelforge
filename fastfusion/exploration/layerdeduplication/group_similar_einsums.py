@@ -1,16 +1,65 @@
 from collections import defaultdict
+from collections.abc import Iterable
 from itertools import permutations, product
+
+from bindings.looptree import LooptreeWorkload, LooptreeDependencyAnalyzer
 
 from pytimeloop.looptree.mapping_utilities import get_intermediate_tensors
 from fastfusion.util import fzs
 
-
-def group_similar_einsums(workload, analyzer):
-    ref_to_others = {}
+from .grouped_einsums import GroupOfSimilarEinsums, Id
 
 
+def group_similar_einsums(
+    einsum_ids: Iterable[int],
+    workload: LooptreeWorkload,
+    analyzer: LooptreeDependencyAnalyzer
+) -> list[GroupOfSimilarEinsums[Id]]:
+    """
+    Groups similar Einsums in `einsum_ids`.
+    """
+    grouped_einsums: list[GroupOfSimilarEinsums[Id]] = []
+    for einsum_id in einsum_ids:
+        found = False
+        for einsum_group in grouped_einsums:
+            einsum_ref_id = einsum_group.reference_einsum
+            rank_renaming, tensor_renaming = is_equivalent(einsum_ref_id,
+                                                           einsum_id,
+                                                           workload,
+                                                           analyzer)
+            if rank_renaming is not None:
+                einsum_group.add_similar_einsum(einsum_id,
+                                                rank_renaming,
+                                                tensor_renaming)
+                found = True
+                break
 
-def is_equivalent(einsum_id1, einsum_id2, workload, analyzer):
+        if not found:
+            grouped_einsums.append(GroupOfSimilarEinsums(einsum_id,
+                                                         workload))
+    return grouped_einsums
+
+
+def is_equivalent(
+    einsum_id1: int,
+    einsum_id2: int,
+    workload: LooptreeWorkload,
+    analyzer: LooptreeDependencyAnalyzer
+) -> tuple[dict[int, int], dict[int, int]]:
+    """
+    Determines whether two Einsums are equivalent in tensor shapes and
+    tensor indexing expressions.
+
+    If the two Einsums are equivalent, the rank and tensor renamings are
+    returned.
+
+    Returns:
+      If the two Einsums are equivalent, the function returns two dicts,
+      `rank_renaming` and `tensor_renaming`, representing how to rename
+      ranks (tensors) of `einsum_id1` to `einsum_id2`.
+
+      Otherwise, a tuple `(None, None)` is returned.
+    """
     einsum1_ranks = workload.einsum_ospace_dimensions(einsum_id1)
     einsum2_ranks = workload.einsum_ospace_dimensions(einsum_id2)
 
