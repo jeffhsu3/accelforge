@@ -10,15 +10,13 @@ from .variables import Variables
 from .components import Components
 from .config import Config, get_config
 from fastfusion.yamlparse.processor import ProcessorError, References2CopiesProcessor
-from .area_table import ComponentArea
-from .energy_table import ComponentEnergy
+from .area_table import ComponentArea, AreaEntry
+from .energy_table import ComponentEnergy, EnergyEntry
 
 from typing import Any, Dict, List, Optional, Union
 from fastfusion.yamlparse.base_specification import BaseSpecification, class2obj
 
 from ..plugin.gather_plug_ins import gather_plug_ins
-
-from . import energyarea
 
 
 class Specification(BaseSpecification):
@@ -125,7 +123,7 @@ class Specification(BaseSpecification):
             energy = ComponentEnergy()
             for component in components:
                 area.tables.append(
-                    energyarea.AreaEntry.from_plug_ins(
+                    AreaEntry.from_plug_ins(
                         component._class,
                         component.attributes,
                         processed,
@@ -137,7 +135,7 @@ class Specification(BaseSpecification):
                 action_names = [action.name for action in component.actions]
                 action_args = [action.arguments for action in component.actions]
                 energy.tables.append(
-                    energyarea.EnergyEntry.from_plug_ins(
+                    EnergyEntry.from_plug_ins(
                         component._class,
                         component.attributes,
                         action_args,

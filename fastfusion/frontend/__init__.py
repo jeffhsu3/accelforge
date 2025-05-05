@@ -3,8 +3,6 @@
 from .specification import *
 from ..yamlparse import *
 
-from pytimeloop.frontend.common import *
-
 from . import arch
 from . import components
 from . import constraints
