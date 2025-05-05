@@ -1,7 +1,7 @@
 import copy
 import time
 from typing import Any, Dict, List, Optional, Union
-from .nodes import DictNode, ListNode, Node, TypeSpecifier, CombinableListNode
+from .nodes import DictNode, ListNode, Node
 from .processor import Processor, ProcessorError, References2CopiesProcessor
 from .parse_expressions import ParseExpressionsContext
 
@@ -169,7 +169,7 @@ class BaseSpecification(DictNode):
             Node.set_global_spec(prev_global_spec)
 
     @classmethod
-    def from_yaml(cls, *args, **kwargs) -> "Specification":
+    def from_yaml(cls, *args, **kwargs) -> "BaseSpecification":
         """
         Create a Specification object from YAML files.
 

@@ -148,3 +148,7 @@ class Specification(BaseSpecification):
                 )
             self.component_area = area
             self.component_energy = energy
+
+    @classmethod
+    def from_yaml(cls, *args, **kwargs) -> "Specification":
+        return super().from_yaml(*args, **kwargs)

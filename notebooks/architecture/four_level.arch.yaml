@@ -3,60 +3,81 @@ variables:
   technology: "7nm"
 
 architecture:
-  version: 0.4
+  version: 0.5
   nodes:
-  - !Component
+  - !Storage
     name: MainMemory
     class: DRAM
-    attributes: 
+    attributes:
+      size: 9999999999999
       width: 4678 # 614 GB/s at 1.05GHz
       datawidth: 8
-    # Upper end of the range from the TPU paper. The lower end came from their
-    # reference, and they said it left out some things.
-    energy_scale: (450 / 64) / 8 
-    required_actions: ['read', 'write']
-  - !Component
+      # Upper end of the range from the TPU paper. The lower end came from their
+      # reference, and they said it left out some things.
+      energy_scale: (450 / 64) / 8 
+      energy: 1
+      area: 1
+    constraints:
+      storage:
+        keep: [~Intermediates()]
+
+    
+  - !Storage
     name: GlobalBuffer
     class: SRAM
     attributes:
-      depth: 131072
+      size: 1024*1024*128*8 # 128MB
       width: 8192
-      n_banks: 2
       datawidth: 8
-    required_actions: ['read', 'write']
+      depth: 1000
+      energy: 1
+      area: 1
+    constraints:
+      storage:
+        keep: [~MainMemory()]
+
   # - !Container
   #   name: Core
   #   spatial: {meshX: 4}
-  - !Component
+  - !Storage
     name: LocalBuffer
     class: SRAM 
     spatial: {meshX: 4}
     attributes:
-      depth: 16384
+      size: 1024*1024*32*8 # 32MB
       width: 2048
+      depth: 1000
       datawidth: 8
-    required_actions: ['read', 'write']
+      energy: 1
+      area: 1
+    constraints:
+      storage:
+        keep: [~Outputs()]
+
   # - !Container
   #   name: PE
   #   spatial: {meshX: 128, meshY: 128}
-  - !Component
+  - !Storage
     name: Register
     class: dummy_storage
     spatial: {meshX: 128, meshY: 128}
     attributes:
-      depth: 1
+      size: 8 # 8b
       width: 8
+      depth: 1000
       datawidth: 8
-    required_actions: ['read', 'write']
-  - !Component
+      energy: 1
+      area: 1
+  
+
+
+  - !Compute
     name: MAC
     class: intmac
-    attributes: {multiplier_width: 8, adder_width: 16, cycle_time: 1e-9}
-    required_actions: ['compute']
-    energy_scale: 0.78436603748
+    attributes: {multiplier_width: 8, adder_width: 16, energy_scale: 0.78436603748, energy: 1, area: 1}
 
 compound_components:
-  version: 0.4         # REQUIRED version number
+  version: 0.5         # REQUIRED version number
   classes:
   - name: intmac
     attributes:
@@ -75,7 +96,7 @@ compound_components:
     - name: compute
       subcomponents:
       - name: intadder
-        actions: [{name: read}]
+        actions: [name: read]
       - name: intmultiplier
         actions: [{name: read}]
     - name: leak
@@ -84,7 +105,3 @@ compound_components:
         actions: [{name: leak}]
       - name: intmultiplier
         actions: [{name: leak}]
-
-
-# 32k, 4k, 2k
-# 8k, 16k, 4k

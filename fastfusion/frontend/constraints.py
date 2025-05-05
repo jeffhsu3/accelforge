@@ -181,12 +181,12 @@ class ConstraintGroup(DictNode):
     @classmethod
     def declare_attrs(cls, *args, **kwargs):
         super().declare_attrs(*args, **kwargs)
-        super().add_attr("name", str)
+        super().add_attr("name", str, "SET ME.")
         super().add_attr("spatial", Spatial, {})
         super().add_attr("spatial_X", Spatial, {})
         super().add_attr("spatial_Y", Spatial, {})
         super().add_attr("temporal", Temporal, {})
-        super().add_attr("tensors", Storage, {})
+        super().add_attr("storage", Storage, {})
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -195,7 +195,7 @@ class ConstraintGroup(DictNode):
         self.spatial_X: Spatial = self["spatial_X"]
         self.spatial_Y: Spatial = self["spatial_Y"]
         self.temporal: Temporal = self["temporal"]
-        self.tensors: Storage = self["tensors"]
+        self.storage: Storage = self["storage"]
 
 
 class Iteration(DictNode):

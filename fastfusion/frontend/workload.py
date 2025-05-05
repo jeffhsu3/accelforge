@@ -37,47 +37,101 @@ class Workload(DictNode):
         super().declare_attrs(*args, **kwargs)
         super().add_attr("version", default="0.5", callfunc=assert_version)
         super().add_attr("einsums", EinsumList, [])
-        super().add_attr("shape", Shape, [])
+        super().add_attr("shape", ShapeDict, {})
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.version: str = self["version"]
         self.shape: Shape = self["shape"]
         self.einsums: EinsumList = self["einsums"]
+        self._validate()
+
+    def _validate(self):
+        tensor2ranks = {}
+        einsum_names = set()
+        for einsum in self.einsums:
+            if einsum.name in einsum_names:
+                raise ValueError(f"Einsum name {einsum.name} is not unique")
+            einsum_names.add(einsum.name)
+            for tensor in einsum.tensors:
+                tensor2ranks.setdefault(tensor.name, tensor.ranks)
+                if tensor2ranks[tensor.name] != tensor.ranks:
+                    raise ValueError(
+                        f"Tensor {tensor.name} has inconsistent ranks. Found "
+                        f"{tensor2ranks[tensor.name]} and {tensor.ranks}. "
+                        f"Tensor is in Einsums "
+                        f"{', '.join(e.name for e in self.einsums_with_tensor(tensor))}"
+                    )
+                    
+    def einsums_with_tensor(self, tensor: "Tensor") -> set["Einsum"]:
+        return [e for e in self.einsums if tensor.name in e.tensor_names]
 
     def tensors_read_by_einsum(self, einsum_name: str) -> set["Tensor"]:
-        """
-        Get the tensors read by the given einsum.
-        """
-        return {t for t in self.einsums[einsum_name].tensors if not t.output}
+        return [t for t in self.einsums[einsum_name].tensors if not t.output]
 
     def tensors_written_by_einsum(self, einsum_name: str) -> set["Tensor"]:
-        """
-        Get the tensors written by the given einsum.
-        """
-        return {t for t in self.einsums[einsum_name].tensors if t.output}
+        return [t for t in self.einsums[einsum_name].tensors if t.output]
 
     def einsums_that_read_tensor(self, tensor: "Tensor") -> set["Einsum"]:
-        """
-        Get the einsums that read the given tensor.
-        """
-        # Avoid nested loop by checking each einsum's tensors directly
-        return {e for e in self.einsums if tensor in e.tensors and not tensor.output}
+        return [e for e in self.einsums if tensor.name in e.tensor_names and not tensor.output]
 
     def einsums_that_write_tensor(self, tensor: "Tensor") -> set["Einsum"]:
-        """
-        Get the einsums that write to the given tensor.
-        """
-        return {e for e in self.einsums if tensor in e.tensors and tensor.output}
+        return [e for e in self.einsums if tensor.name in e.tensor_names and tensor.output]
 
     def get_shape_isl_string(self, einsum_name: str) -> str:
-        """
-        Get the shape of the given einsum as an ISL string.
-        """
         einsum = self.einsums[einsum_name]
         einsum_shape = einsum.shape
         global_shape = [self.shape[r] for r in einsum.rank_variables if r in self.shape]
         return " and ".join(einsum_shape + global_shape)
+    
+    @property
+    def tensors(self) -> set["Tensor"]:
+        return set([t for e in self.einsums for t in e.tensors])
+    
+    def mermaid_graph(self) -> str:
+        """
+        Get the mermaid graph of the workload.
+        Returns a Mermaid graph string showing relationships between Einsums and Tensors.
+        Einsums are shown as rectangles and Tensors as circles.
+        """
+        import mermaid as md
+        from mermaid.graph import Graph
+        lines = [
+            "graph LR",
+            "linkStyle default interpolate basis"
+        ]
+        
+        # Add all tensors as nodes (circles)
+        tensors = []
+        seen_tensor_names = set()
+        for einsum in self.einsums:
+            lines.append(f"\tEinsum_{einsum.name}[\"<b>{einsum.name}</b>\n<small>{einsum.to_formatted_string(compress=True)}</small>\"]")
+            for tensor in einsum.tensors:
+                if tensor.name not in seen_tensor_names:
+                    tensors.append(tensor)
+                    seen_tensor_names.add(tensor.name)
+                    lines.append(f"\tTensor_{tensor.name}{{{{\"<b>{tensor.name}</b>\n\"}}}}")
+        
+        # Add all einsums as nodes (rectangles)
+        for einsum in self.einsums:
+            # Add edges from tensors to einsums
+            for tensor in einsum.tensors:
+                if tensor.output:
+                    # Output tensor: einsum -> tensor
+                    lines.append(f"\tEinsum_{einsum.name} --> Tensor_{tensor.name}")
+                else:
+                    # Input tensor: tensor -> einsum
+                    lines.append(f"\tTensor_{tensor.name} --> Einsum_{einsum.name}")
+        
+        # Create the graph with the flowchart script
+        flowchart_script = "\n".join(lines)
+        graph = Graph('Flowchart', flowchart_script)
+        
+        # Set the configuration to ignore node order
+        config = md.Config()
+        graph.config = config
+        
+        return md.Mermaid(graph)
 
 
 class EinsumList(ListNode):
@@ -100,16 +154,31 @@ class Einsum(DictNode):
     def declare_attrs(cls, *args, **kwargs):
         super().declare_attrs(*args, **kwargs)
         super().add_attr("name", str)
-        super().add_attr("rank_variables", list, [])
         super().add_attr("tensors", TensorList)
-        super().add_attr("shape", Shape, [])
+        super().add_attr("shape", Shape, [], callfunc=shape_factory)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.name: str = self["name"]
-        self.rank_variables: list = self["rank_variables"]
         self.tensors: TensorList = self["tensors"]
         self.shape: Shape = self["shape"]
+        
+    @property
+    def rank_variables(self) -> set[str]:
+        if not self.tensors:
+            return set()
+        return set.union(*[t.rank_variables for t in self.tensors])
+    
+    @property
+    def tensor_names(self) -> set[str]:
+        return set([t.name for t in self.tensors])
+    
+    def to_formatted_string(self, compress: bool = False) -> str:
+        lhs_join = ",\n" if compress else " , "
+        rhs_join = "#215;\n" if compress else " #215; "
+        lhs = lhs_join.join([t.to_formatted_string() for t in self.tensors if t.output])
+        rhs = rhs_join.join([t.to_formatted_string() for t in self.tensors if not t.output])
+        return f"{lhs}=\n{rhs}" if compress else f"{lhs} = {rhs}"
 
 
 class TensorList(ListNode):
@@ -122,27 +191,9 @@ class TensorList(ListNode):
         super().declare_attrs(*args, **kwargs)
         super().add_attr("", Tensor)
 
-
 class Tensor(DictNode):
     """
-    A tensor object in the workload.
-    """
-
-    @classmethod
-    def declare_attrs(cls, *args, **kwargs):
-        super().declare_attrs(*args, **kwargs)
-        super().add_attr("name", str)
-        super().add_attr("shape", Shape)
-
-    @classmethod
-    def declare_attrs(cls, *args, **kwargs):
-        super().declare_attrs(*args, **kwargs)
-        super().add_attr("", Tensor)
-
-
-class Tensor(DictNode):
-    """
-    A data space object.
+    A tensor object.
 
     Attributes:
         name (str): The name of the data space.
@@ -156,7 +207,7 @@ class Tensor(DictNode):
         super().declare_attrs(*args, **kwargs)
         super().add_attr("name", str)
         super().add_attr("projection", dict, callfunc=projection_factory)
-        super().add_attr("read_write", (str, bool, int), False)
+        super().add_attr("output", (str, bool, int), False)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -172,6 +223,19 @@ class Tensor(DictNode):
                 projection += factor
             else:
                 self.factors.append(factor)
+                
+    def to_formatted_string(self) -> str:
+        subscript = ",".join(self.projection.values())
+        if isinstance(self.projection, ImpliedProjection):
+            return f"{self.name}<sub>{subscript}</sub>"
+        
+        string = [self.name]
+        for k, v in self.projection.items():
+            if len(string) < len(self.projection):
+                string.append(f"<sup>{k},</sup><sub>{v},</sub>")
+            else:
+                string.append(f"<sup>{k}</sup><sub>{v}</sub>")
+        return "".join(string)
 
     @property
     def ranks(self):
@@ -182,12 +246,15 @@ class Tensor(DictNode):
         # Projection values may be expressions, so we need to grab all identifiers
         return set(re.findall(ISL_REGEX, " ".join(self.projection.values())))
 
-    def __eq__(self, other):
-        return self.name == other.name
+    # def __eq__(self, other):
+    #     return self.name == other.name
 
-    def __hash__(self):
-        return hash(self.name)
+    # def __hash__(self):
+    #     return hash(self.name)
 
+
+class ImpliedProjection(dict):
+    pass
 
 def projection_factory(projection: dict | list):
     if isinstance(projection, list):
@@ -200,7 +267,7 @@ def projection_factory(projection: dict | list):
                     f"In a projection list, all elements must be valid ISL identifiers."
                     f"For expressions, use a dictionary projection."
                 )
-        projection = {x: x.upper() for x in projection}
+        projection = ImpliedProjection({x.upper(): x for x in projection})
     elif not isinstance(projection, dict):
         raise TypeError(
             f"Invalid projection: {projection}. Must be a list of "
@@ -216,6 +283,17 @@ def projection_factory(projection: dict | list):
             )
     return projection
 
+class ShapeDict(DictNode):
+    @classmethod
+    def declare_attrs(cls, *args, **kwargs):
+        super().declare_attrs(*args, **kwargs)
+        super().add_attr("", Shape, part_name_match=True, no_change_key=True, callfunc=shape_factory)
+
+
+def shape_factory(shape: list | str):
+    if isinstance(shape, str):
+        shape = [shape]
+    return Shape(shape)
 
 class Shape(ListNode):
     """
@@ -231,3 +309,9 @@ class Shape(ListNode):
         if len(args) == 1 and isinstance(args[0], str):
             args = [args[0]]
         super().__init__(*args, **kwargs)
+
+    @property
+    def rank_variables(self) -> set[str]:
+        if not self:
+            return set()
+        return set.union(*[set(re.findall(ISL_REGEX, x)) for x in self])

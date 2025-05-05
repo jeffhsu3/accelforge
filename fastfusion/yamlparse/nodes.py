@@ -159,7 +159,7 @@ class TypeSpecifier:
 
             estr = ""
             if last_non_node_exception is not None:
-                estr = "\n\n" + str(last_non_node_exception)
+                estr = f"\n\n{last_non_node_exception}"
 
             new_exc = ParseError(
                 f'Error calling cast function "{callname}" '
@@ -1461,7 +1461,7 @@ class DictNode(Node, dict):
                     logging.info("Found extra top-key %s in %s", k, f)
                     extra_elems.append((k, v))
                 else:
-                    logging.info("Found top-key %s in %s", k, f)
+                    logging.info("Found top key %s in %s", k, f)
                     key2file[k] = f
                     rval[k] = v
 
