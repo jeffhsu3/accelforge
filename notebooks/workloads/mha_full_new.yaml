@@ -1,4 +1,5 @@
 workload:
+  version: 0.5
   shape:
     b: 0 <= b < 1
     m: 0 <= m < 1
@@ -8,7 +9,7 @@ workload:
     c: 0 <= c < 1
     j: 0 <= j < 1
     g: 0 <= g < 1
-  
+
   einsums:
   - name: V
     tensors:
@@ -32,7 +33,7 @@ workload:
     tensors:
     - {name: Q, projection: [ b, m, h, e ]}
     - {name: K, projection: { B: b, M: P, H: h, E: e }}
-    - {name: QK, projection: [ b, m, P, h ], output: True}
+    - {name: QK, projection: [ b, m, p, h ], output: True}
 
   - name: AV
     tensors:
@@ -57,3 +58,28 @@ workload:
     - {name: FFA, projection: [ b, m, c ]}
     - {name: WFFB, projection: [ c, j ]}
     - {name: FFB, projection: [ b, m, j ], output: True}
+
+# renames:
+#   version: 0.5
+#   einsums:
+#   - name: default
+#     tensors:
+#     - name: weight
+#       source: ~(Outputs() | Intermediates())
+#       injective: True
+#     - name: output
+#       source: Outputs()
+#       injective: True
+#     - name: input
+#       source: ~(output | weight)
+#       injective: True
+#   - name: QK
+#     tensors:
+#     - name: weight
+#       source: QK
+#       injective: True
+#   - name: AV
+#     tensors:
+#     - name: weight
+#       source: AV
+#       injective: True
