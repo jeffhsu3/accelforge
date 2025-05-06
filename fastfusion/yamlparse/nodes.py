@@ -1399,6 +1399,7 @@ class DictNode(Node, dict):
         cls: type[T],
         *files: Union[str, List[str], Path, list[Path]],
         jinja_parse_data: Dict[str, Any] = None,
+        top_key: Optional[str] = None,
         **kwargs,
     ) -> T:
         """
@@ -1472,6 +1473,11 @@ class DictNode(Node, dict):
                     logging.info("Found top key %s in %s", k, f)
                     key2file[k] = f
                     rval[k] = v
+                    
+        if top_key is not None:
+            if top_key not in rval:
+                raise KeyError(f"Top key {top_key} not found in {files}")
+            rval = rval[top_key]
 
         c = cls(**rval, **kwargs)
         logging.info(
