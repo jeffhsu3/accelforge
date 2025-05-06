@@ -2,7 +2,7 @@ from pathlib import Path
 import unittest
 
 from fastfusion.frontend import Workload
-from fastfusion.frontend.workload import get_rank_variable_bounds
+from fastfusion.frontend.workload import *
 
 
 class TestWorkload(unittest.TestCase):
@@ -18,3 +18,7 @@ class TestWorkload(unittest.TestCase):
             'm': 1, 'b': 1, 'h': 1, 'e': 1, 'd': 1
         }
         self.assertEqual(REF_RANK_VARIABLE_BOUNDS, rank_variable_bounds)
+
+        REF_TENSOR_Q_SIZE = 1  # B*H*M*E
+        self.assertEqual(REF_TENSOR_Q_SIZE,
+                         get_tensor_size(workload, Tensor('Q')))

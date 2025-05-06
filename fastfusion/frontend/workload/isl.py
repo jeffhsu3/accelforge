@@ -1,6 +1,6 @@
 import islpy as isl
 
-from .workload_spec import Workload
+from .workload_spec import Workload, Tensor, Einsum
 
 
 def get_einsum_operation_space(workload: Workload, einsum_name: str) -> isl.Set:
@@ -30,3 +30,56 @@ def get_rank_variable_bounds(
         for rank_var, shape in zip(workload.einsums[einsum_name].rank_variables,
                                    dim_shapes)
     }
+
+
+def get_projection_multi_aff(einsum: Einsum, tensor: Tensor) -> isl.MultiAff:
+    rank_variables = einsum.rank_variables
+    projection = einsum.tensor_accesses[tensor.name].projection
+
+    rank_variables_str = ','.join(rank_variables)
+
+    projection_str = ', '.join(f'{rank_name}={rank_projection}'
+                               for rank_name, rank_projection
+                               in projection.items())
+
+    return isl.MultiAff(f'{{ [{rank_variables_str}] -> [{projection_str}] }}')
+
+
+def get_projection_map(einsum: Einsum, tensor: Tensor) -> isl.Map:
+    return get_projection_multi_aff(einsum, tensor).as_map()
+
+
+def get_tensor_data_space(workload: Workload, tensor: Tensor) -> isl.Set:
+    """
+    Get tensor data space based on the operation spaces of (for lack of
+    a better term)'canonical' Einsums.
+
+    Canonical Einsums (for this purpose) are all reader Einsums if the
+    tensor is only ever read or all writer EInsums if the tensor is ever
+    an output tensor.
+    """
+    writer_einsums = workload.einsums_that_write_tensor(tensor)
+    if len(writer_einsums) == 0:
+        reader_einsums = workload.einsums_that_read_tensor(tensor)
+        canonical_einsums = reader_einsums
+    else:
+        canonical_einsums = writer_einsums
+
+    tensor_data_space = None
+    for einsum in canonical_einsums:
+        operation_space = get_einsum_operation_space(workload, einsum.name)
+        projection_map = get_projection_map(einsum, tensor)
+        if tensor_data_space is None:
+            tensor_data_space = operation_space.apply(projection_map)
+        else:
+            tensor_data_space = tensor_data_space.intersect(
+                operation_space.apply(projection_map)
+            )
+
+    return tensor_data_space
+
+
+def get_tensor_size(workload: Workload, tensor: Tensor):
+    data_space = get_tensor_data_space(workload, tensor)
+    card_pwqp = data_space.card()
+    return card_pwqp.eval(card_pwqp.domain().sample_point()).to_python()
