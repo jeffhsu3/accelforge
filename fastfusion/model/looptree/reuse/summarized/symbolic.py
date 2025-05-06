@@ -3,11 +3,14 @@ from dataclasses import dataclass, field
 from functools import reduce
 from operator import mul
 
+from fastfusion.frontend.mapping import Mapping
+from fastfusion.frontend.workload import (
+    Workload,
+    get_rank_variable_bounds,
+    get_tensor_size
+)
+
 import sympy
-
-from bindings.looptree import LooptreeWorkload, LooptreeWorkloadDependencyAnalyzer
-
-from pytimeloop.looptree.equivalent_ranks import EquivalentGroups
 
 
 @dataclass
@@ -24,51 +27,23 @@ class SummarizedAnalysisOutput:
 
 
 def analyze_reuse(
-    mapping,
-    workload: LooptreeWorkload,
-    analyzer: LooptreeWorkloadDependencyAnalyzer
+    mapping: Mapping,
+    workload: Workload
 ) -> SummarizedAnalysisOutput:
-    einsum_name_to_id = workload.einsum_name_to_id()
-    rank_name_to_id = workload.dimension_name_to_id()
-    tensor_name_to_id = workload.data_space_name_to_id()
-
+    mapping = mapping.nodes
     einsum_name = mapping[-1]['einsum']
-    if isinstance(einsum_name, int):
-        einsum_id = einsum_name
-    else:
-        einsum_id = einsum_name_to_id[einsum_name]
+    einsum_shape = get_rank_variable_bounds(workload, einsum_name)
 
-    tensors = (
-        workload.tensors_read_by_einsum(einsum_id)
+    all_tensors = (
+        workload.tensors_read_by_einsum(einsum_name)
         |
-        workload.tensors_written_by_einsum(einsum_id)
+        workload.tensors_written_by_einsum(einsum_name)
     )
 
-    rank_groups = EquivalentGroups.from_workload(workload, analyzer)
-    einsum_shape = {
-        group_id: workload.get_rank_shape(next(iter(equiv_ranks)))
-        for group_id, equiv_ranks in rank_groups.group_id_to_ranks.items()
-    }
-    # Shape is given as *inclusive* (min, max) by workload
-    einsum_shape = {k: v[1]+1 for k, v in einsum_shape.items()}
-
     tensor_size = {
-        tensor_id: workload.get_tensor_volume(tensor_id)
-        for tensor_id in tensor_name_to_id.values()
+        tensor: get_tensor_size(workload, tensor) for tensor in all_tensors
     }
     original_tensor_size = tensor_size.copy()
-
-    tensor_to_relevant_ranks = {
-        tensor_id: analyzer.einsum_dims_relevant_to_tensor(einsum_id,
-                                                           tensor_id)
-        for tensor_id in tensors
-    }
-    tensor_to_relevant_ranks = {
-        tensor_id: {
-            rank_groups.rank_to_group_id[rank] for rank in relevant_ranks
-        }
-        for tensor_id, relevant_ranks in tensor_to_relevant_ranks.items()
-    }
 
     tile_shapes = []
 
@@ -100,18 +75,18 @@ def analyze_reuse(
 
             latency *= factor
 
-            for tensor_id in tensors:
-                relevant_ranks = tensor_to_relevant_ranks[tensor_id]
+            for tensor in workload.tensors:
+                relevant_ranks = tensor_to_relevant_ranks[tensor]
                 if group_id in relevant_ranks:
-                    actual_tensor_access_multiplier[tensor_id] = \
-                        potential_tensor_access_multiplier[tensor_id]
-                    tensor_size[tensor_id] /= factor
+                    actual_tensor_access_multiplier[tensor] = \
+                        potential_tensor_access_multiplier[tensor]
+                    tensor_size[tensor] /= factor
                 else:
                     potential_tensor_access_multiplier[tensor_id] *= factor
         elif node['type'] == 'sequential':
-            for tensor_id in tensors:
-                actual_tensor_access_multiplier[tensor_id] = \
-                    potential_tensor_access_multiplier[tensor_id]
+            for tensor in workload.tensors:
+                actual_tensor_access_multiplier[tensor] = \
+                    potential_tensor_access_multiplier[tensor]
         elif node['type'] == 'spatial':
             rank_name = node['rank']
             if isinstance(rank_name, int):
