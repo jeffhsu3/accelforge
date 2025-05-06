@@ -168,20 +168,6 @@ class BaseSpecification(DictNode):
         finally:
             Node.set_global_spec(prev_global_spec)
 
-    @classmethod
-    def from_yaml(cls, *args, **kwargs) -> "BaseSpecification":
-        """
-        Create a Specification object from YAML files.
-
-        Args:
-            *args: YAML file paths.
-            jinja_parse_data: Dictionary of data to be used for Jinja parsing.
-
-        Returns:
-            Specification: The created Specification object.
-        """
-        return super().from_yaml(*args, **kwargs)  # type: ignore
-
     def parse_expressions(
         self,
         symbol_table: Optional[Dict[str, Any]] = None,
@@ -223,9 +209,6 @@ class BaseSpecification(DictNode):
         spec.process(spec._required_processors)
         spec.check_unrecognized()
         return spec
-
-    def _parse_timeloop_output(self, timeloop_output_dir: str, prefix: str):
-        pass
 
     def __deepcopy__(self, memo):
         new_instance = super().__deepcopy__(memo)

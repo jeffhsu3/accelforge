@@ -794,6 +794,8 @@ class Node(ABC):
 
             if v is None and isinstance(self, ListNode):
                 v = recognized.get("!" + self[k].__class__.__name__, None)
+                # if v is None and isinstance(k, int):
+                #     v = k
 
             if v is None:
                 has_tag = hasattr(self[k], "tag")
@@ -1335,6 +1337,8 @@ class DictNode(Node, dict):
                 self[k] = default_unspecified_
         if not __node_skip_parse:
             self._parse_elems()
+            
+        self.check_unrecognized()
 
     def _update_combine_pre_parse(self, other: dict):
         for k, v in other.items():
@@ -1479,10 +1483,35 @@ class DictNode(Node, dict):
                 raise KeyError(f"Top key {top_key} not found in {files}")
             rval = rval[top_key]
 
-        c = cls(**rval, **kwargs)
-        logging.info(
-            "Parsing extra attributes %s", ", ".join([x[0] for x in extra_elems])
-        )
+        c = None
+        try:
+            c = cls(**rval, **kwargs)
+        except Exception as e:
+            pass
+        if c is None and len(rval) == 1:
+            logging.warning(
+                f"Trying to parse a single element dictionary as a {cls.__name__}. "
+            )
+            try:
+                rval_first = list(rval.values())[0]
+                if not isinstance(rval_first, dict):
+                    raise TypeError(
+                        f"Expected a dictionary as the top-level element in {files}, "
+                        f"got {type(rval_first)}."
+                    )
+                c = cls(**rval_first, **kwargs)
+            except Exception as e:
+                logging.warning(
+                    f"Error parsing {files} with top key {top_key}. "
+                    f"Error: {e}"
+                )
+        if c is None:
+            c = cls(**rval, **kwargs)
+
+        if extra_elems:
+            logging.info(
+                "Parsing extra attributes %s", ", ".join([x[0] for x in extra_elems])
+            )
         c._parse_extra_elems(extra_elems)
         return c
 
