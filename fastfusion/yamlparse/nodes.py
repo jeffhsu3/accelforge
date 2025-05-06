@@ -682,6 +682,14 @@ class Node(ABC):
         except StopIteration:
             return False
         return True
+    
+    def notempty(self) -> bool:
+        """Return True if this node is not empty."""
+        return not self.isempty()
+    
+    def notempty_recursive(self) -> bool:
+        """Return True if this node or all subnodes are not empty."""
+        return not self.isempty_recursive()
 
     @classmethod
     def add_attr(
@@ -1262,7 +1270,7 @@ class ListNode(Node, list):
             elif isinstance(elem, ListNode):
                 found.extend(elem.get_names())
         raise KeyError(
-            f"No element with name {key} found in {self.get_name()}. "
+            f"No element with name \"{key}\" found in {self.get_name()}. "
             f"Candidates are {', '.join(found)}"
         )
 
