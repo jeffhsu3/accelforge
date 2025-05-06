@@ -51,13 +51,6 @@ class Workload(DictNode):
         self.einsums: EinsumList = self["einsums"]
         self._validate()
 
-        self._tensors: set[Tensor] = set()
-        self._einsums_that_read_tensor: dict[Tensor, list[Einsum]] = {}
-        self._einsums_that_write_tensor: dict[Tensor, list[Einsum]] = {}
-        self._tensors_read_by_einsum: dict[str, set[Tensor]] = {}
-        self._tensors_written_by_einsum: dict[str, set[Tensor]] = {}
-        self._gather_tensors()
-
     def _validate(self):
         tensor2ranks = {}
         einsum_names = set()
@@ -75,52 +68,34 @@ class Workload(DictNode):
                         f"{', '.join(e.name for e in self.einsums_with_tensor(tensor))}"
                     )
 
-    def _gather_tensors(self):
-        for einsum in self.einsums:
-            for tensor_access in einsum.tensor_accesses:
-                tensor_name = tensor_access.name
-                tensor = Tensor(tensor_name)
-                self._tensors.add(tensor)
-                if tensor_access.output:
-                    if tensor in self._einsums_that_write_tensor:
-                        self._einsums_that_write_tensor[tensor].append(einsum)
-                    else:
-                        self._einsums_that_write_tensor[tensor] = [einsum]
-
-                    if einsum.name in self._tensors_written_by_einsum:
-                        self._tensors_written_by_einsum[einsum.name].add(tensor)
-                    else:
-                        self._tensors_written_by_einsum[einsum.name] = {tensor}
-                else:
-                    if tensor in self._einsums_that_read_tensor:
-                        self._einsums_that_read_tensor[tensor].append(einsum)
-                    else:
-                        self._einsums_that_read_tensor[tensor] = [einsum]
-
-                    if einsum.name in self._tensors_read_by_einsum:
-                        self._tensors_read_by_einsum[einsum.name].add(tensor)
-                    else:
-                        self._tensors_read_by_einsum[einsum.name] = {tensor}
-
-
-    def einsums_with_tensor(self, tensor: Tensor) -> set["Einsum"]:
-        return (
-            self._einsums_that_read_tensor[tensor]
-            +
-            self._einsums_that_write_tensor[tensor]
-        )
+    def einsums_with_tensor(self, tensor: Tensor) -> list["Einsum"]:
+        return [e for e in self.einsums if tensor.name in e.tensor_names]
 
     def tensors_read_by_einsum(self, einsum_name: str) -> set[Tensor]:
-        return self._tensors_read_by_einsum[einsum_name]
+        return {
+            Tensor(t.name)
+            for e in self.einsums for t in e.tensor_accesses if not t.output
+        }
 
     def tensors_written_by_einsum(self, einsum_name: str) -> set[Tensor]:
-        return self._tensors_written_by_einsum[einsum_name]
+        return {
+            Tensor(t.name)
+            for e in self.einsums for t in e.tensor_accesses if t.output
+        }
 
     def einsums_that_read_tensor(self, tensor: Tensor) -> set["Einsum"]:
-        return self._einsums_that_read_tensor[tensor]
+        return [
+            e for e in self.einsums
+            if any(t.name == tensor.name and not t.output
+                   for t in e.tensor_accesses)
+        ]
 
     def einsums_that_write_tensor(self, tensor: Tensor) -> set["Einsum"]:
-        return self._einsums_that_write_tensor[tensor]
+        return [
+            e for e in self.einsums
+            if any(t.name == tensor.name and t.output
+                   for t in e.tensor_accesses)
+        ]
 
     def get_shape_isl_string(self, einsum_name: str) -> str:
         einsum = self.einsums[einsum_name]
@@ -129,8 +104,8 @@ class Workload(DictNode):
         return " and ".join(einsum_shape + global_shape)
 
     @property
-    def tensors(self) -> set["TensorAccess"]:
-        return self._tensors
+    def tensors(self) -> set[Tensor]:
+        return {Tensor(t.name) for e in self.einsums for t in e.tensor_accesses}
 
     def mermaid_graph(self) -> str:
         """
