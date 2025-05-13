@@ -165,7 +165,7 @@ class Iteration(DictNode):
     def declare_attrs(cls, *args, **kwargs):
         super().declare_attrs(*args, **kwargs)
         super().add_attr("reuse", str, "All")
-        super().add_attr("loop_bounds", LoopBoundsList, [])
+        super().add_attr("loop_bounds", ShapeList, [])
         super().add_attr("loop_order", LoopOrder, [], LoopOrder)
 
     def __init__(self, *args, **kwargs):
@@ -182,7 +182,7 @@ class Iteration(DictNode):
             __node_skip_parse=True,
         )
             
-class LoopBoundsList(ListNode):
+class ShapeList(ListNode):
     @classmethod
     def declare_attrs(cls, *args, **kwargs):
         super().declare_attrs(*args, **kwargs)
@@ -193,7 +193,7 @@ class LoopBoundsList(ListNode):
         
     def _parse(self, symbol_table: dict[str, Any]):
         # return [x._parse(symbol_table) for x in self]
-        return LoopBoundsList(
+        return ShapeList(
             [x._parse(symbol_table) for x in self],
             __node_skip_parse=True,
         )
@@ -256,6 +256,7 @@ class Storage(DictNode):
         super().add_attr("keep", str, "~All")
         super().add_attr("coalesce", str, "All")
         super().add_attr("uneven", bool, False)
+        super().add_attr("tile_shape", ShapeList, [])
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -263,17 +264,24 @@ class Storage(DictNode):
         self.keep: str = self["keep"]
         self.coalesce: str = self["coalesce"]
         self.uneven: bool = self["uneven"]
-    
-    def _parse(self, symbol_table: dict[str, Any]):
+        self.tile_shape: ShapeList = self["tile_shape"]
+
+    def _parse_keep_bypass(self, symbol_table: dict[str, Any]):
+        return type(self)(
+            bypass=eval_set_expression(self.bypass, symbol_table, "tensors"),
+            keep=eval_set_expression(self.keep, symbol_table, "tensors"),
+            __node_skip_parse=True,
+        )
+
+    def _parse_non_keep_bypass(self, symbol_table: dict[str, Any]):
         # new_storage = Storage()
         # new_storage.bypass = eval_set_expression(self.bypass, symbol_table, "tensors")
         # new_storage.keep = eval_set_expression(self.keep, symbol_table, "tensors")
         # new_storage.coalesce = eval_set_expression(self.coalesce, symbol_table, "tensors")
         # return new_storage
         return type(self)(
-            bypass=eval_set_expression(self.bypass, symbol_table, "tensors"),
-            keep=eval_set_expression(self.keep, symbol_table, "tensors"),
             coalesce=eval_set_expression(self.coalesce, symbol_table, "tensors"),
+            tile_shape=self.tile_shape._parse(symbol_table),
             __node_skip_parse=True,
         )
 

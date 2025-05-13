@@ -1,7 +1,8 @@
+from math import prod
+from fastfusion.frontend.workload.workload_spec import RankVariable, Tensor
 from fastfusion.yamlparse.nodes import DictNode, ListNode
 from .version import assert_version
-from typing import Union
-
+from typing import Callable, List, Optional, Union
 
 class Mapping(DictNode):
     @classmethod
@@ -15,23 +16,98 @@ class Mapping(DictNode):
         self.version: str = self["version"]
         self.nodes: MappingNodeList = self["nodes"]
 
-
 class MappingNodeList(ListNode):
     @classmethod
     def declare_attrs(cls, *args, **kwargs):
         super().declare_attrs(*args, **kwargs)
         super().add_attr("", MappingNode)
-        
+
     def __getitem__(self, key: Union[str, int]) -> "MappingNode":
         return super().__getitem__(key)
-
 
 class MappingNode(DictNode):
     @classmethod
     def declare_attrs(cls, *args, **kwargs):
         super().declare_attrs(*args, **kwargs)
-        super().add_attr("type")
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.type: str = self["type"]
+        self._constraint_lambdas: List[Callable[[], bool]] = []
+
+class Iteration(MappingNode):
+    @classmethod
+    def declare_attrs(cls, *args, **kwargs):
+        super().declare_attrs(*args, **kwargs)
+        super().add_attr("rank_variable", str)
+        super().add_attr("loop_bound", (int, None))
+        super().add_attr("tile_shape", (int, None))
+        super().add_attr("stride", (int, None))
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.rank_variable: str = self["rank_variable"]
+        self.loop_bound: Optional[int] = self["loop_bound"]
+        self.stride: Optional[int] = self["stride"]
+        self.tile_shape: Optional[int] = self["tile_shape"]
+    def _matching_iterations(self, children: List[MappingNode]) -> List["Iteration"]:
+        return [c for c in children if isinstance(c, Iteration) and c.rank_variable == self.rank_variable]
+    
+    @property
+    def tile_size(self) -> int:
+        # tile_size = prod(c.loop_bound for c in self._matching_iterations(children))
+        # return tile_size
+        raise NotImplementedError("tile_size is not implemented for Iteration")
+
+class Temporal(Iteration):
+    @classmethod
+    def declare_attrs(cls, *args, **kwargs):
+        super().declare_attrs(*args, **kwargs)
+
+class Spatial(Iteration):
+    @classmethod
+    def declare_attrs(cls, *args, **kwargs):
+        super().declare_attrs(*args, **kwargs)
+        super().declare_attrs("dimension", str)
+    
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.dimension: str = self["dimension"]
+
+class TileShape(DictNode):
+    @classmethod
+    def declare_attrs(cls, *args, **kwargs):
+        super().declare_attrs(*args, **kwargs)
+        super().add_attr("", DictNode, part_name_match=True, no_change_key=True)
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.tile_shape: DictNode[str, int] = self
+
+class Storage(Iteration):
+    @classmethod
+    def declare_attrs(cls, *args, **kwargs):
+        super().declare_attrs(*args, **kwargs)
+        super().add_attr("tensor", Tensor)
+        
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.tensor: Tensor = self["tensor"]
+
+    @property
+    def tile_shape(self) -> dict[RankVariable, int]:
+        raise NotImplementedError("tile_shape is not implemented for Storage")
+    
+    @property
+    def tile_size(self) -> int:
+        raise NotImplementedError("tile_size is not implemented for Storage")
+    
+        
+class Split(MappingNode):
+    @classmethod
+    def declare_attrs(cls, *args, **kwargs):
+        super().declare_attrs(*args, **kwargs)
+        super().add_attr("children", MappingNodeList, [])
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.children: MappingNodeList = self["children"]
