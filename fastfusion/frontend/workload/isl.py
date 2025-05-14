@@ -5,7 +5,9 @@ from .workload_spec import Workload, Tensor, Einsum
 
 def get_einsum_operation_space(workload: Workload, einsum_name: str) -> isl.Set:
     einsum_shape = workload.get_shape_isl_string(einsum_name)
-    rank_variable_names = ','.join(workload.einsums[einsum_name].rank_variables)
+    rank_variable_names = ','.join(
+        map(str, workload.einsums[einsum_name].rank_variables)
+    )
     return isl.Set(f'{{ [{rank_variable_names}] : {einsum_shape} }}')
 
 
@@ -36,7 +38,7 @@ def get_projection_multi_aff(einsum: Einsum, tensor: Tensor) -> isl.MultiAff:
     rank_variables = einsum.rank_variables
     projection = einsum.tensor_accesses[tensor.name].projection
 
-    rank_variables_str = ','.join(rank_variables)
+    rank_variables_str = ','.join(map(str, rank_variables))
 
     projection_str = ', '.join(f'{rank_name}={rank_projection}'
                                for rank_name, rank_projection

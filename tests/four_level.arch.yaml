@@ -1,0 +1,120 @@
+variables:
+  global_cycle_seconds: 1e-9
+  technology: "7nm"
+
+architecture:
+  version: 0.5
+  nodes:
+  - !Storage
+    name: MainMemory
+    class: DRAM
+    attributes:
+      size: 9999999999999
+      width: 4678 # 614 GB/s at 1.05GHz
+      datawidth: 8
+      # Upper end of the range from the TPU paper. The lower end came from their
+      # reference, and they said it left out some things.
+      energy_scale: (450 / 64) / 8
+      energy: 1
+      area: 1
+    constraints:
+      storage:
+        keep: ~Intermediates()
+      # temporal:
+      #   loop_order: [b, d, m, h, e]
+    
+  - !Storage
+    name: GlobalBuffer
+    class: SRAM
+    attributes:
+      size: 1024*1024*128*8 # 128MB
+      width: 8192
+      datawidth: 8
+      depth: 1000
+      energy: 1
+      area: 1
+    constraints:
+      storage:
+        keep: ~MainMemory.tensors()
+        # uneven: True
+
+  - !Storage
+    name: LocalBuffer
+    class: SRAM 
+    spatial: {fanout_X: 16} #, fanout_Y: 4}
+    attributes:
+      size: 1024*1024*32*8 # 32MB
+      width: 2048
+      depth: 1000
+      datawidth: 8
+      energy: 1
+      area: 1
+    constraints:
+      storage:
+        keep: Intermediates() # - GlobalBuffer.tensors()
+        # uneven: True
+      temporal:
+        loop_order: []
+      spatial:
+        # loop_order: sorted(All().ranks())
+        loop_bounds:
+        - [All().rank_variables(), product<=, 16]
+
+  - !Storage
+    name: Register
+    class: dummy_storage
+    spatial: {fanout_X: 128, fanout_Y: 128}
+    attributes:
+      size: 8 # 8b
+      datawidth: 8
+      width: 8
+      depth: 1000
+      energy: 1
+      area: 1
+    constraints:
+      storage:
+        keep: weight
+        bypass: ~weight
+        # uneven: True
+      temporal:
+        loop_bounds:
+        - [weight.rank_variables(), ==, 1]
+      spatial:
+        loop_order: [Outputs().rank_variables(), Inputs().rank_variables()]
+        loop_bounds:
+        - [All().rank_variables(), product<=, 128]
+
+  - !Compute
+    name: MAC
+    class: intmac
+    attributes: {multiplier_width: 8, adder_width: 16, energy_scale: 0.78436603748, energy: 1, area: 1}
+
+compound_components:
+  version: 0.5         # REQUIRED version number
+  classes:
+  - name: intmac
+    attributes:
+      technology: "must_specify"
+      multiplier_width: "must_specify"
+      adder_width: "must_specify"
+      global_cycle_seconds: "must_specify"
+    subcomponents:
+    - name: intadder
+      class: aladdin_adder
+      attributes: {width: adder_width}
+    - name: intmultiplier
+      class: aladdin_multiplier
+      attributes: {width_a: multiplier_width, width_b: multiplier_width}
+    actions:
+    - name: compute
+      subcomponents:
+      - name: intadder
+        actions: [name: read]
+      - name: intmultiplier
+        actions: [{name: read}]
+    - name: leak
+      subcomponents:
+      - name: intadder
+        actions: [{name: leak}]
+      - name: intmultiplier
+        actions: [{name: leak}]
