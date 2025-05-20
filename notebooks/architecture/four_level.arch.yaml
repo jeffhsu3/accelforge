@@ -5,7 +5,7 @@ variables:
 architecture:
   version: 0.5
   nodes:
-  - !Storage
+  - !Memory
     name: MainMemory
     class: DRAM
     attributes:
@@ -21,7 +21,7 @@ architecture:
       storage:
         keep: ~Intermediates()
     
-  - !Storage
+  - !Memory
     name: GlobalBuffer
     class: SRAM
     attributes:
@@ -35,7 +35,7 @@ architecture:
       storage:
         keep: ~MainMemory.tensors()
 
-  - !Storage
+  - !Memory
     name: LocalBuffer
     class: SRAM 
     spatial: {fanout_X: 16}
@@ -53,7 +53,7 @@ architecture:
         loop_bounds:
         - [All().rank_variables(), product<=, 16]
 
-  - !Storage
+  - !Memory
     name: Register
     class: dummy_storage
     spatial: {fanout_X: 128, fanout_Y: 128}
@@ -68,8 +68,8 @@ architecture:
       storage:
         keep: weight
         bypass: ~weight
-        tile_size:
-        - [weight.rank_variables(), ==, 1]
+        # tile_size:
+        # - [weight.rank_variables(), ==, 1]
       spatial:
         # loop_order: [Outputs().rank_variables(), Inputs().rank_variables()]
         loop_bounds:
@@ -109,4 +109,3 @@ compound_components:
         actions: [{name: leak}]
       - name: intmultiplier
         actions: [{name: leak}]
-

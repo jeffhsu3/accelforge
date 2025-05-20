@@ -186,7 +186,7 @@ class Workload(DictNode):
         all_ = inputs | outputs
         intermediates = {t for t in all_ if self.einsums_that_read_tensor(t) and self.einsums_that_write_tensor(t)}
         shared = {
-            t for t in all_ if len(self.einsums_that_read_tensor(t) | self.einsums_that_write_tensor(t)) > 1
+            t for t in all_ if len(set(e.name for e in self.einsums_that_read_tensor(t)) | set(e.name for e in self.einsums_that_write_tensor(t))) > 1
         }
 
         element_to_child_space = {}
@@ -360,11 +360,18 @@ class TensorAccess(DictNode):
         # Projection values may be expressions, so we need to grab all identifiers
         return set(RankVariable(x) for x in re.findall(ISL_REGEX, " ".join(self.projection.values())))
 
-    # def __eq__(self, other):
-    #     return self.name == other.name
+    @property
+    def relevant_rank_variables(self) -> set[RankVariable]:
+        return self.rank_variables
 
-    # def __hash__(self):
-    #     return hash(self.name)
+    @property
+    def fully_relevant_rank_variables(self) -> set[RankVariable]:
+        return set(RankVariable(x) for x in self.projection.values() if ISL_REGEX.match(x))
+
+    @property
+    def partially_relevant_rank_variables(self) -> set[RankVariable]:
+        return self.rank_variables - self.fully_relevant_rank_variables
+
 
 
 class ImpliedProjection(dict):

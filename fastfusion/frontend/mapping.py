@@ -3,7 +3,8 @@ from fastfusion.frontend import arch
 from fastfusion.frontend.workload.workload_spec import RankVariable, Tensor
 from fastfusion.yamlparse.nodes import DictNode, ListNode
 from .version import assert_version
-from typing import Callable, List, Optional, Union
+from typing import Callable, Iterator, List, Optional, Type, TypeVar, Union
+from abc import ABC
 
 class Mapping(DictNode):
     @classmethod
@@ -17,6 +18,8 @@ class Mapping(DictNode):
         self.version: str = self["version"]
         self.nodes: MappingNodeList = self["nodes"]
 
+T = TypeVar("T")
+
 class MappingNodeList(ListNode):
     @classmethod
     def declare_attrs(cls, *args, **kwargs):
@@ -25,8 +28,16 @@ class MappingNodeList(ListNode):
 
     def __getitem__(self, key: Union[str, int]) -> "MappingNode":
         return super().__getitem__(key)
+    
+    def compact_string(self) -> str:
+        return " ".join([n.compact_string() for n in self])
+    
+    def enumerate_type(self, required_type: Union[Type[T], tuple[Type[T], ...]]) -> Iterator[tuple[int, T]]:
+        for i, child in enumerate(self):
+            if isinstance(child, required_type):
+                yield i, child
 
-class MappingNode(DictNode):
+class MappingNode(DictNode, ABC):
     @classmethod
     def declare_attrs(cls, *args, **kwargs):
         super().declare_attrs(*args, **kwargs)
@@ -37,18 +48,18 @@ class MappingNode(DictNode):
         self._must_be_here: bool = False # Can the mapper move this node?
         self._required: bool = False # Must the mapper keep this node?
 
-class Iteration(MappingNode):
+class Iteration(DictNode):
     @classmethod
     def declare_attrs(cls, *args, **kwargs):
         super().declare_attrs(*args, **kwargs)
-        super().add_attr("rank_variable", str)
-        super().add_attr("loop_bound", (int, None))
-        super().add_attr("tile_shape", (int, None))
-        super().add_attr("stride", (int, None))
+        super().add_attr("rank_variable", (str, set))
+        super().add_attr("loop_bound", (int, None), default=None)
+        super().add_attr("tile_shape", (int, None), default=None)
+        super().add_attr("stride", (int, None), default=None)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.rank_variable: str = self["rank_variable"]
+        self.rank_variable: str | set[str] = self["rank_variable"]
         self.loop_bound: Optional[int] = self["loop_bound"]
         self.stride: Optional[int] = self["stride"]
         self.tile_shape: Optional[int] = self["tile_shape"]
@@ -66,16 +77,22 @@ class Temporal(Iteration):
     @classmethod
     def declare_attrs(cls, *args, **kwargs):
         super().declare_attrs(*args, **kwargs)
+        
+    def compact_string(self) -> str:
+        return f"{self.rank_variable}-{self.loop_bound}"
 
 class Spatial(Iteration):
     @classmethod
     def declare_attrs(cls, *args, **kwargs):
         super().declare_attrs(*args, **kwargs)
-        super().declare_attrs("dimension", str)
+        super().add_attr("dimension", str)
     
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.dimension: str = self["dimension"]
+
+    def compact_string(self) -> str:
+        return f"S{self.dimension}-{self.rank_variable}-{self.loop_bound}"
 
 class TileShape(DictNode):
     @classmethod
@@ -87,18 +104,22 @@ class TileShape(DictNode):
         super().__init__(*args, **kwargs)
         self.tile_shape: DictNode[str, int] = self
 
-class Storage(Iteration):
+class Storage(MappingNode):
     @classmethod
     def declare_attrs(cls, *args, **kwargs):
         super().declare_attrs(*args, **kwargs)
         super().add_attr("tensor", Tensor)
-        super().add_attr("memory", arch.Storage)
+        super().add_attr("memory", arch.Memory)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.tensor: Tensor = self["tensor"]
-        self.memory: arch.Storage = self["memory"]
+        self.memory: arch.Memory = self["memory"]
         self._must_exist: bool = False # Must the mapper keep this node?
+        self._backing: bool = False # Is this node a backing storage?
+
+    def compact_string(self) -> str:
+        return f"[{self.memory.name} {self.tensor.name}]"
 
     @property
     def tile_shape(self) -> dict[RankVariable, int]:

@@ -126,7 +126,7 @@ class AreaSubcomponent(DictNode):
         super().declare_attrs(*args, **kwargs)
         super().add_attr("name", str)
         super().add_attr("area", Number)
-        super().add_attr("estimator", str)
+        super().add_attr("estimator", (str, None))
         super().add_attr("messages", list, [])
         super().add_attr("attributes", dict, {})
 

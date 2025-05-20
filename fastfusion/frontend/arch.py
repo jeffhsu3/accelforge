@@ -102,13 +102,13 @@ class ArchNodes(ArchNode, ListNode):
     @classmethod
     def declare_attrs(cls, *args, **kwargs):
         super().declare_attrs(*args, **kwargs)
-        super().add_attr("!Storage", Storage)
+        super().add_attr("!Memory", Memory)
         super().add_attr("!Compute", Compute)
         super().add_attr("!Container", Container)
         super().add_attr("!Hierarchical", Hierarchical)
         super().add_attr(
             "!Component",
-            (Storage, Compute, Component),
+            (Memory, Compute, Component),
             callfunc=component_factory,
         )
 
@@ -235,13 +235,6 @@ class Hierarchical(Branch):
 
 
 class Architecture(Hierarchical):
-    """
-    An architecture.
-
-    Attributes:
-        version (Union[str, Number]): The version of the architecture.
-    """
-
     @classmethod
     def declare_attrs(cls, *args, **kwargs):
         super().declare_attrs(*args, **kwargs)
@@ -251,24 +244,7 @@ class Architecture(Hierarchical):
         super().__init__(*args, **kwargs)
         self.version: Union[str, Number] = self["version"]
 
-    def get_storage_nodes(self):
-        return self.get_nodes_of_type(Storage)
-
-    def get_compute_node(self):
-        return self.get_nodes_of_type(Compute)[0]
-
-
 class Leaf(ArchNode, DictNode, ABC):
-    """
-    A leaf node in the architecture hierarchy.
-
-    Attributes:
-        name (str): The name of the leaf node.
-        attributes (Attributes): The attributes associated with the leaf node.
-        spatial (Spatial): The spatial attributes of the leaf node.
-        constraints (ConstraintGroup): The constraint group associated with the leaf node.
-    """
-
     @classmethod
     def declare_attrs(cls, *args, **kwargs):
         super().declare_attrs(*args, **kwargs)
@@ -381,7 +357,7 @@ class Container(Leaf, ABC):
         super().__init__(*args, **kwargs)
 
 
-class Storage(Component):
+class Memory(Component):
     """
     A storage component.
     """
