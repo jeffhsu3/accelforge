@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import Optional, overload
 
-from bindings.looptree import TemporalTag, SequentialTag, PipelineTemporalTag
+# from bindings.looptree import TemporalTag, SequentialTag, PipelineTemporalTag
 
 import islpy as isl
 
@@ -12,8 +12,8 @@ from fastfusion.model.looptree.mapping_utilities import get_einsums_with_complet
 from fastfusion.frontend.mapping import Mapping
 from fastfusion.frontend.workload import Workload, get_tensor_size
 
-from pytimeloop.isl.singular import get_sum_of_pw_qpolynomial
-from pytimeloop.isl.sum import sum_with_mask
+# from pytimeloop.isl.singular import get_sum_of_pw_qpolynomial
+# from pytimeloop.isl.sum import sum_with_mask
 
 
 @dataclass
@@ -46,7 +46,10 @@ class BufferAccesses:
         )
 
     def __str__(self):
-        return str(self.accesses)
+        return repr(self.accesses)
+
+    def __repr__(self):
+        return f'BufferAccesses({repr(self.accesses)})'
 
 
 @overload
@@ -141,7 +144,6 @@ def buffer_accesses_from_buffet_actions(
     mapping = mapping['nodes']
 
     parent_buffers = get_parent_buffers(mapping, workload, is_path)
-    print(parent_buffers)
 
     einsums_with_complete_mappings = \
         get_einsums_with_complete_mappings(mapping, workload, is_path)
@@ -153,7 +155,6 @@ def buffer_accesses_from_buffet_actions(
 
     summarized_actions = \
         summarize_total_and_per_unit_actions(reuse_analysis_result)
-    print(summarized_actions)
 
     accesses_results = BufferAccesses()
     for (buffer_id, tensor, einsum), value in summarized_actions.items():
@@ -178,9 +179,9 @@ def buffer_accesses_from_buffet_actions(
                 accesses.total_writes += read_to_parent
                 accesses.total_reads += read_to_parent
 
-                # TODO: figure out how to do this per unit
-                total_elided_reads = get_tensor_size(workload, tensor)
-                accesses.total_reads -= total_elided_reads
+                # # TODO: figure out how to do this per unit
+                # total_elided_reads = get_tensor_size(workload, tensor)
+                # accesses.total_reads -= total_elided_reads
 
                 accesses.max_per_unit_reads += max_per_unit_read_to_parent
                 accesses.max_per_unit_writes += max_per_unit_read_to_parent
@@ -191,17 +192,17 @@ def buffer_accesses_from_buffet_actions(
 
         # Fills will write into current buffer except for compute (which does
         # not have write action) and top-level buffer
-        accesses = accesses_results.get_accesses(buffer_id,
-                                                 tensor,
-                                                 einsum)
         if buffer_id not in compute_targets and parent_buffer is not None:
+            accesses = accesses_results.get_accesses(buffer_id,
+                                                    tensor,
+                                                    einsum)
             if tensor in workload.tensors_written_by_einsum(einsum):
                 accesses.total_writes += fill
                 accesses.max_per_unit_writes += max_per_unit_fill
 
-                # TODO: figure out how to do this per unit
-                total_elided_writes = get_tensor_size(workload, tensor)
-                accesses.total_writes -= total_elided_writes
+                # # TODO: figure out how to do this per unit
+                # total_elided_writes = get_tensor_size(workload, tensor)
+                # accesses.total_writes -= total_elided_writes
             else:
                 accesses.total_writes += fill
                 accesses.max_per_unit_writes += max_per_unit_fill
@@ -234,8 +235,8 @@ def get_parent_buffers(mapping: Mapping, workload: Workload, is_path):
                         parent_buffers[key] = None
                     tensor_to_top_buffer[tensor] = node['level']
             elif node['type'] == 'compute':
-                for dspace in workload.tensors_read_by_einsum(einsum):
-                    key = (node['level'], dspace, einsum)
+                for tensor in workload.tensors_read_by_einsum(einsum):
+                    key = (node['level'], tensor, einsum)
                     if tensor in tensor_to_top_buffer:
                         parent_buffers[key] = tensor_to_top_buffer[tensor]
                 for tensor in workload.tensors_written_by_einsum(einsum):

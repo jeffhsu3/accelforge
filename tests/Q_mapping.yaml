@@ -2,7 +2,7 @@ mapping:
   version: 0.5
   nodes:
   - type: storage
-    tensor: [I, Q]
+    tensor: [I, WQ, Q]
     level: MainMemory
   - type: temporal
     rank: b

@@ -5,18 +5,12 @@ from fastfusion.frontend.energy_table import ComponentEnergy
 from fastfusion.model.looptree.mapping_utilities import get_einsums_with_complete_mappings
 from fastfusion.model.looptree.accesses import buffer_accesses_from_buffet_actions
 
-from pytimeloop.isl.singular import get_sum_of_pw_qpolynomial
+# from pytimeloop.isl.singular import get_sum_of_pw_qpolynomial
 
 
 def gather_actions(looptree_results, mapping, workload, bindings, is_path=False, use_name=False):
-    einsum_name_to_id = workload.einsum_name_to_id()
-
     einsums_with_complete_mapping = \
         get_einsums_with_complete_mappings(mapping['nodes'], workload, is_path)
-    einsums_with_complete_mapping = {
-        e if isinstance(e, int) else einsum_name_to_id[e]
-        for e in einsums_with_complete_mapping
-    }
 
     accesses_stats = buffer_accesses_from_buffet_actions(looptree_results,
                                                          mapping,
@@ -39,8 +33,12 @@ def gather_actions(looptree_results, mapping, workload, bindings, is_path=False,
             actions[key] = 0
         actions[key] += accesses.total_writes
 
-    ops = gather_ops(looptree_results.ops, einsums_with_complete_mapping)
-    actions[(bindings[max(bindings.keys())], 'compute')] = ops
+    # ops = gather_ops(looptree_results.per_einsum_ops, einsums_with_complete_mapping)
+    for (level, einsum), ops in looptree_results.per_einsum_ops.items():
+        key = (level, 'compute')
+        if key not in actions:
+            actions[key] = 0
+        actions[key] += ops
 
     return actions
 

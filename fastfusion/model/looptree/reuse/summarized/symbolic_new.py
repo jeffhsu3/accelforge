@@ -321,10 +321,11 @@ def analyze_temporal(node_idx,
                 for i, _ in enumerate(zip(acc_fanout, child_fanout)):
                     acc_fanout[i] = max(acc_fanout[i], child_fanout[i])
 
-        if einsum_name not in result_accumulator.per_einsum_ops:
-            result_accumulator.per_einsum_ops[einsum_name] = 0
-        result_accumulator.per_einsum_ops[einsum_name] += \
-            child_result.per_einsum_ops[einsum_name] * shape_repeats
+        for key in child_result.per_einsum_ops:
+            if key not in result_accumulator.per_einsum_ops:
+                result_accumulator.per_einsum_ops[key] = 0
+            result_accumulator.per_einsum_ops[key] += \
+                child_result.per_einsum_ops[key] * shape_repeats
 
 
     shape = stride_and_shape.shape
@@ -417,10 +418,11 @@ def analyze_spatial(node_idx, current_shape, info: AnalysisInfo):
             elif i < len(child_fanout):
                 fanout[i] = max(fanout[i], child_fanout[i])
 
-        if einsum_name not in result_accumulator.per_einsum_ops:
-            result_accumulator.per_einsum_ops[einsum_name] = 0
-        result_accumulator.per_einsum_ops[einsum_name] += \
-            child_result.per_einsum_ops[einsum_name] * shape_repeats
+        for key in child_result.per_einsum_ops:
+            if key not in result_accumulator.per_einsum_ops:
+                result_accumulator.per_einsum_ops[key] = 0
+            result_accumulator.per_einsum_ops[key] += \
+                child_result.per_einsum_ops[key] * shape_repeats
 
     shape = stride_and_shape.shape
     if isinstance(shape, SequenceOfRepatedvalues):
@@ -512,7 +514,7 @@ def analyze_compute(node_idx,
 
     result_accumulator = SummarizedAnalysisOutput()
     result_accumulator.temporal_steps[einsum_name] = 1
-    result_accumulator.per_einsum_ops[einsum_name] = 1
+    result_accumulator.per_einsum_ops[(node['level'], einsum_name)] = 1
 
     for tensor in info.all_tensors:
         buffet = Buffet(tensor, einsum_name, node['level'])

@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 
 import islpy as isl
 
-import bindings
+# import bindings
 
 
 @dataclass
@@ -19,7 +19,7 @@ class IslReuseAnalysisOutput:
 
 
 def deserialize_looptree_output(
-    looptree_output: bindings.looptree.LooptreeResult,
+    looptree_output, #: bindings.looptree.LooptreeResult,
     isl_ctx: isl.Context
 ) -> IslReuseAnalysisOutput:
     output = IslReuseAnalysisOutput()
