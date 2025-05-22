@@ -16,7 +16,7 @@ from fastfusion.frontend.workload import Workload, get_tensor_size
 # from pytimeloop.isl.sum import sum_with_mask
 
 
-@dataclass
+@dataclass(eq=True)
 class Accesses:
     total_reads: Optional[float]
     total_writes: Optional[float]

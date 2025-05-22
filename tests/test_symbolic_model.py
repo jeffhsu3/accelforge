@@ -5,7 +5,7 @@ from fastfusion.frontend import Specification
 from fastfusion.frontend.mapping import Mapping
 from fastfusion.frontend.workload import Workload
 
-from fastfusion.model.looptree.accesses import buffer_accesses_from_buffet_actions
+from fastfusion.model.looptree.accesses import buffer_accesses_from_buffet_actions, Accesses
 from fastfusion.model.looptree.energy import gather_actions
 from fastfusion.model.looptree.latency import get_latency
 from fastfusion.model.looptree.reuse.summarized.symbolic_new import analyze_reuse, Compute
@@ -41,22 +41,25 @@ class TestSymbolicAccesses(unittest.TestCase):
         accesses = buffer_accesses_from_buffet_actions(result, mapping, workload, is_path=True)
 
         main_memory_I_accesses= accesses.get_accesses('MainMemory', 'I', 'Q')
-        self.assertEqual(main_memory_I_accesses.total_reads, 64)
-        self.assertEqual(main_memory_I_accesses.total_writes, 0)
-        self.assertEqual(main_memory_I_accesses.max_per_unit_reads, 64)
-        self.assertEqual(main_memory_I_accesses.max_per_unit_writes, 0)
+        self.assertEqual(main_memory_I_accesses,
+                         Accesses(total_reads=64,
+                                  total_writes=0,
+                                  max_per_unit_reads=64,
+                                  max_per_unit_writes=0))
 
         local_buffer_I_accesses= accesses.get_accesses('LocalBuffer', 'I', 'Q')
-        self.assertEqual(local_buffer_I_accesses.total_reads, 64)
-        self.assertEqual(local_buffer_I_accesses.total_writes, 64)
-        self.assertEqual(local_buffer_I_accesses.max_per_unit_reads, 16)
-        self.assertEqual(local_buffer_I_accesses.max_per_unit_writes, 16)
+        self.assertEqual(local_buffer_I_accesses,
+                         Accesses(total_reads=64,
+                                  total_writes=64,
+                                  max_per_unit_reads=16,
+                                  max_per_unit_writes=16))
 
         local_buffer_Q_accesses= accesses.get_accesses('LocalBuffer', 'Q', 'Q')
-        self.assertEqual(local_buffer_Q_accesses.total_reads, 64)
-        self.assertEqual(local_buffer_Q_accesses.total_writes, 128)
-        self.assertEqual(local_buffer_Q_accesses.max_per_unit_reads, 16)
-        self.assertEqual(local_buffer_Q_accesses.max_per_unit_writes, 32)
+        self.assertEqual(local_buffer_Q_accesses,
+                         Accesses(total_reads=64,
+                                  total_writes=128,
+                                  max_per_unit_reads=16,
+                                  max_per_unit_writes=32))
 
 
 class TestSymbolicActions(unittest.TestCase):
