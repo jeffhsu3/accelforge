@@ -26,7 +26,7 @@ class NumLoops(int):
 class TilingSegment:
     def __init__(self, full_shape):
         self.data: list[GivenShape | NumLoops] = [GivenShape(full_shape), NumLoops(0)]
-        self.indices = list[int] = []
+        self.indices: list[int] = []
 
     def add_symbol(self, loop_idx: int):
         self.data[-1] = NumLoops(self.data[-1] + 1)
@@ -87,6 +87,7 @@ def dummy_tile_shape_exploration(pmapping, workload, constraints):
 
 
 def explore_tile_shapes(pmapping, workload, constraints: list[tuple]):
+    pmapping = pmapping.nodes
     shape = get_rank_variable_bounds(workload, pmapping[-1].einsum)
 
     set_last_tile_shape_to_one(pmapping)
@@ -102,7 +103,7 @@ def explore_tile_shapes(pmapping, workload, constraints: list[tuple]):
         for other_rank, other_segments in rank_var_to_tiling_segments.items():
             if rank_var == other_rank:
                 continue
-            other_n_loops = len(other_segments)
+            other_n_loops = len(other_segments.indices)
             indices.extend(other_segments.indices)
             choices = np.concatenate(np.ones((n_rows, other_n_loops)),
                                      axis=1)
@@ -142,9 +143,9 @@ def collect_tiling_segments(
     rank_var_to_tiling_segments = {}
     loop_idx = 0
     for node in pmapping:
-        if node['type'] in ['temporal', 'spatial']:
-            rank_var = node['rank']
-            tile_shape = node['tile_shape']
+        if isinstance(node, Temporal) or isinstance(node, Spatial):
+            rank_var = node.rank_variable
+            tile_shape = node.tile_shape
 
             if rank_var not in rank_var_to_tiling_segments:
                 rank_var_to_tiling_segments[rank_var] = \
@@ -190,8 +191,8 @@ def make_shapes_for_one_rank(tiling_segments):
 def set_last_tile_shape_to_one(pmapping):
     rank_var_to_last_node = {}
     for node in pmapping:
-        if node['type'] in ['temporal', 'spatial']:
-            rank_var_to_last_node[node['rank']] = node
+        if isinstance(node, Temporal) or isinstance(node, Spatial):
+            rank_var_to_last_node[node.rank_variable] = node
 
     for last_node in rank_var_to_last_node.values():
-        last_node['tile_shape'] = 1
+        last_node.tile_shape = 1
