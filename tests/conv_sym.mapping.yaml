@@ -17,12 +17,12 @@ mapping:
     tile_shape: symbol
     dimension: 0
     across: LocalBuffer
-  - !Temporal
-    rank_variable: m
-    tile_shape: symbol
   - !Storage
     tensors: [I]
     memory: LocalBuffer
+  - !Temporal
+    rank_variable: m
+    tile_shape: symbol
   - !Temporal
     rank_variable: p
     tile_shape: symbol
@@ -32,6 +32,7 @@ mapping:
   - !Temporal
     rank_variable: p
     tile_shape: 4
+    assume_perfect_factor: false
   - !Temporal
     rank_variable: p
     tile_shape: symbol

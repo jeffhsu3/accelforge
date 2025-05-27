@@ -117,7 +117,10 @@ def explore_tile_shapes(pmapping, constraints, specification: Specification):
 
     df = {}
     total_occupancy = {}
+    compute_unit = pmapping.nodes[-1].compute
     for buffet, stats in reuse.buffet_stats.items():
+        if buffet.level == compute_unit:
+            continue
         occupancy = stats.occupancy
         if isinstance(occupancy, Number):
             occupancy = np.repeat(occupancy, n_shapes)
@@ -136,8 +139,6 @@ def explore_tile_shapes(pmapping, constraints, specification: Specification):
     else:
         overall_latency = sympy.lambdify(reuse.symbols, overall_latency)(*tile_shapes)
     df['Latency'] = overall_latency
-
-    print(df)
 
     return df
 

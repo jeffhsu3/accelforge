@@ -17,4 +17,7 @@ class TestTileShapeExploration(unittest.TestCase):
 
         mapping = Mapping.from_yaml(PARENT_DIR / 'conv_sym.mapping.yaml')
 
-        explore_tile_shapes(mapping, [], specification)
+        result = explore_tile_shapes(mapping, [], specification)
+        self.assertTrue('Latency' in result)
+        self.assertTrue('MainMemory_Occupancy' in result)
+        self.assertTrue('LocalBuffer_Occupancy' in result)

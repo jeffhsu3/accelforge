@@ -202,7 +202,9 @@ class ReservationAnalysisTracker:
 
 def insert_reservation_nodes(mapping, info: AnalysisInfo):
     trackers: list[ReservationAnalysisTracker] = []
+    seen_tensors = set()  # reservation for top-level buffets cannot be lowered
     for i, node in enumerate(mapping):
+        insert_offset = 0 # for inserting under storage
         fills = []
         to_remove = []
         if isinstance(node, Temporal):
@@ -232,6 +234,11 @@ def insert_reservation_nodes(mapping, info: AnalysisInfo):
                 tensor = TensorName(tensor)
                 buffet = Buffet(tensor, mapping[-1].einsum, node.memory)
                 trackers.append(ReservationAnalysisTracker(buffet))
+                if tensor not in seen_tensors:
+                    insert_offset = 1
+                    seen_tensors.add(tensor)
+                    fills.append(buffet)
+                    to_remove.append(len(trackers)-1)
         elif isinstance(node, mapping_spec.Compute):
             for tracker_idx, tracker in enumerate(trackers):
                 tracker.track_compute()
@@ -251,14 +258,14 @@ def insert_reservation_nodes(mapping, info: AnalysisInfo):
         for tracker_idx in reversed(to_remove):
             tracker = trackers.pop(tracker_idx)
             mapping.insert(
-                i,
+                i+insert_offset,
                 Reservation(tensor=tracker.buffet.tensor,
                             memory=tracker.buffet.level)
             )
 
         for fill in fills:
             mapping.insert(
-                i,
+                i+insert_offset,
                 Fill(tensor=fill.tensor,
                      memory=fill.level)
             )
@@ -337,9 +344,10 @@ def analyze_temporal(node_idx,
         for key in child_result.compute_stats:
             if key not in result_accumulator.compute_stats:
                 result_accumulator.compute_stats[key] = ComputeStats()
-            result_accumulator.compute_stats[key].total_ops += \
+            compute_stats = result_accumulator.compute_stats[key]
+            compute_stats.total_ops += \
                 child_result.compute_stats[key].total_ops * shape_repeats
-            result_accumulator.compute_stats[key].max_per_unit_ops += \
+            compute_stats.max_per_unit_ops += \
                 child_result.compute_stats[key].max_per_unit_ops * shape_repeats
 
 
@@ -433,12 +441,16 @@ def analyze_spatial(node_idx, current_shape, info: AnalysisInfo):
         for key in child_result.compute_stats:
             if key not in result_accumulator.compute_stats:
                 result_accumulator.compute_stats[key] = ComputeStats()
-            result_accumulator.compute_stats[key].total_ops += \
+            compute_stats = result_accumulator.compute_stats[key]
+            compute_stats.total_ops += \
                 child_result.compute_stats[key].total_ops * shape_repeats
-            result_accumulator.compute_stats[key].max_per_unit_ops = sympy.Max(
-                result_accumulator.compute_stats[key].max_per_unit_ops,
-                child_result.compute_stats[key].max_per_unit_ops
-            )
+            if compute_stats.max_per_unit_ops == 0:
+                compute_stats.max_per_unit_ops = child_result.compute_stats[key].max_per_unit_ops
+            else:
+                compute_stats.max_per_unit_ops = sympy.Max(
+                    compute_stats.max_per_unit_ops,
+                    child_result.compute_stats[key].max_per_unit_ops
+                )
 
     shape = stride_and_shape.shape
     if isinstance(shape, SequenceOfRepatedvalues):
@@ -451,11 +463,12 @@ def analyze_spatial(node_idx, current_shape, info: AnalysisInfo):
     return result_accumulator
 
 
-def reduce_dicts(dict1: dict, dict2: dict, reduce_op, initial=0):
+def reduce_dicts(dict1: dict, dict2: dict, reduce_op):
     for key in dict1:
         if key not in dict2:
-            dict2[key] = initial
-        dict2[key] = reduce_op(dict1[key], dict2[key])
+            dict2[key] = dict1[key]
+        else:
+            dict2[key] = reduce_op(dict1[key], dict2[key])
 
 
 def analyze_storage(node_idx, current_shape, info: AnalysisInfo):
@@ -571,19 +584,19 @@ def get_stride_and_tile_shape(node: Iteration, full_shape, n: int):
         tile_shape = node.tile_shape
 
         if node.assume_perfect_factor or known_perfect_factor(tile_shape, rank_shape):
-            factor = sympy.ceiling(rank_shape / sympy.Min(rank_shape, tile_shape))
+            factor = rank_shape / tile_shape
             return StrideAndShape(tile_shape, RepeatedValue(tile_shape, factor))
         else:
-            factor = sympy.ceiling(rank_shape / tile_shape)
+            factor = sympy.ceiling(rank_shape / sympy.Min(tile_shape, rank_shape))
             return make_possibly_different_last(tile_shape, factor, rank_shape)
     elif node.loop_bound is not None:
         factor = node.loop_bound
 
         if node.assume_perfect_factor or known_perfect_factor(factor, rank_shape):
-            tile_shape = sympy.ceiling(rank_shape / sympy.Min(factor, rank_shape))
+            tile_shape = rank_shape / factor
             return StrideAndShape(tile_shape, RepeatedValue(tile_shape, factor))
         else:
-            tile_shape = sympy.ceiling(rank_shape / factor)
+            tile_shape = sympy.ceiling(rank_shape / sympy.Min(rank_shape, factor))
             return make_possibly_different_last(tile_shape, factor, rank_shape)
     
     elif node.tile_pattern is not None:
