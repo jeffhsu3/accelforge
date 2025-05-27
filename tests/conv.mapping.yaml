@@ -15,7 +15,7 @@ mapping:
     dimension: 0
     across: LocalBuffer
   - !Storage
-    tensor: [I]
+    tensors: [I]
     memory: LocalBuffer
   - !Temporal
     rank_variable: p

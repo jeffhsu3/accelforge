@@ -105,7 +105,7 @@ class Storage(MappingNode):
     def tensor(self) -> TensorName:
         if len(self.tensors) != 1:
             raise ValueError(
-                f"Storage node {self.name} has {len(self.tensors)} tensors"
+                f"Storage node {repr(self)} has {len(self.tensors)} tensors. "
                 f"Access the tensors property instead."
             )
         return self.tensors[0]

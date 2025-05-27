@@ -1,16 +1,14 @@
-from collections import defaultdict
 from dataclasses import dataclass, field
 from functools import reduce
-from operator import add, mul
+from operator import mul
 from typing import Any
 
 import fastfusion.frontend.mapping as mapping_spec
 from fastfusion.frontend.mapping import Mapping, Spatial, Temporal, Storage, Reservation, Fill
 from fastfusion.frontend.workload import (
     Workload,
-    Tensor,
-    get_rank_variable_bounds,
-    get_tensor_size
+    TensorName,
+    get_rank_variable_bounds
 )
 from fastfusion.frontend.workload.symbolic import (
     get_projection_expr,
@@ -25,7 +23,7 @@ import sympy
 
 @dataclass(eq=True, frozen=True)
 class Buffet:
-    tensor: Tensor
+    tensor: TensorName
     einsum: str
     level: str
 
@@ -222,8 +220,8 @@ def insert_reservation_nodes(mapping, info: AnalysisInfo):
                 if tracker.is_should_stop:
                     to_remove.append(tracker_idx)
         elif isinstance(node, Storage):
-            for tensor in node.tensor:
-                tensor = Tensor(tensor)
+            for tensor in node.tensors:
+                tensor = TensorName(tensor)
                 buffet = Buffet(tensor, mapping[-1].einsum, node.memory)
                 trackers.append(ReservationAnalysisTracker(buffet))
         elif isinstance(node, mapping_spec.Compute):
@@ -459,8 +457,8 @@ def analyze_storage(node_idx, current_shape, info: AnalysisInfo):
 
     child_result = analyze_node(node_idx+1, current_shape, info)
 
-    for tensor in node.tensor:
-        tensor = Tensor(tensor)
+    for tensor in node.tensors:
+        tensor = TensorName(tensor)
         buffet = Buffet(tensor, einsum_name, node.memory)
         buffet_stats = child_result.buffet_stats[buffet]
         buffet_stats.reads_to_peer = 0  # TODO: peer-to-peer support
@@ -475,7 +473,7 @@ def analyze_reservation(node_idx, current_shape, info: AnalysisInfo):
 
     child_result = analyze_node(node_idx+1, current_shape, info)
 
-    tensor = Tensor(node.tensor)
+    tensor = TensorName(node.tensor)
     buffet = Buffet(tensor, einsum_name, node.memory)
 
     # Reservation nodes are the first to produce stats for a buffet
@@ -501,7 +499,7 @@ def analyze_fill(node_idx, current_shape, info: AnalysisInfo) -> SummarizedAnaly
 
     child_result = analyze_node(node_idx+1, current_shape, info)
     
-    tensor = Tensor(node.tensor)
+    tensor = node.tensor
     buffet = Buffet(tensor, mapping[-1].einsum, node.memory)
 
     buffet_stats = child_result.buffet_stats[buffet]
@@ -645,7 +643,7 @@ def make_possibly_different_last(common_tile_shape, factor, full_shape):
 
 def compute_dense_tile_occupancy(projection_expr, rank_variable_shapes):
     substitutions = [
-        (rank_variable.name, rank_variable_shape - 1)
+        (rank_variable, rank_variable_shape - 1)
         for rank_variable, rank_variable_shape in rank_variable_shapes.items()
     ]
     return reduce(

@@ -221,7 +221,7 @@ def get_parent_buffers(mapping: Mapping, workload: Workload, is_path):
         tensor_to_top_buffer = {}
         for node in path:
             if isinstance(node, Storage):
-                for tensor in node.tensor:
+                for tensor in node.tensors:
                     key = (node.memory, tensor, einsum)
                     if tensor in tensor_to_top_buffer:
                         parent_buffers[key] = tensor_to_top_buffer[tensor]
