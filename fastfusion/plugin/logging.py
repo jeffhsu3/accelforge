@@ -3,10 +3,7 @@ import queue
 from typing import Callable, List, Union
 from logging.handlers import QueueHandler, QueueListener
 
-logging.basicConfig(
-    format="%(asctime)s %(levelname)-8s    %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-)
+logging.basicConfig(format="%(levelname)-8s    %(message)s",)
 logging.getLogger().setLevel(logging.INFO)
 
 LOG_QUEUES = {}

@@ -5,12 +5,12 @@ from typing import Annotated, Any, Callable, List, Optional, Tuple, Union
 import numpy as np
 from fastfusion.util.basetypes import ParsableList, ParsableModel, ParsesTo
 from fastfusion.util.setexpressions import InvertibleSet, eval_set_expression
-from fastfusion.frontend.workload.workload import RankVariable, Tensor
+from fastfusion.frontend.workload.workload import RankVariableName, TensorName
 from fastfusion.version import assert_version, __version__
 
 
 
-class LoopOrder(ParsableList[RankVariable]):
+class LoopOrder(ParsableList[RankVariableName]):
     """
     A loop_order of ranks.
     """
@@ -22,7 +22,7 @@ class LoopOrder(ParsableList[RankVariable]):
         )
 
 class Comparison(ParsableModel):
-    expression: Union[str, InvertibleSet[RankVariable], set[RankVariable]]
+    expression: Union[str, InvertibleSet[RankVariableName], set[RankVariableName]]
     operator: str
     value: ParsesTo[int]
     
@@ -94,15 +94,15 @@ class Comparison(ParsableModel):
 #                 new_args.append(arg)
 #         super().__init__(*new_args, **kwargs)
         
-# def parse_comparison_list(x: ParsableList[RankVariable]) -> ComparisonList:
+# def parse_comparison_list(x: ParsableList[RankVariableName]) -> ComparisonList:
 #     if not isinstance(x, list):
 #         raise ValueError(f"Must be a list. Got {type(x)}")
 #     return ComparisonList(*x)
 
 class Storage(ParsableModel):
-    bypass: Union[str, InvertibleSet[Tensor], set[Tensor]] = "~All"
-    keep: Union[str, InvertibleSet[Tensor], set[Tensor]] = "~All"
-    coalesce: Union[str, InvertibleSet[Tensor], set[Tensor]] = "All"
+    bypass: Union[str, InvertibleSet[TensorName], set[TensorName]] = "~All"
+    keep: Union[str, InvertibleSet[TensorName], set[TensorName]] = "~All"
+    coalesce: Union[str, InvertibleSet[TensorName], set[TensorName]] = "All"
     tile_shape: ParsableList[Comparison] = []
 
     def _parse_keep_bypass(self, symbol_table: dict[str, Any]):
@@ -119,7 +119,7 @@ class Storage(ParsableModel):
 
 class Iteration(ParsableModel):
     version: Annotated[str, assert_version] = __version__
-    reuse: Union[str, InvertibleSet[Tensor], set[Tensor]] = "All"
+    reuse: Union[str, InvertibleSet[TensorName], set[TensorName]] = "All"
     loop_bounds: ParsableList[Comparison] = ParsableList()
     
     def __init__(self, *args, **kwargs):

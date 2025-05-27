@@ -3,11 +3,11 @@ from typing import Any
 
 import sympy
 
-from .workload import Tensor, Einsum
+from .workload import TensorName, Einsum
 
 
-def get_projection_expr(einsum: Einsum, tensor: Tensor):
-    projection = einsum.tensor_accesses[tensor.name].projection
+def get_projection_expr(einsum: Einsum, tensor: TensorName):
+    projection = einsum.tensor_accesses[tensor].projection
     return {
         rank_name: sympy.parsing.sympy_parser.parse_expr(proj_str)
         for rank_name, proj_str in projection.items()
@@ -27,9 +27,9 @@ class PartiallyRelevant:
 
 
 def get_rank_variable_relevancy(einsum: Einsum,
-                                tensor: Tensor):
+                                tensor: TensorName):
     relevancy = {}
-    projection = einsum.tensor_accesses[tensor.name].projection
+    projection = einsum.tensor_accesses[tensor].projection
     for rank_variable in einsum.rank_variables:
         relevancy[rank_variable] = Irrelevant()
         for rank_name, projection_str in projection.items():

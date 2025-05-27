@@ -25,8 +25,8 @@ def memory_latency(
 
     component_to_read_writes = defaultdict(lambda: [None, None])
     for (component, tensor, _), accesses in accesses_stats.items():
-        if (component, tensor.name) in component_tensor_datawidth:
-            datawidth = component_tensor_datawidth[(component, tensor.name)]
+        if (component, tensor) in component_tensor_datawidth:
+            datawidth = component_tensor_datawidth[(component, tensor)]
         elif (component, '*') in component_tensor_datawidth:
             datawidth = component_tensor_datawidth[(component, '*')]
         else:

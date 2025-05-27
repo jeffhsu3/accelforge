@@ -69,7 +69,7 @@ def dummy_tile_shape_exploration(pmapping, workload, constraints):
         if isinstance(node, Temporal) or isinstance(node, Spatial):
             n_loops += 1
         elif isinstance(node, Storage):
-            memory_levels.append(node.memory.name)
+            memory_levels.append(node.memory)
 
     result = {
         f"tile_shape{n}": np.random.randint(1, 1024, size=N_ROWS)

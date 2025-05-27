@@ -1,6 +1,6 @@
 import islpy as isl
 
-from .workload import Workload, Tensor, Einsum
+from .workload import Workload, TensorName, Einsum
 
 
 def get_einsum_operation_space(workload: Workload, einsum_name: str) -> isl.Set:
@@ -34,9 +34,9 @@ def get_rank_variable_bounds(
     }
 
 
-def get_projection_multi_aff(einsum: Einsum, tensor: Tensor) -> isl.MultiAff:
+def get_projection_multi_aff(einsum: Einsum, tensor: TensorName) -> isl.MultiAff:
     rank_variables = einsum.rank_variables
-    projection = einsum.tensor_accesses[tensor.name].projection
+    projection = einsum.tensor_accesses[tensor].projection
 
     rank_variables_str = ','.join(map(str, rank_variables))
 
@@ -47,11 +47,11 @@ def get_projection_multi_aff(einsum: Einsum, tensor: Tensor) -> isl.MultiAff:
     return isl.MultiAff(f'{{ [{rank_variables_str}] -> [{projection_str}] }}')
 
 
-def get_projection_map(einsum: Einsum, tensor: Tensor) -> isl.Map:
+def get_projection_map(einsum: Einsum, tensor: TensorName) -> isl.Map:
     return get_projection_multi_aff(einsum, tensor).as_map()
 
 
-def get_tensor_data_space(workload: Workload, tensor: Tensor) -> isl.Set:
+def get_tensor_data_space(workload: Workload, tensor: TensorName) -> isl.Set:
     """
     Get tensor data space based on the operation spaces of (for lack of
     a better term)'canonical' Einsums.
@@ -81,7 +81,7 @@ def get_tensor_data_space(workload: Workload, tensor: Tensor) -> isl.Set:
     return tensor_data_space
 
 
-def get_tensor_size(workload: Workload, tensor: Tensor):
+def get_tensor_size(workload: Workload, tensor: TensorName):
     data_space = get_tensor_data_space(workload, tensor)
     card_pwqp = data_space.card()
     return card_pwqp.eval(card_pwqp.domain().sample_point()).to_python()

@@ -246,14 +246,14 @@ def insert_reservation_nodes(mapping, info: AnalysisInfo):
             tracker = trackers.pop(tracker_idx)
             mapping.insert(
                 i,
-                Reservation(tensor=tracker.buffet.tensor.name,
+                Reservation(tensor=tracker.buffet.tensor,
                             memory=tracker.buffet.level)
             )
 
         for fill in fills:
             mapping.insert(
                 i,
-                Fill(tensor=fill.tensor.name,
+                Fill(tensor=fill.tensor,
                      memory=fill.level)
             )
 

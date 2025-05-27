@@ -5,7 +5,7 @@ from fastfusion.util.basetypes import ParsableDict, ParsableList, ParsableModel
 from fastfusion.util.setexpressions import InvertibleSet, eval_set_expression
 from fastfusion.frontend.renames import Renames
 from fastfusion.version import assert_version, __version__
-from typing import Annotated, Any, Callable
+from typing import Annotated, Any, Callable, TypeAlias
 from pydantic_core.core_schema import CoreSchema, chain_schema, no_info_plain_validator_function
 
 
@@ -26,63 +26,12 @@ ISL_REGEX = re.compile(
     r"\b(?!(?:" + "|".join(CLIST_OPERATORS) + r")\b)[a-zA-Z#$@][a-zA-Z0-9_]*\b"
 )
 
-
-class CompareByName(ParsableModel):
-    name: str
-
-    def __init__(self, *args, **kwargs):
-        if len(args) == 1 and "name" not in kwargs:
-            kwargs["name"] = args[0]
-            super().__init__(**kwargs)
-        else:
-            super().__init__(*args, **kwargs)
-        
-    def __str__(self):
-        return self.name
-    
-    def __repr__(self):
-        return f"{self.name}"
-    
-    def __eq__(self, other):
-        return self.name == getattr(other, "name", other)
-    
-    def __hash__(self):
-        return hash(self.name)
-    
-    def __lt__(self, other):
-        return self.name < other.name
-    
-    def __le__(self, other):
-        return self.name <= other.name
-    
-    def __ge__(self, other):
-        return self.name >= other.name
-    
-    def __gt__(self, other):
-        return self.name > other.name
-    
-    def __ne__(self, other):
-        return self.name != other.name
-
-    # @classmethod
-    # def __get_pydantic_core_schema__(cls, source_type: Any, handler: Callable) -> CoreSchema:
-    #     # Create a schema that validates strings and converts them to CompareByName instances
-    #     # or accepts existing CompareByName instances
-    #     return no_info_plain_validator_function(
-    #         lambda x: x if isinstance(x, cls) else cls(str(x))
-    #     )
-
-class Tensor(CompareByName):
-    pass
-
-class RankVariable(CompareByName):
-    pass
-    
-class Rank(CompareByName):
-    pass
+TensorName: TypeAlias = str
+RankVariableName: TypeAlias = str
+RankName: TypeAlias = str
 
 class TensorAccess(ParsableModel):
-    name: str
+    name: TensorName
     projection: dict[str, str]
     output: bool = False
     factors: list = []
@@ -91,7 +40,7 @@ class TensorAccess(ParsableModel):
         if "projection" in data:
             data["projection"] = projection_factory(data["projection"])
         super().__init__(**data)
-        
+
         projection = [x for x in self.projection.values()]
         while projection:
             factor = projection.pop(0)
@@ -99,12 +48,12 @@ class TensorAccess(ParsableModel):
                 projection += factor
             else:
                 self.factors.append(factor)
-                
+
     def to_formatted_string(self) -> str:
         subscript = ",".join(self.projection.values())
         if isinstance(self.projection, ImpliedProjection):
             return f"{self.name}<sub>{subscript}</sub>"
-        
+
         string = [self.name]
         for k, v in self.projection.items():
             if len(string) < len(self.projection):
@@ -114,24 +63,24 @@ class TensorAccess(ParsableModel):
         return "".join(string)
 
     @property
-    def ranks(self) -> tuple[Rank, ...]:
-        return tuple(Rank(x) for x in self.projection.keys())
+    def ranks(self) -> tuple[RankName, ...]:
+        return tuple(RankName(x) for x in self.projection.keys())
 
     @property
-    def rank_variables(self) -> set[RankVariable]:
+    def rank_variables(self) -> set[RankVariableName]:
         # Projection values may be expressions, so we need to grab all identifiers
-        return set(RankVariable(x) for x in re.findall(ISL_REGEX, " ".join(self.projection.values())))
+        return set(RankVariableName(x) for x in re.findall(ISL_REGEX, " ".join(self.projection.values())))
 
     @property
-    def relevant_rank_variables(self) -> set[RankVariable]:
+    def relevant_rank_variables(self) -> set[RankVariableName]:
         return self.rank_variables
 
     @property
-    def fully_relevant_rank_variables(self) -> set[RankVariable]:
-        return set(RankVariable(x) for x in self.projection.values() if ISL_REGEX.match(x))
+    def fully_relevant_rank_variables(self) -> set[RankVariableName]:
+        return set(RankVariableName(x) for x in self.projection.values() if ISL_REGEX.match(x))
 
     @property
-    def partially_relevant_rank_variables(self) -> set[RankVariable]:
+    def partially_relevant_rank_variables(self) -> set[RankVariableName]:
         return self.rank_variables - self.fully_relevant_rank_variables
 
 class ImpliedProjection(dict):
@@ -182,7 +131,7 @@ class Einsum(ParsableModel):
     shape: Shape[str] = Shape()
 
     @property
-    def rank_variables(self) -> set[RankVariable]:
+    def rank_variables(self) -> set[RankVariableName]:
         if not self.tensor_accesses:
             return set()
         return set.union(*[t.rank_variables for t in self.tensor_accesses])
@@ -192,11 +141,11 @@ class Einsum(ParsableModel):
         return set([t.name for t in self.tensor_accesses])
     
     @property
-    def tensors(self) -> set[Tensor]:
-        return set([Tensor(t.name) for t in self.tensor_accesses])
+    def tensors(self) -> set[TensorName]:
+        return set([TensorName(t.name) for t in self.tensor_accesses])
     
     @property
-    def tensor2rank_variables(self) -> dict[str, set[RankVariable]]:
+    def tensor2rank_variables(self) -> dict[str, set[RankVariableName]]:
         return {t.name: t.rank_variables for t in self.tensor_accesses}
     
     def to_formatted_string(self, compress: bool = False) -> str:
@@ -206,11 +155,11 @@ class Einsum(ParsableModel):
         rhs = rhs_join.join([t.to_formatted_string() for t in self.tensor_accesses if not t.output])
         return f"{lhs}=\n{rhs}" if compress else f"{lhs} = {rhs}"
     
-    def input_tensors(self) -> set[Tensor]:
-        return {Tensor(t.name) for t in self.tensor_accesses if not t.output}
+    def input_tensors(self) -> set[TensorName]:
+        return {TensorName(t.name) for t in self.tensor_accesses if not t.output}
     
-    def output_tensors(self) -> set[Tensor]:
-        return {Tensor(t.name) for t in self.tensor_accesses if t.output}
+    def output_tensors(self) -> set[TensorName]:
+        return {TensorName(t.name) for t in self.tensor_accesses if t.output}
 
 class Workload(ParsableModel):
     version: Annotated[str, assert_version] = __version__
@@ -228,30 +177,30 @@ class Workload(ParsableModel):
             if einsum.name in einsum_names:
                 raise ValueError(f"Einsum name {einsum.name} is not unique")
             einsum_names.add(einsum.name)
-            for tensor in einsum.tensor_accesses:
-                tensor2ranks.setdefault(tensor.name, tensor.ranks)
-                if tensor2ranks[tensor.name] != tensor.ranks:
+            for tensor_accesses in einsum.tensor_accesses:
+                tensor2ranks.setdefault(tensor_accesses.name, tensor_accesses.ranks)
+                if tensor2ranks[tensor_accesses.name] != tensor_accesses.ranks:
                     raise ValueError(
-                        f"Tensor {tensor.name} has inconsistent ranks. Found "
-                        f"{tensor2ranks[tensor.name]} and {tensor.ranks}. "
-                        f"Tensor is in Einsums "
-                        f"{', '.join(e.name for e in self.einsums_with_tensor(tensor))}"
+                        f"TensorName {tensor_accesses.name} has inconsistent ranks. Found "
+                        f"{tensor2ranks[tensor_accesses.name]} and {tensor_accesses.ranks}. "
+                        f"TensorName is in Einsums "
+                        f"{', '.join(e.name for e in self.einsums_with_tensor(tensor_accesses))}"
                     )
 
-    def einsums_with_tensor(self, tensor: Tensor) -> list["Einsum"]:
-        return [e for e in self.einsums if tensor.name in e.tensor_names]
+    def einsums_with_tensor(self, tensor: TensorName) -> list["Einsum"]:
+        return [e for e in self.einsums if tensor in e.tensor_names]
 
-    def tensors_read_by_einsum(self, einsum_name: str) -> set[Tensor]:
+    def tensors_read_by_einsum(self, einsum_name: str) -> set[TensorName]:
         return self.einsums[einsum_name].input_tensors()
 
-    def tensors_written_by_einsum(self, einsum_name: str) -> set[Tensor]:
+    def tensors_written_by_einsum(self, einsum_name: str) -> set[TensorName]:
         return self.einsums[einsum_name].output_tensors()
 
-    def einsums_that_read_tensor(self, tensor: Tensor) -> list["Einsum"]:
-        return [e for e in self.einsums if tensor.name in e.input_tensors()]
+    def einsums_that_read_tensor(self, tensor: TensorName) -> list["Einsum"]:
+        return [e for e in self.einsums if tensor in e.input_tensors()]
 
-    def einsums_that_write_tensor(self, tensor: Tensor) -> list["Einsum"]:
-        return [e for e in self.einsums if tensor.name in e.output_tensors()]
+    def einsums_that_write_tensor(self, tensor: TensorName) -> list["Einsum"]:
+        return [e for e in self.einsums if tensor in e.output_tensors()]
 
     def get_shape_isl_string(self, einsum_name: str) -> str:
         einsum = self.einsums[einsum_name]
@@ -260,8 +209,8 @@ class Workload(ParsableModel):
         return " and ".join(term for term in einsum_shape + global_shape)
 
     @property
-    def tensors(self) -> set[Tensor]:
-        return {Tensor(t.name) for e in self.einsums for t in e.tensor_accesses}
+    def tensors(self) -> set[TensorName]:
+        return {TensorName(t) for e in self.einsums for t in e.tensor_accesses}
 
     def mermaid_graph(self) -> str:
         """
@@ -281,22 +230,22 @@ class Workload(ParsableModel):
         seen_tensor_names = set()
         for einsum in self.einsums:
             lines.append(f"\tEinsum_{einsum.name}[\"<b>{einsum.name}</b>\n<small>{einsum.to_formatted_string(compress=True)}</small>\"]")
-            for tensor in einsum.tensor_accesses:
-                if tensor.name not in seen_tensor_names:
+            for tensor_access in einsum.tensor_accesses:
+                if tensor_access.name not in seen_tensor_names:
                     tensors.append(tensor)
-                    seen_tensor_names.add(tensor.name)
-                    lines.append(f"\tTensor_{tensor.name}{{{{\"<b>{tensor.name}</b>\n\"}}}}")
+                    seen_tensor_names.add(tensor_access.name)
+                    lines.append(f"\tTensor_{tensor_access.name}{{{{\"<b>{tensor_access.name}</b>\n\"}}}}")
         
         # Add all einsums as nodes (rectangles)
         for einsum in self.einsums:
             # Add edges from tensors to einsums
-            for tensor in einsum.tensor_accesses:
-                if tensor.output:
+            for tensor_access in einsum.tensor_accesses:
+                if tensor_access.output:
                     # Output tensor: einsum -> tensor
-                    lines.append(f"\tEinsum_{einsum.name} --> Tensor_{tensor.name}")
+                    lines.append(f"\tEinsum_{einsum.name} --> Tensor_{tensor_access.name}")
                 else:
                     # Input tensor: tensor -> einsum
-                    lines.append(f"\tTensor_{tensor.name} --> Einsum_{einsum.name}")
+                    lines.append(f"\tTensor_{tensor_access.name} --> Einsum_{einsum.name}")
         
         # Create the graph with the flowchart script
         flowchart_script = "\n".join(lines)
@@ -325,8 +274,8 @@ class Workload(ParsableModel):
         element_to_child_space = {}
         all_rank_variables = einsum.rank_variables
         for tensor in all_:
-            rank_variables = einsum.tensor_accesses[tensor.name].rank_variables
-            element_to_child_space[tensor.name] = InvertibleSet(
+            rank_variables = einsum.tensor_accesses[tensor].rank_variables
+            element_to_child_space[tensor] = InvertibleSet(
                 instance=rank_variables,
                 full_space=all_rank_variables,
                 space_name=f"rank_variables",
@@ -344,7 +293,7 @@ class Workload(ParsableModel):
             "Outputs": InvertibleSet(instance=outputs, **kwargs),
             "Intermediates": InvertibleSet(instance=intermediates, **kwargs),
             "Shared": InvertibleSet(instance=shared, **kwargs),
-            **{t.name: InvertibleSet(instance=(t,), **kwargs) for t in all_},
+            **{t: InvertibleSet(instance=(t,), **kwargs) for t in all_},
         }
         
         if renames is not None:

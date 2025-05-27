@@ -11,7 +11,7 @@ import fastfusion.frontend.architecture as architecture
 from fastfusion.frontend.architecture import Leaf
 from fastfusion.util.setexpressions import InvertibleSet
 from fastfusion.frontend.specification import Specification
-from fastfusion.frontend.workload.workload import Einsum, Tensor
+from fastfusion.frontend.workload.workload import Einsum, TensorName
 
 def powerset(iterable):
     s = list(iterable)
@@ -57,13 +57,13 @@ def make_storage_choices_one_level(
         new_symbol_table[node.name] = keep_choice
         
         # Make sure they're all tensors
-        assert all(isinstance(k, Tensor) for k in keep_choice)
+        assert all(isinstance(k, TensorName) for k in keep_choice)
         keep_choice = keep_choice.to_my_space({copy.copy(t) for t in keep_choice})
         storage_nodes = []
         
         # Create storage nodes
         for t in keep_choice:
-            storage_nodes.append(Storage(tensor=t, memory=node))
+            storage_nodes.append(Storage(tensors=[t], memory=node.name, memory_object=node))
             storage_nodes[-1]._must_exist = t in must_keep
         yield storage_nodes, new_symbol_table
 
@@ -94,10 +94,9 @@ def valid_storage_order(mapping: List[MappingNode], node_names: list[str]):
     for i in range(len(mapping)):
         for j in range(i, len(mapping)):
             t1, t2 = mapping[i].tensor, mapping[j].tensor
-            if t1.name != t2.name:
+            if t1 != t2:
                 continue
-            
-            s1, s2 = mapping[i].memory.name, mapping[j].memory.name
+            s1, s2 = mapping[i].memory, mapping[j].memory
             s1_idx, s2_idx = node_names.index(s1), node_names.index(s2)
             
             # If a tensor is stored in two levels back-to-back, then we
@@ -147,7 +146,7 @@ def get_storage_choices(
             
         base_mapping = []
         for node in list(all_storage_nodes[::-1]):
-            if node.memory.name == first_storage.name:
+            if node.memory == first_storage.name:
                 all_storage_nodes.remove(node)
                 base_mapping.append(node)
             
@@ -172,7 +171,7 @@ def insert_temporal_loops(
     for m in mapping:
         split_mapping.append([])
         split_mapping[-1].append(m)
-        if m.memory_name == first_memory.name:
+        if m.memory == first_memory.name:
             while len(split_mapping) > 1:
                 split_mapping[0].extend(split_mapping.pop(1))
     
@@ -232,15 +231,19 @@ def insert_spatial_loops(
         for i in range(len(mapping)):
             if not isinstance(mapping[i], Storage):
                 continue
-            memory_name = mapping[i].memory.name
+            memory_name = mapping[i].memory
             if arch_node_names.index(memory_name) < arch_node_names.index(fanout.name):
                 insertion_point = i + 1
 
         rv = einsum.rank_variables
         if fanout.spatial.fanout_Y > 1:
-            mapping.insert(insertion_point, Spatial(rank_variable=rv, dimension="Y", across=fanout))
+            mapping.insert(
+                insertion_point, 
+                Spatial(rank_variable=rv, dimension="Y", across_object=fanout, across=fanout.name))
         if fanout.spatial.fanout_X > 1:
-            mapping.insert(insertion_point, Spatial(rank_variable=rv, dimension="X", across=fanout))
+            mapping.insert(
+                insertion_point, 
+                Spatial(rank_variable=rv, dimension="X", across_object=fanout, across=fanout.name))
 
 def unpack_loops_to_rank_variables(mapping: List[MappingNode]):
     mapping_new = []
@@ -348,13 +351,13 @@ def get_constraints(
     
     for m in mapping:
         if isinstance(m, Storage):
-            constraint = get_parsed_storage_constraint(m.memory.constraints)
+            constraint = get_parsed_storage_constraint(m.memory_object.constraints)
             for c in constraint.tile_shape:
                 add_storage_constraint(m, c)
 
         for dim, for_x in [("X", True), ("Y", False)]:
             if isinstance(m, Spatial) and m.dimension == dim:
-                constraint = get_parsed_spatial_constraint(m.across.constraints, for_x)
+                constraint = get_parsed_spatial_constraint(m.across_object.constraints, for_x)
                 for c in constraint.loop_bounds:
                     if m.rank_variable in c.expression:
                         add_loop_bounds_constraint(m, c)
