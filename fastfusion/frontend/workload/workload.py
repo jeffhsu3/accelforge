@@ -189,8 +189,8 @@ class Workload(ParsableModel):
                     )
 
     @property
-    def einsum_names(self) -> set[EinsumName]:
-        return set(EinsumName(e.name) for e in self.einsums)
+    def einsum_names(self) -> list[EinsumName]:
+        return [EinsumName(e.name) for e in self.einsums]
 
     def einsums_with_tensor(self, tensor: TensorName) -> list["Einsum"]:
         return [e for e in self.einsums if tensor in e.tensor_names]
@@ -206,6 +206,9 @@ class Workload(ParsableModel):
 
     def einsums_that_write_tensor(self, tensor: TensorName) -> list["Einsum"]:
         return [e for e in self.einsums if tensor in e.output_tensors()]
+    
+    def accesses_for_tensor(self, tensor: TensorName) -> list[TensorAccess]:
+        return [t for e in self.einsums for t in e.tensor_accesses if t.name == tensor]
 
     def get_shape_isl_string(self, einsum_name: str) -> str:
         einsum = self.einsums[einsum_name]
@@ -315,3 +318,30 @@ class Workload(ParsableModel):
             symbol_table[rank_variable] = InvertibleSet(instance=(rank_variable,), space_name="rank_variables", full_space=einsum.rank_variables)
                 
         return symbol_table
+
+    def get_pairwise_equivalent_rank_variables(self) -> dict[RankVariableName, list[RankVariableName]]:
+        equivalent_rank_variables = {}
+        for tensor in self.tensors:
+            accesses = self.accesses_for_tensor(tensor)
+            if not accesses:
+                raise ValueError(f"Tensor {tensor} has no accesses")
+            ranks = set(accesses[0].projection.keys())
+            assert all(ranks == set(access.projection.keys()) for access in accesses)
+
+            rank2variables = {rank: set() for rank in ranks}
+            for access in accesses:
+                for rank in ranks:
+                    rank_variable = access.projection[rank]
+                    assert re.match(ISL_REGEX, rank_variable), (
+                        f"Rank variable {rank_variable} is not a valid ISL identifier"
+                        f"in access {access}. Pairwise equivalent rank variables must "
+                        f"not be expressions."
+                    )
+                    rank2variables[rank].add(rank_variable)
+                    
+            for rankvars in rank2variables.values():
+                for r0 in rankvars:
+                    for r1 in rankvars:
+                        equivalent_rank_variables.setdefault(r0, set()).add(r1)
+
+        return equivalent_rank_variables

@@ -1,9 +1,9 @@
 from collections import defaultdict
-from collections.abc import Compatibility
 import itertools
 import time
 import pandas as pd
-from pytimeloop.looptree.equivalent_ranks import PairwiseEquivalentRanks
+from fastfusion.frontend import architecture
+from fastfusion.frontend.specification import Specification
 from fastfusion.mapper.FFM.joining.sim import SIM, Loop, Compatibility
 from fastfusion.mapper.FFM.pareto import VALID, Pareto
 from fastfusion.util import fzs, parallel, debugger_active
@@ -11,8 +11,8 @@ from fastfusion.util import fzs, parallel, debugger_active
 
 def mapping2sims(einsum_to_result: Compatibility):
     r = {}
-    for einsum_id, compat_dict in einsum_to_result.items():
-        r[einsum_id] = [paretofy(k, v) for k, v in compat_dict.items()]
+    for einsum_name, compat_dict in einsum_to_result.items():
+        r[einsum_name] = [paretofy(k, v) for k, v in compat_dict.items()]
     return list(r.values())
 
 
@@ -22,9 +22,9 @@ def paretofy(k, v):
 
 def get_possible_translations(
     t: Compatibility,
-    pairwise_equivalent_ranks: dict[str, set[str]],
-    full_equivalent_ranks: dict[str, set[str]],
-    right_ranks: set[str],
+    pairwise_equivalent_rank_variables: dict[str, set[str]],
+    full_equivalent_rank_variables: dict[str, set[str]],
+    right_rank_variables: set[str],
 ):
     # Fused ranks should be transitive, but if a fused loop indexes into two
     # different ranks in the next Einsum, we can't fuse becuase it will tile in
@@ -36,20 +36,20 @@ def get_possible_translations(
     # Einsum. If we alias into multiple ranks, we can't fuse. Otherwise, try out
     # each possible rank.
     def translate_loop(l: Loop):
-        compatible_ranks = (
-            set.union(*(full_equivalent_ranks[n] for n in l.rank_names)) & right_ranks
+        compatible_rank_variables = (
+            set.union(*(full_equivalent_rank_variables[n] for n in l.rank_names)) & right_rank_variables
         )
-        pairwise_compatible_ranks = (
-            set.union(*(pairwise_equivalent_ranks[n] for n in l.rank_names))
-            & right_ranks
+        pairwise_compatible_rank_variables = (
+            set.union(*(pairwise_equivalent_rank_variables[n] for n in l.rank_names))
+            & right_rank_variables
         )
-        if len(pairwise_compatible_ranks) > 1:
+        if len(pairwise_compatible_rank_variables) > 1:
             return
-        for n in compatible_ranks:
+        for n in compatible_rank_variables:
             yield Loop(fzs((n,)), l.bound, l.is_spatial)
 
     for loops in itertools.product(*map(translate_loop, t.loops)):
-        yield Compatibility(loops, t.storage, t.tags)
+        yield t.update(loops=loops)
 
 
 prev_time = 0
@@ -83,54 +83,54 @@ def print_total_time():
 
 
 class GroupOfSIMsHolder:
-    def __init__(self, einsum_id: str, sim_list: list[SIM]):
-        self.einsum_id: str = einsum_id
+    def __init__(self, einsum_name: str, sim_list: list[SIM]):
+        self.einsum_name: str = einsum_name
         self.sims: list[SIM] = sim_list
         self.tensor_names: set[str] = set(sim_list[0].tensor_names)
 
     def __getitem__(self, i):
         return self.sims[i]
 
-def make_full_equivalent_ranks(pairwise_equivalent_ranks):
-    full_equivalent_ranks = {k: set(v) for k, v in pairwise_equivalent_ranks.items()}
+def make_full_equivalent_rank_variables(pairwise_equivalent_rank_variables):
+    full_equivalent_rank_variables = {k: set(v) for k, v in pairwise_equivalent_rank_variables.items()}
     changed = True
     while changed:
         changed = False
-        for r in full_equivalent_ranks:
-            for r2 in list(full_equivalent_ranks[r]):
-                for r3 in list(full_equivalent_ranks[r2]):
-                    if r3 in full_equivalent_ranks[r]:
+        for r in full_equivalent_rank_variables:
+            for r2 in list(full_equivalent_rank_variables[r]):
+                for r3 in list(full_equivalent_rank_variables[r2]):
+                    if r3 in full_equivalent_rank_variables[r]:
                         continue
                     changed = True
-                    full_equivalent_ranks[r].add(r3)
-    return full_equivalent_ranks
+                    full_equivalent_rank_variables[r].add(r3)
+    return full_equivalent_rank_variables
 
-def compress(sims: dict[str, list[SIM]]) -> dict[str, list[SIM]]:
+def compress(sims: dict[str, list[SIM]]) -> dict[int, pd.DataFrame]:
     recovery_map = {}
-    for einsum_id, sim_list in sims.items():
+    for einsum_name, sim_list in sims.items():
         for s in sim_list:
-            s.mappings.prefix_data(einsum_id)
-        recovery_map[einsum_id] = Pareto.compress_paretos(
-            [s.mappings for s in sim_list],
-        )
+            s.mappings.prefix_data(einsum_name)
+        recovery_map.update(Pareto.compress_paretos([s.mappings for s in sim_list], einsum_name))
     return recovery_map
 
-def decompress(recovery_map: dict[str, dict[int, pd.DataFrame]], sims: dict[str, list[SIM]]):
-    for einsum_id, sim_list in sims.items():
-        for s in sim_list:
-            s.mappings.decompress_paretos(recovery_map[einsum_id])
+def decompress(recovery_map: dict[int, pd.DataFrame], sims: list[SIM], prefix: list[str] = None):
+    for s in sims:
+        Pareto.decompress_paretos([s.mappings], recovery_map, prefix)
 
 def join_sims(
     sims: dict[str, list[SIM]],
-    pairwise_equivalent_ranks: PairwiseEquivalentRanks,
-    einsum2ranks: dict[str, set[str]],
-    resource2capacity: dict = None,
-    return_nmappings_nbuckets: bool = False,
-    lookahead_filter: bool = True,
+    spec: Specification = None,
+    flattened_architecture: list[architecture.Leaf] = None,
+
+    # For profiling.
     evaluations_tracker=None,
-    combine_reservations: bool = True,
-    skip_invalid: bool = True,
     size_scale: float = 1.0,
+    return_nmappings_nbuckets: bool = False,
+    
+    # Optimality-maintaining optimizations.
+    skip_invalid: bool = True,
+    combine_reservations: bool = True,
+    lookahead_filter: bool = True,
 ):
     """
     CONTRACT FOR MAPPINGS GETTING TO THIS POINT:
@@ -143,10 +143,19 @@ def join_sims(
       memories lower in the hierarchy. e.g., memory 0 is the largest,
       memory 1 the next largest, and memory N is the smallest.
     """
+    recovery_map = compress(sims)
+
+    resource2capacity = {}
+    for l in flattened_architecture:
+        if isinstance(l, architecture.Memory):
+            resource2capacity[l.name] = l.attributes.size
+    
+    pairwise_equivalent_rank_variables = spec.workload.get_pairwise_equivalent_rank_variables()
+    
     
     aliased_tensors = {"I_n_to_I": "I_I_to_Q_K_V"}
 
-    full_equivalent_ranks = make_full_equivalent_ranks(pairwise_equivalent_ranks)
+    full_equivalent_rank_variables = make_full_equivalent_rank_variables(pairwise_equivalent_rank_variables)
 
     for sim_list in sims.values():
         for s in sim_list:
@@ -168,8 +177,8 @@ def join_sims(
     if not skip_invalid:
         lookahead_filter = False
 
-    for einsum_id, s in sims:
-        print(f"SIM {einsum_id} tensors: {s[0].tensor_names}")
+    for einsum_name, s in sims:
+        print(f"SIM {einsum_name} tensors: {s[0].tensor_names}")
     init_print_time()
 
     sims = [GroupOfSIMsHolder(*s) for s in sims]
@@ -184,7 +193,7 @@ def join_sims(
             sim_holder.sims = SIM.left_consolidate(
                 sim_holder.sims,
                 right_tensors,
-                pbar=f"Inital consolidate {sim_holder.einsum_id}",
+                pbar=f"Inital consolidate {sim_holder.einsum_name}",
             )
             continue
         t0 = time.time()
@@ -198,7 +207,7 @@ def join_sims(
             sim_holder.sims,
             live_tensors,
             shared_tensors,
-            pbar=f"Inital consolidate {sim_holder.einsum_id}",
+            pbar=f"Inital consolidate {sim_holder.einsum_name}",
         )
         sim_holder.sims = SIM.combine_combineable(
             sim_holder.sims,
@@ -210,9 +219,9 @@ def join_sims(
         )
         if i > 0:
             sim_holder.sims = SIM.group_right(
-                sim_holder.sims, left_tensors, drop_tags=True
+                sim_holder.sims, left_tensors#, drop_tags=True
             )
-        einsum, prev_einsum = sim_holder.einsum_id, sims[i - 1].einsum_id
+        einsum, prev_einsum = sim_holder.einsum_name, sims[i - 1].einsum_name
         runtime[f"{prev_einsum} → {einsum}"] = time.time() - t0
         t0 = time.time()
     print_time(f"Initial consolidate and group")
@@ -224,7 +233,7 @@ def join_sims(
         nonlocal n_iterations
         n_iterations += 1
         holder = sims.pop(0)
-        return holder.sims, holder.einsum_id, holder.tensor_names
+        return holder.sims, holder.einsum_name, holder.tensor_names
 
     if sims:
         left, left_einsum, left_tensors = grab_sim_holder()
@@ -239,7 +248,7 @@ def join_sims(
         nbuckets.append(len(left))
         # nmappings.append(sum(len(s.mappings.data) for s in left))
         right, right_einsum, right_tensors = grab_sim_holder()
-        right_ranks = einsum2ranks[right_einsum]
+        right_rank_variables = spec.workload.einsums[right_einsum].rank_variables
         print(f"\nEinsum {right_einsum} ({n_iterations}/{total_iterations})")
 
         partial_mapping_size += 1
@@ -262,7 +271,7 @@ def join_sims(
 
         print_time(f"Combining")
         # Group left and right into buckets
-        left = SIM.group_left(left, right_tensors, drop_tags=True)
+        left = SIM.group_left(left, right_tensors)#, drop_tags=True)
         print_time("Grouping")
 
         # ======================================================================
@@ -286,10 +295,10 @@ def join_sims(
         for k in left:
             found = False
             for k_translated in get_possible_translations(
-                k, pairwise_equivalent_ranks, full_equivalent_ranks, right_ranks
+                k, pairwise_equivalent_rank_variables, full_equivalent_rank_variables, right_rank_variables
             ):
                 for a, b in itertools.product(left[k], right.get(k_translated, [])):
-                    if a.compatibility.tags.are_compatible_with(b.compatibility.tags):
+                    if True:#a.compatibility.tags.are_compatible_with(b.compatibility.tags):
                         found = True
                         combined.append(a.merge_next(
                             b, 
@@ -325,22 +334,22 @@ def join_sims(
         if sims and lookahead_filter:
             prev_len = len(combined)
             next_right_tensors = sims[0].tensor_names
-            next_right_ranks = einsum2ranks[sims[0].einsum_id]
-            combined = SIM.group_left(combined, next_right_tensors, drop_tags=True)
+            next_right_rank_variables = spec.workload.einsums[sims[0].einsum_name].rank_variables
+            combined = SIM.group_left(combined, next_right_tensors)#, drop_tags=True)
             for k in list(combined):
                 translations = get_possible_translations(
                     k,
-                    pairwise_equivalent_ranks,
-                    full_equivalent_ranks,
-                    next_right_ranks,
+                    pairwise_equivalent_rank_variables,
+                    full_equivalent_rank_variables,
+                    next_right_rank_variables,
                 )
                 if not any(kt in sims[0].sims for kt in translations):
                     list(
                         get_possible_translations(
                             k,
-                            pairwise_equivalent_ranks,
-                            full_equivalent_ranks,
-                            next_right_ranks,
+                            pairwise_equivalent_rank_variables,
+                            full_equivalent_rank_variables,
+                            next_right_rank_variables,
                         )
                     )
                     if DO_PRINT:
@@ -413,7 +422,8 @@ def join_sims(
     # ======================================================================
     t0 = time.time()
     left = SIM.left_consolidate(left, None, pbar="Final consolidate")
-    s_final = SIM.combine_combineable(left, set(), drop_tags=True)
+    s_final = SIM.combine_combineable(left, set())#, drop_tags=True)
+    decompress(recovery_map, s_final, prefix=spec.workload.einsum_names)
     assert len(s_final) == 1
     data = s_final[0].mappings.data
 
@@ -424,6 +434,7 @@ def join_sims(
         evaluations_tracker.add_evaluation(n_evaluations, edp_min)
         evaluations_tracker.n_mappings.update(n_mappings)
         evaluations_tracker.runtime.update(runtime)
+        
 
     if return_nmappings_nbuckets:
         return data, n_mappings, nbuckets

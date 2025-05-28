@@ -479,16 +479,8 @@ class Pareto:
         dropcols = [c for c in df.columns if c.endswith("_RIGHT_MERGE")]
         for source in dropcols:
             target = source[:-len("_RIGHT_MERGE")]
-            if col2nameloop(target) is not None:
-                continue
-            if target in DICT_COLUMNS:
-                df[target] = (
-                    df.apply(lambda row: {**row[target], **row[source]}, axis=1)
-                    if len(df) > 0
-                    else []
-                )
-            else:
-                df.loc[:, target] += df[source]
+            assert col2nameloop(target)
+            df.loc[:, target] += df[source]
         df = df.drop(columns=dropcols)
         result = Pareto(df, skip_pareto=True, check_above_subset_below=False)
         # Remove tensors that were allocated in both branches and got added
@@ -739,44 +731,59 @@ class Pareto:
             f.write(graph.create_png())
             
     def prefix_data(self, prefix: str):
-        self.data.columns = [
-            f"{prefix}_{c}" for c in self.data.columns
-            if not col_used_in_pareto(c)
-        ]
+        rename = lambda col: f"{prefix}_{col}" if not col_used_in_pareto(col) else col
+        self.data.rename(columns=rename, inplace=True)
 
-    def _compress_data(self) -> pd.DataFrame:
+    def _compress_data(self, prefix: str = None) -> pd.DataFrame:
         self.data.reset_index(drop=True, inplace=True)
-        self.data["data_source_id"] = id(self)
-        self.data["data_source_index"] = self.data.index
-        keep_cols = ["data_source_id", "data_source_index"]
+        src_id_col = "data_source_id" if prefix is None else f"{prefix}_data_source_id"
+        src_idx_col = "data_source_index" if prefix is None else f"{prefix}_data_source_index"
+        self.data[src_id_col] = id(self)
+        self.data[src_idx_col] = self.data.index
+        keep_cols = [src_id_col, src_idx_col]
         keep_cols.extend([c for c in self.data.columns if col_used_in_pareto(c)])
-        recovery = self.data[[c for c in self.data.columns if c not in keep_cols] + ["data_source_index"]].copy()
-        self.data = self.data[keep_cols].copy()
+        recovery = self.data[[c for c in self.data.columns if c not in keep_cols] + [src_idx_col]].copy()
+        self._data = self.data[keep_cols].copy()
         return recovery
 
-    def _decompress_data(self, recovery_map: dict[int, pd.DataFrame]):
-        dfs = []
-        prev_len = len(self.data)
-        for recovery_key, recovery_df in self.data.groupby("data_source_id"):
-            recovery_df = pd.merge(
-                recovery_df,
-                recovery_map[recovery_key],
-                on=["data_source_index"],
-                how="left"
-            )
-            recovery_df.drop(columns=["data_source_id", "data_source_index"], inplace=True)
-            dfs.append(recovery_df)
-        self.data = pd.concat(dfs)
-        assert len(self.data) == prev_len, f"Decompressed data has {len(self.data)} rows, expected {prev_len}"
+    def _decompress_data(self, recovery_map: dict[int, pd.DataFrame], prefix: str | list[str] = None):
+        if isinstance(prefix, str):
+            prefix = [prefix]
+        
+        if prefix is None:
+            prefix = [""]
+        else:
+            prefix = [f"{p}_" for p in prefix]
+            
+            
+        for p in prefix:
+            src_id_col = f"{p}data_source_id"
+            src_idx_col = f"{p}data_source_index"
+        
+            dfs = []
+            prev_len = len(self.data)
+            
+            for recovery_key, recovery_df in self.data.groupby(src_id_col):
+                recovery_df = pd.merge(
+                    recovery_df,
+                    recovery_map[recovery_key],
+                    on=[src_idx_col],
+                    how="left"
+                )
+                recovery_df.drop(columns=[src_id_col, src_idx_col], inplace=True)
+                dfs.append(recovery_df)
+            self._data = pd.concat(dfs)
+            assert len(self.data) == prev_len, \
+                f"Decompressed data has {len(self.data)} rows, expected {prev_len}"
 
     @classmethod
-    def compress_paretos(cls, paretos: list["Pareto"]) -> dict[int, pd.DataFrame]:
+    def compress_paretos(cls, paretos: list["Pareto"], prefix: str = None) -> dict[int, pd.DataFrame]:
         recovery_map = {}
         for p in paretos:
-            recovery_map[id(p)] = p._compress_data()
+            recovery_map[id(p)] = p._compress_data(prefix)
         return recovery_map
 
     @classmethod
-    def decompress_paretos(cls, paretos: list["Pareto"], recovery_map: dict[int, pd.DataFrame]):
+    def decompress_paretos(cls, paretos: list["Pareto"], recovery_map: dict[int, pd.DataFrame], prefix: str | list[str] = None):
         for p in paretos:
-            p._decompress_data(recovery_map)
+            p._decompress_data(recovery_map, prefix=prefix)

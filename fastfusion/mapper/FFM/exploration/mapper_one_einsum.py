@@ -25,6 +25,17 @@ def powerset(iterable):
     s = list(iterable)
     return chain.from_iterable(combinations(s, r) for r in range(len(s) + 1))
 
+def _rename_columns_we_should_fix_this_later(df):
+    # tile_shape --> __tile_shape
+    def rename(col: str):
+        if col.startswith("tile_shape"):
+            col = col.replace("tile_shape", "__tile_shape")
+        if col == "energy" or col == "latency":
+            col = f"metric_{col}"
+        return col
+    df.rename(columns=rename, inplace=True)
+    return df
+
 # =================================================================================================
 # Choose what data to store in each memory
 # =================================================================================================
@@ -471,10 +482,6 @@ def get_compatibility_loops(mapping: Mapping, tile_shapes: list[int]) -> "Mappin
 
 
 def make_sims(mapping: Mapping, explored_results: DataFrame, rank_variable_to_size: dict[RankVariableName, int], compatibility2sim: dict[Compatibility, SIM]):
-    # Replace columns with "tile_shape" with "__tile_shape"
-    rename = lambda col: col.replace("tile_shape", "__tile_shape")
-    explored_results.rename(columns=rename, inplace=True)
-
     compatibility = make_compatibility(mapping)
     fused_loop_columns = [f"__tile_shape{i}" for i in range(len(compatibility.loops))]
     
@@ -502,6 +509,7 @@ def _per_proc_compatibility2sim(
 ) -> dict[Compatibility, SIM]:
     compatibility2sim = {}
     result = dummy_tile_shape_exploration(mapping, workload, constraints)
+    _rename_columns_we_should_fix_this_later(result)
     make_sims(mapping, result, rank_variable_to_size, compatibility2sim)
     return compatibility2sim
 
@@ -510,7 +518,7 @@ def get_single_einsum_sims(
     einsum_name: str,
     rank_variable_to_size: dict[RankVariableName, int],
     arch_flattened: list[architecture.Leaf] | None = None,
-) -> dict[Compatibility, SIM]:
+) -> list[SIM]:
     compatibility2sim = {}
     workload = spec.workload
     
@@ -522,10 +530,10 @@ def get_single_einsum_sims(
         n_jobs=32,
     )
     for compatibility2sim in per_proc_compatibility2sim:
-        for compatibility, sim in compatibility2sim.items():
+        for sim in compatibility2sim.values():
             add_to_compatibility2sim(compatibility2sim, sim)
     
     # for i, (mapping, constraints) in enumerate(tqdm(mappings_constraints)):
     #     result = dummy_tile_shape_exploration(mapping, workload, constraints)
     #     make_sims(mapping, result, rank_variable_to_size, compatibility2sim)
-    return compatibility2sim
+    return list(compatibility2sim.values())
