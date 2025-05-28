@@ -17,7 +17,7 @@ from bindings.config import Config
 import pickle
 
 from fastfusion.exploration.mapper_snowcat import mapper
-from fastfusion.joining.simexplore import fuse_sims
+from fastfusion.joining.simexplore import join_sims
 from fastfusion.visualization.ski_slope import plot_ski_slope
 from fastfusion.exploration.process_results import Metrics
 from pytimeloop.frontend.v4fused import Specification
@@ -429,7 +429,7 @@ def run_experiment(
     save_results: bool = True,
     run_inter: bool = True,
     prune_intra: bool = True,
-    fuse_function: callable = fuse_sims,
+    fuse_function: callable = join_sims,
     taggers: tuple[callable] = tuple(),
     dataflow: str = None,
     fuse: bool = True,

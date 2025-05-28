@@ -87,6 +87,7 @@ def parallel(
     chunk: bool = False,
     delete_job_after: bool = False,
 ):
+    jobs = list(jobs)
 
     args = {}
     if return_as is not None:
