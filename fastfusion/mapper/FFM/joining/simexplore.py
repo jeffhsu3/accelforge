@@ -37,11 +37,11 @@ def get_possible_translations(
     # each possible rank.
     def translate_loop(l: Loop):
         compatible_rank_variables = (
-            set.union(*(full_equivalent_rank_variables[n] for n in l.rank_names))
+            set.union(*(full_equivalent_rank_variables[n] for n in l.rank_variable_names))
             & right_rank_variables
         )
         pairwise_compatible_rank_variables = (
-            set.union(*(pairwise_equivalent_rank_variables[n] for n in l.rank_names))
+            set.union(*(pairwise_equivalent_rank_variables[n] for n in l.rank_variable_names))
             & right_rank_variables
         )
         if len(pairwise_compatible_rank_variables) > 1:
