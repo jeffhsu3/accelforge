@@ -62,7 +62,7 @@ class Loop(Updatable):
         assert isinstance(self.is_spatial, bool)
 
     @property
-    def rank_variable_name(self):
+    def rank_variable(self):
         assert len(self.rank_variable_names) == 1
         return next(iter(self.rank_variable_names))
 
@@ -198,12 +198,12 @@ class Compatibility(Updatable):
                 return False
 
             # Mismatch!
-            if i == len(self.loops) or self.loops[i].rank_variable_name != permutation[j]:
+            if i == len(self.loops) or self.loops[i].rank_variable != permutation[j]:
                 if permutation[j] != "*":
                     return False
                 j += 1
                 while i < len(self.loops) and (
-                    j == len(permutation) or self.loops[i].rank_variable_name != permutation[j]
+                    j == len(permutation) or self.loops[i].rank_variable != permutation[j]
                 ):
                     i += 1
             else:
@@ -221,3 +221,45 @@ class Compatibility(Updatable):
             Compatibility(self.loops[:i], self.storage)#, self.tags)
             for i in range(min_loops, len(self.loops) + 1)
         )
+
+    def populate_tile_shape(self, 
+                            tile_shape: list[int], 
+                            rank_variable_to_size: dict[RankVariableName, int]) -> "Compatibility":
+        new_loops = []
+        storages = []
+        null_loop_indices = []
+        
+        assert len(tile_shape) == len(self.loops)
+        
+        
+        for i, l in zip(tile_shape, self.loops):
+            prev_size = rank_variable_to_size[l.rank_variable]
+            if i > 0:
+                prev_loop = next(iter(l for l in self.loops[i-1::-1] if l.rank_variable == l.rank_variable), None)
+                if prev_loop is not None:
+                    prev_size = tile_shape[self.loops.index(prev_loop)]
+            if prev_size == i:
+                null_loop_indices.append(i)
+            else:
+                new_loops.append(l.update(bound=i))
+                
+        storages = []
+        for s in self.storage:
+            above = s.above_loop_index
+            above -= sum(above > i for i in null_loop_indices)
+            storages.append(s.update(above_loop_index=above))
+            
+        return Compatibility(tuple(new_loops), fzs(storages))
+        
+    # loops = mapping.loops
+    # null_loops = []
+    # for i, t in enumerate(tile_shape):
+    #     this_loop = loops[i]
+    #     prev_size = rank_variable_to_size[this_loop.rank_variable]
+    #     if i > 0:
+    #         prev_loop = next(iter(l for l in loops[i-1::-1] if l.rank_variable == this_loop.rank_variable), None)
+    #         if prev_loop is not None:
+    #             prev_size = tile_shape[loops.index(prev_loop)]
+    #     if prev_size == t:
+    #         null_loops.append(this_loop)
+    # tile_shape = [t if i not in null_loops else None for i, t in enumerate(tile_shape)]

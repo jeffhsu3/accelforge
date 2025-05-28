@@ -127,7 +127,7 @@ def eval_set_expression(
             )
         if injective and len(result) != 1:
             raise ValueError(
-                f"injective=True, returned a set with {len(result)} elements: {result}"
+                f"injective=True, returned a set with {len(result)} elements: {result.instance}"
             )
         if result.space_name != expected_space_name:
             raise ValueError(

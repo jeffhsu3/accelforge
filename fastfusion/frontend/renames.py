@@ -1,5 +1,6 @@
 import copy
 from typing import Annotated
+from fastfusion.frontend.workload.workload import EinsumName, TensorName
 from fastfusion.util.basetypes import ParsableList, ParsableModel
 from fastfusion.version import assert_version, __version__
 
@@ -9,15 +10,15 @@ class TensorRename(ParsableModel):
     
     Attributes:
         name (str): The new name for the tensor
-        source (str): The original name of the tensor
+        source (str): Set expression for the source tensor(s)
         injective (bool): Whether the rename is injective
     """
-    name: str
+    name: TensorName
     source: str
     injective: bool = False
 
 class EinsumRename(ParsableModel):
-    name: str
+    name: EinsumName
     tensor_accesses: ParsableList[TensorRename] = ParsableList()
 
 class Renames(ParsableModel):
@@ -28,7 +29,7 @@ class Renames(ParsableModel):
         super().__init__(**data)
         assert_version(self.version)
 
-    def get_renames_for_einsum(self, einsum_name: str) -> EinsumRename:
+    def get_renames_for_einsum(self, einsum_name: EinsumName) -> EinsumRename:
         if einsum_name not in self.einsums:
             rename = EinsumRename(name=einsum_name)
         else:

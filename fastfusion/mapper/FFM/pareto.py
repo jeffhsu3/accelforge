@@ -124,6 +124,8 @@ def max_to_col(df, target, source):
 def is_special_col(c):
     return c in RESERVED_COLUMNS or col2nameloop(c) is not None
 
+def col_used_in_pareto(c):
+    return col2nameloop(c) is not None or c.startswith("metric_")
 # Pipeline:
 # - Need to share temporal loops up to the spatial loop index
 #   Resources:
@@ -624,8 +626,9 @@ class Pareto:
     def make_pareto(self):
         if len(self._data) <= 1:
             return
-        columns = [c for c in self.data.columns if c not in RESERVED_COLUMNS]
-        columns = [c for c in columns if not c.startswith("__")]
+        # columns = [c for c in self.data.columns if c not in RESERVED_COLUMNS]
+        # columns = [c for c in columns if not c.startswith("__")]
+        columns = [c for c in self.data.columns if c.startswith("metric_")]
         self._data = self.data[paretoset(self.data[columns])].reset_index(drop=True)
 
     def has_reservations(self):
@@ -734,3 +737,46 @@ class Pareto:
         graph.add_node(pydot.Node("data", label=data_str, shape="plaintext"))
         with open(to_file, "wb") as f:
             f.write(graph.create_png())
+            
+    def prefix_data(self, prefix: str):
+        self.data.columns = [
+            f"{prefix}_{c}" for c in self.data.columns
+            if not col_used_in_pareto(c)
+        ]
+
+    def _compress_data(self) -> pd.DataFrame:
+        self.data.reset_index(drop=True, inplace=True)
+        self.data["data_source_id"] = id(self)
+        self.data["data_source_index"] = self.data.index
+        keep_cols = ["data_source_id", "data_source_index"]
+        keep_cols.extend([c for c in self.data.columns if col_used_in_pareto(c)])
+        recovery = self.data[[c for c in self.data.columns if c not in keep_cols] + ["data_source_index"]].copy()
+        self.data = self.data[keep_cols].copy()
+        return recovery
+
+    def _decompress_data(self, recovery_map: dict[int, pd.DataFrame]):
+        dfs = []
+        prev_len = len(self.data)
+        for recovery_key, recovery_df in self.data.groupby("data_source_id"):
+            recovery_df = pd.merge(
+                recovery_df,
+                recovery_map[recovery_key],
+                on=["data_source_index"],
+                how="left"
+            )
+            recovery_df.drop(columns=["data_source_id", "data_source_index"], inplace=True)
+            dfs.append(recovery_df)
+        self.data = pd.concat(dfs)
+        assert len(self.data) == prev_len, f"Decompressed data has {len(self.data)} rows, expected {prev_len}"
+
+    @classmethod
+    def compress_paretos(cls, paretos: list["Pareto"]) -> dict[int, pd.DataFrame]:
+        recovery_map = {}
+        for p in paretos:
+            recovery_map[id(p)] = p._compress_data()
+        return recovery_map
+
+    @classmethod
+    def decompress_paretos(cls, paretos: list["Pareto"], recovery_map: dict[int, pd.DataFrame]):
+        for p in paretos:
+            p._decompress_data(recovery_map)

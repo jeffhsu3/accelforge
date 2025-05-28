@@ -105,9 +105,22 @@ def make_full_equivalent_ranks(pairwise_equivalent_ranks):
                     full_equivalent_ranks[r].add(r3)
     return full_equivalent_ranks
 
-def compress(sims: dict[str, list[SIM]]) -> 
+def compress(sims: dict[str, list[SIM]]) -> dict[str, list[SIM]]:
+    recovery_map = {}
+    for einsum_id, sim_list in sims.items():
+        for s in sim_list:
+            s.mappings.prefix_data(einsum_id)
+        recovery_map[einsum_id] = Pareto.compress_paretos(
+            [s.mappings for s in sim_list],
+        )
+    return recovery_map
 
-def fuse_sims(
+def decompress(recovery_map: dict[str, dict[int, pd.DataFrame]], sims: dict[str, list[SIM]]):
+    for einsum_id, sim_list in sims.items():
+        for s in sim_list:
+            s.mappings.decompress_paretos(recovery_map[einsum_id])
+
+def join_sims(
     sims: dict[str, list[SIM]],
     pairwise_equivalent_ranks: PairwiseEquivalentRanks,
     einsum2ranks: dict[str, set[str]],
@@ -417,23 +430,23 @@ def fuse_sims(
     return data
 
 
-def fuse_sims_no_skip_invalid(*args, **kwargs):
-    return fuse_sims(*args, skip_invalid=False, **kwargs)
+def join_sims_no_skip_invalid(*args, **kwargs):
+    return join_sims(*args, skip_invalid=False, **kwargs)
 
 
-def fuse_sims_no_combine_reservations(*args, **kwargs):
+def join_sims_no_combine_reservations(*args, **kwargs):
     args = list(args)
     if len(args[0]) == 16:
         args[0] = {k: v for k, v in list(args[0].items())[:11]}
     if len(args[0]) > 16:
         args[0] = {k: v for k, v in list(args[0].items())[:2]}
-    return fuse_sims(*args, combine_reservations=False, **kwargs)
+    return join_sims(*args, combine_reservations=False, **kwargs)
 
 
-def fuse_sims_no_either(*args, **kwargs):
+def join_sims_no_either(*args, **kwargs):
     args = list(args)
     if len(args[0]) == 16:
         args[0] = {k: v for k, v in list(args[0].items())[:11]}
     if len(args[0]) > 16:
         args[0] = {k: v for k, v in list(args[0].items())[:2]}
-    return fuse_sims(*args, skip_invalid=False, combine_reservations=False, **kwargs)
+    return join_sims(*args, skip_invalid=False, combine_reservations=False, **kwargs)

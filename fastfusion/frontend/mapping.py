@@ -170,34 +170,20 @@ class Mapping(ParsableModel): # TODO: Make this a partial mapping
     version: Annotated[str, assert_version] = __version__
     nodes: ParsableList[MappingNodeTypes] = ParsableList()
 
-    @property
-    def n_fused_loops(self) -> int:
+    def get_fused_slice(self) -> "Mapping":
+        fused_slice = Mapping(nodes=[])
         seen_tensors = set()
-        n_fused_loops = 0
-        n_seen_loops = 0
+        to_add = []
         for node in self.nodes:
-            if isinstance(node, Iteration):
-                n_seen_loops += 1
-            elif isinstance(node, Storage):
-                if set(node.tensors) - seen_tensors:
-                    n_fused_loops = n_seen_loops
-                seen_tensors.update(node.tensors)
-        return n_fused_loops
-    
-    def make_pmapping_compatibility(self, tile_shapes: list[int]) -> "Mapping":
-        compatibility = Mapping(nodes=[])
-        i = 0
-        for node in self.nodes:
-            while i < len(tile_shapes) and tile_shapes[i] is None:
-                i += 1
-            if i >= len(tile_shapes):
-                break
             new_node = copy.deepcopy(node)
-            if isinstance(node, Iteration):
-                new_node.tile_shape = tile_shapes[i]
-                i += 1
-            compatibility.nodes.append(new_node)
-        return compatibility
+            to_add.append(new_node)
+            if isinstance(new_node, Storage):
+                tensors = set(new_node.tensors)
+                if tensors - seen_tensors:
+                    fused_slice.nodes.extend(to_add)
+                    to_add = []
+                    seen_tensors.update(tensors)
+        return fused_slice
     
     @property
     def loops(self) -> list[Iteration]:

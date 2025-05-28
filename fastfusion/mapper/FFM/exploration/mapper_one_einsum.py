@@ -3,8 +3,10 @@ from itertools import chain, combinations
 import copy
 from typing import List
 
+from joblib import delayed
 import numpy as np
 from pandas import DataFrame
+from tqdm import tqdm
 
 from fastfusion.frontend.constraints import Comparison, ConstraintGroup
 from fastfusion.frontend.mapping import Iteration, Mapping, MappingNode, Storage, Temporal, Spatial, Compute
@@ -16,8 +18,8 @@ from fastfusion.mapper.FFM.joining.sim import SIM
 from fastfusion.mapper.FFM.pareto import MAPPING_COLUMN, Pareto
 from fastfusion.util.setexpressions import InvertibleSet
 from fastfusion.frontend.specification import Specification
-from fastfusion.frontend.workload.workload import Einsum, RankVariableName, TensorName
-from fastfusion.util.util import fzs
+from fastfusion.frontend.workload.workload import Einsum, RankVariableName, TensorName, Workload
+from fastfusion.util.util import fzs, parallel
 
 def powerset(iterable):
     s = list(iterable)
@@ -386,8 +388,10 @@ def get_constraints(
 def iterate_mappings_constraints(
     spec: Specification,
     einsum_names: list[str] | str | None = None,
+    arch_flattened: list[architecture.Leaf] | None = None,
 ):
-    arch_flattened = spec.get_flattened_architecture()
+    if arch_flattened is None:
+        arch_flattened = spec.get_flattened_architecture()
     compute_name = arch_flattened[-1].name
 
     if isinstance(einsum_names, str):
@@ -399,61 +403,49 @@ def iterate_mappings_constraints(
         for mapping, symbol_table in iterate_mappings_no_constraints(spec, einsum_name, arch_flattened):
             constraints = get_constraints(mapping, symbol_table)
             mapping.append(Compute(einsum=einsum_name, compute=compute_name))
+            mapping = copy.copy(mapping)
             mapping = Mapping(nodes=mapping)
             yield mapping, constraints
 
 # =================================================================================================
 # Make sims
 # =================================================================================================
-def make_compatibility(mapping: Mapping, tile_shape: list[int], rank_variable_to_size: dict[RankVariableName, int]):
-        loops = mapping.loops
-        null_loops = []
-        for i, t in enumerate(tile_shape):
-            this_loop = loops[i]
-            prev_size = rank_variable_to_size[this_loop.rank_variable]
-            prev_loop = next(iter(l for l in loops[i-1::-1] if l.rank_variable == this_loop.rank_variable), None)
-            if prev_loop is not None:
-                prev_size = tile_shape[loops.index(prev_loop)]
-            if prev_size == t:
-                null_loops.append(this_loop)
-        tile_shape = [t if i not in null_loops else None for i, t in enumerate(tile_shape)]
-        
-        compatibility = mapping.make_pmapping_compatibility(tile_shape)
-        fused_loops = []
-        reservations = {}
-        for node in compatibility.nodes:
-            if isinstance(node, Iteration):
-                fused_loops.append(node)
-            elif isinstance(node, Storage):
-                reservations.setdefault(len(fused_loops), []).append(node)
-            else:
-                raise ValueError(f"Unexpected node type: {type(node)}")
-            
-        compatibility_loops = []
-        for loop in fused_loops:
-            loop = Loop(
-                rank_variable_names=fzs(loop.rank_variable),
-                bound=tile_shape[fused_loops.index(loop)],
-                is_spatial=isinstance(loop, Spatial)
-            )
-            compatibility_loops.append(loop)
-        compatibility_reservations = []
-        for above_loop_index, storages in reservations.items():
-            for storage in storages:
-                for t in storage.tensors:
-                    compatibility_reservations.append(
-                        Reservation(
-                            name=t,
-                            above_loop_index=above_loop_index,
-                            resource_name=storage.memory,
-                            size=0 # TODO: Get size
-                        )
-                    )
-        compatibility = Compatibility(
-            loops=tuple(compatibility_loops),
-            storage=fzs(compatibility_reservations)
+def make_compatibility(mapping: Mapping):
+    compatibility = mapping.get_fused_slice()
+    fused_loops = []
+    reservations = {}
+    for node in compatibility.nodes:
+        if isinstance(node, Iteration):
+            fused_loops.append(node)
+        elif isinstance(node, Storage):
+            reservations.setdefault(len(fused_loops), []).append(node)
+        else:
+            raise ValueError(f"Unexpected node type: {type(node)}")
+    compatibility_loops = []
+    for loop in fused_loops:
+        loop = Loop(
+            rank_variable_names=fzs(loop.rank_variable),
+            bound=0, # Populated later
+            is_spatial=isinstance(loop, Spatial)
         )
-        return compatibility
+        compatibility_loops.append(loop)
+    compatibility_reservations = []
+    for above_loop_index, storages in reservations.items():
+        for storage in storages:
+            for t in storage.tensors:
+                compatibility_reservations.append(
+                    Reservation(
+                        name=t,
+                        above_loop_index=above_loop_index,
+                        resource_name=storage.memory,
+                        size=0 # TODO: Get size
+                    )
+                )
+    compatibility = Compatibility(
+        loops=tuple(compatibility_loops),
+        storage=fzs(compatibility_reservations)
+    )
+    return compatibility
 
 def add_to_compatibility2sim(compatibility2sim: dict[Compatibility, SIM], sim: SIM):
     if sim.compatibility not in compatibility2sim:
@@ -461,34 +453,79 @@ def add_to_compatibility2sim(compatibility2sim: dict[Compatibility, SIM], sim: S
     prev = compatibility2sim[sim.compatibility]
     prev.mappings = Pareto.concat([prev.mappings, sim.mappings])
 
-def make_sims(mapping: Mapping, explored_results: DataFrame, rank_variable_to_size: dict[RankVariableName, int], compatibility2sim: dict[Compatibility, SIM]):
-    n_fused_loops = mapping.n_fused_loops
     
+def get_compatibility_loops(mapping: Mapping, tile_shapes: list[int]) -> "Mapping":
+    compatibility = Mapping(nodes=[])
+    i = 0
+    for node in mapping.nodes:
+        while i < len(tile_shapes) and tile_shapes[i] is None:
+            i += 1
+        if i >= len(tile_shapes):
+            break
+        new_node = copy.deepcopy(node)
+        if isinstance(node, Iteration):
+            new_node.tile_shape = tile_shapes[i]
+            i += 1
+        compatibility.nodes.append(new_node)
+    return compatibility
+
+
+def make_sims(mapping: Mapping, explored_results: DataFrame, rank_variable_to_size: dict[RankVariableName, int], compatibility2sim: dict[Compatibility, SIM]):
     # Replace columns with "tile_shape" with "__tile_shape"
     rename = lambda col: col.replace("tile_shape", "__tile_shape")
     explored_results.rename(columns=rename, inplace=True)
-    
-    fused_loop_columns = [f"__tile_shape{i}" for i in range(n_fused_loops)]
 
-    for tile_shape, mappings in explored_results.groupby(fused_loop_columns):
+    compatibility = make_compatibility(mapping)
+    fused_loop_columns = [f"__tile_shape{i}" for i in range(len(compatibility.loops))]
+    
+    if fused_loop_columns:
+        groups = explored_results.groupby(fused_loop_columns)
+    else:
+        groups = [((), explored_results)]
+
+    for tile_shape, mappings in groups:
         # Check for null loops
-        compatibility = make_compatibility(mapping, tile_shape, rank_variable_to_size)
+        new_compatibility = compatibility.populate_tile_shape(tile_shape, rank_variable_to_size)
         mappings.drop(columns=fused_loop_columns, inplace=True)
         mappings[MAPPING_COLUMN] = [mapping] * len(mappings)
-        sim = SIM(compatibility, Pareto(mappings))
+        sim = SIM(new_compatibility, Pareto(mappings))
         add_to_compatibility2sim(compatibility2sim, sim)
 
 # =================================================================================================
 # Top level
 # =================================================================================================
+def _per_proc_compatibility2sim(
+    mapping: Mapping,
+    constraints: list[Comparison],
+    workload: Workload,
+    rank_variable_to_size: dict[RankVariableName, int],
+) -> dict[Compatibility, SIM]:
+    compatibility2sim = {}
+    result = dummy_tile_shape_exploration(mapping, workload, constraints)
+    make_sims(mapping, result, rank_variable_to_size, compatibility2sim)
+    return compatibility2sim
+
 def get_single_einsum_sims(
     spec: Specification,
     einsum_name: str,
     rank_variable_to_size: dict[RankVariableName, int],
+    arch_flattened: list[architecture.Leaf] | None = None,
 ) -> dict[Compatibility, SIM]:
     compatibility2sim = {}
     workload = spec.workload
-    for i, (mapping, constraints) in enumerate(iterate_mappings_constraints(spec, einsum_name)):
-        result = dummy_tile_shape_exploration(mapping, workload, constraints)
-        make_sims(mapping, result, rank_variable_to_size, compatibility2sim)
+    
+    mappings_constraints = list(iterate_mappings_constraints(spec, einsum_name, arch_flattened))
+    per_proc_compatibility2sim = parallel(
+        [delayed(_per_proc_compatibility2sim)(mapping, constraints, workload, rank_variable_to_size)
+        for mapping, constraints in mappings_constraints],
+        pbar=f"Generating pmappings for Einsum {einsum_name}",
+        n_jobs=32,
+    )
+    for compatibility2sim in per_proc_compatibility2sim:
+        for compatibility, sim in compatibility2sim.items():
+            add_to_compatibility2sim(compatibility2sim, sim)
+    
+    # for i, (mapping, constraints) in enumerate(tqdm(mappings_constraints)):
+    #     result = dummy_tile_shape_exploration(mapping, workload, constraints)
+    #     make_sims(mapping, result, rank_variable_to_size, compatibility2sim)
     return compatibility2sim

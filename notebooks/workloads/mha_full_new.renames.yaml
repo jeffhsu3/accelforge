@@ -9,9 +9,6 @@ renames:
     - name: output
       source: Outputs()
       injective: True
-    - name: input
-      source: ~(output | weight)
-      injective: True
 
   - name: Q
     tensor_accesses:
@@ -29,6 +26,10 @@ renames:
       source: WV
       injective: True
 
+  - name: I
+    tensor_accesses:
+    - name: weight
+      source: Nothing
   - name: QK
     tensor_accesses:
     - name: weight

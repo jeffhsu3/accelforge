@@ -181,7 +181,7 @@ def process_result(
 
     for i, l in enumerate(mapping_full.loops):
         for l2 in mapping_full.loops[i + 1 :]:
-            if l.rank_variable_name == l2.rank_variable_name:
+            if l.rank_variable == l2.rank_variable:
                 assert l.bound >= l2.bound, f"{l} {l2}"
 
     tagger_args = dict(
