@@ -16,6 +16,8 @@ from fastfusion.model.looptree.reuse.summarized.symbolic import analyze_reuse
 from fastfusion.model.looptree.energy import compute_energy_from_actions, gather_actions
 from fastfusion.model.looptree.latency import get_latency
 
+from fastfusion.mapper.FFM.pareto import nameloop2col
+
 
 
 class GivenShape(int):
@@ -118,6 +120,7 @@ def explore_tile_shapes(pmapping, constraints, specification: Specification):
     df = {}
     total_occupancy = {}
     compute_unit = pmapping.nodes[-1].compute
+    max_n_loops = 0
     for buffet, stats in reuse.buffet_stats.items():
         if buffet.level == compute_unit:
             continue
@@ -126,13 +129,20 @@ def explore_tile_shapes(pmapping, constraints, specification: Specification):
             occupancy = np.repeat(occupancy, n_shapes)
         else:
             occupancy = sympy.lambdify(reuse.symbols, stats.occupancy)(*tile_shapes)
-        if buffet.level not in total_occupancy:
-            total_occupancy[buffet.level] = occupancy
-        else:
-            total_occupancy[buffet.level] += occupancy
 
-    for memory, occupancy in total_occupancy.items():
-        df[f'{memory}_Occupancy'] = occupancy
+        if buffet.level not in total_occupancy:
+            total_occupancy[buffet.level] = {stats.n_loops_above: occupancy}
+        else:
+            total_occupancy[buffet.level][stats.n_loops_above] = occupancy
+
+        max_n_loops = max(max_n_loops, stats.n_loops_above+1)
+
+    for memory, occupancies in total_occupancy.items():
+        running_total = 0
+        for n_loop in range(max_n_loops):
+            if n_loop in occupancies:
+                running_total += occupancies[n_loop]
+            df[nameloop2col(memory, n_loop)]= running_total
 
     if isinstance(overall_latency, Number):
         overall_latency = np.repeat(overall_latency, n_shapes)
@@ -199,7 +209,6 @@ def generate_tile_shapes(pmapping, workload, constraints: list[tuple]):
             combined_choices
         ))
 
-    # TODO: insert to model
     all_rank_variables, inverted_indices, is_symbol, choices = rank_var_and_choices[0]
     is_symbol = np.asarray(is_symbol)
 

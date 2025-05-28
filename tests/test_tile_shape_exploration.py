@@ -19,5 +19,6 @@ class TestTileShapeExploration(unittest.TestCase):
 
         result = explore_tile_shapes(mapping, [], specification)
         self.assertTrue('Latency' in result)
-        self.assertTrue('MainMemory_Occupancy' in result)
-        self.assertTrue('LocalBuffer_Occupancy' in result)
+        self.assertTrue('RESOURCE_LocalBuffer_LEVEL_0' in result)
+        self.assertTrue('RESOURCE_LocalBuffer_LEVEL_1' in result)
+        self.assertTrue('RESOURCE_LocalBuffer_LEVEL_2' in result)

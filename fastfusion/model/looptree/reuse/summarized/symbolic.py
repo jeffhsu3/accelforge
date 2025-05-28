@@ -68,6 +68,7 @@ class BuffetStats:
     total_reads_to_parent: Any = field(default=0)
     max_per_parent_reads_to_parent: Any = field(default=0)
     occupancy: Any = field(default=0)
+    n_loops_above: int = field(default=0)
 
 
 @dataclass
@@ -327,6 +328,8 @@ def analyze_temporal(node_idx,
                 buffet_stats.occupancy
             )
 
+            accumulated_stats.n_loops_above = buffet_stats.n_loops_above + 1
+
             accumulated_buffet_stats[buffet] = accumulated_stats
 
         reduce_dicts(child_result.temporal_steps,
@@ -417,6 +420,8 @@ def analyze_spatial(node_idx, current_shape, info: AnalysisInfo):
                 accumulated_stats.occupancy,
                 buffet_stats.occupancy
             )
+
+            accumulated_stats.n_loops_above = buffet_stats.n_loops_above + 1
 
             accumulated_buffet_stats[buffet] = accumulated_stats
 
