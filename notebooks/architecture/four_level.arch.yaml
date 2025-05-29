@@ -29,7 +29,7 @@ architecture:
     attributes:
       size: 1024*1024*128*8 # 128MB
       width: 8192
-      datawidth: 8 * width
+      datawidth: 8
       depth: 1000 
       area: 1
     constraints:
