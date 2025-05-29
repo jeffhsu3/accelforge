@@ -523,7 +523,6 @@ def _per_proc_compatibility2sim(
 ) -> dict[Compatibility, SIM]:
     compatibility2sim = {}
     result = explore_tile_shapes(mapping, constraints, specification)
-    _rename_columns_we_should_fix_this_later(result)
     make_sims(mapping, result, rank_variable_to_size, compatibility2sim, intermediate_tensors)
     return compatibility2sim
 
