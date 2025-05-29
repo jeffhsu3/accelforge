@@ -9,10 +9,10 @@ from pandas import DataFrame
 from tqdm import tqdm
 
 from fastfusion.frontend.constraints import Comparison, ConstraintGroup
-from fastfusion.frontend.mapping import Iteration, Mapping, MappingNode, Storage, Temporal, Spatial, Compute
+from fastfusion.frontend.mapping import Iteration, Mapping, MappingNode, Storage, Temporal, Spatial, Compute, ModelOnlyNode
 import fastfusion.frontend.architecture as architecture
 from fastfusion.frontend.architecture import Leaf
-from fastfusion.mapper.FFM.exploration.tile_shape_exploration import dummy_tile_shape_exploration
+from fastfusion.mapper.FFM.exploration.tile_shape_exploration import explore_tile_shapes
 from fastfusion.mapper.FFM.joining.mappinginfo import Compatibility, Loop, Reservation
 from fastfusion.mapper.FFM.joining.sim import SIM
 from fastfusion.mapper.FFM.pareto import MAPPING_COLUMN, PartialMappings, is_reservation_col
@@ -231,7 +231,7 @@ def insert_temporal_loops(
             rank_variables &= einsum.tensor2rank_variables[t]
                     
         if rank_variables:
-            full_mapping.append(Temporal(rank_variable=rank_variables))
+            full_mapping.append(Temporal(rank_variable=rank_variables, tile_shape='symbol'))
 
     full_mapping = list(full_mapping)
     return full_mapping
@@ -258,11 +258,11 @@ def insert_spatial_loops(
         if fanout.spatial.fanout_Y > 1:
             mapping.insert(
                 insertion_point, 
-                Spatial(rank_variable=rv, dimension="Y", across_object=fanout, across=fanout.name))
+                Spatial(rank_variable=rv, dimension=1, across_object=fanout, across=fanout.name, tile_shape='symbol'))
         if fanout.spatial.fanout_X > 1:
             mapping.insert(
                 insertion_point, 
-                Spatial(rank_variable=rv, dimension="X", across_object=fanout, across=fanout.name))
+                Spatial(rank_variable=rv, dimension=0, across_object=fanout, across=fanout.name, tile_shape='symbol'))
 
 def unpack_loops_to_rank_variables(mapping: List[MappingNode]):
     mapping_new = []
@@ -430,6 +430,8 @@ def make_compatibility(mapping: Mapping, intermediate_tensors: set[TensorName]):
             fused_loops.append(node)
         elif isinstance(node, Storage):
             reservations.setdefault(len(fused_loops), []).append(node)
+        elif isinstance(node, ModelOnlyNode):
+            continue
         else:
             raise ValueError(f"Unexpected node type: {type(node)}")
     compatibility_loops = []
@@ -515,12 +517,12 @@ def make_sims(mapping: Mapping, explored_results: DataFrame, rank_variable_to_si
 def _per_proc_compatibility2sim(
     mapping: Mapping,
     constraints: list[Comparison],
-    workload: Workload,
+    specification: Specification,
     rank_variable_to_size: dict[RankVariableName, int],
     intermediate_tensors: set[TensorName],
 ) -> dict[Compatibility, SIM]:
     compatibility2sim = {}
-    result = dummy_tile_shape_exploration(mapping, workload, constraints)
+    result = explore_tile_shapes(mapping, constraints, specification)
     _rename_columns_we_should_fix_this_later(result)
     make_sims(mapping, result, rank_variable_to_size, compatibility2sim, intermediate_tensors)
     return compatibility2sim
@@ -535,10 +537,18 @@ def get_single_einsum_sims(
     workload = spec.workload
     intermediate_tensors = workload.intermediate_tensors()
     
-    mappings_constraints = list(iterate_mappings_constraints(spec, einsum_name, arch_flattened))
+    mappings_constraints = list(iterate_mappings_constraints(spec,
+                                                             einsum_name,
+                                                             arch_flattened))
     per_proc_compatibility2sim = parallel(
-        [delayed(_per_proc_compatibility2sim)(mapping, constraints, workload, rank_variable_to_size, intermediate_tensors)
-        for mapping, constraints in mappings_constraints],
+        [
+            delayed(_per_proc_compatibility2sim)(mapping,
+                                                 constraints,
+                                                 spec,
+                                                 rank_variable_to_size,
+                                                 intermediate_tensors)
+            for mapping, constraints in mappings_constraints
+        ],
         pbar=f"Generating pmappings for Einsum {einsum_name}",
         n_jobs=32,
     )

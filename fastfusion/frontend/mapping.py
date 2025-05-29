@@ -140,12 +140,15 @@ class Compute(MappingNode):
 # Nodes That May Only be Inserted by the Model
 # =============================================================================
 
-class Reservation(MappingNode):
+class ModelOnlyNode:
+    pass
+
+class Reservation(MappingNode, ModelOnlyNode):
     tensor: str
     memory: str
 
 
-class Fill(MappingNode):
+class Fill(MappingNode, ModelOnlyNode):
     tensor: str
     memory: str
 

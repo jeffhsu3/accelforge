@@ -98,12 +98,18 @@ def dummy_tile_shape_exploration(pmapping, workload, constraints):
 
 def explore_tile_shapes(pmapping, constraints, specification: Specification):
     workload = specification.workload
-    architecture = specification.architecture
+    flattened_arch = specification.get_flattened_architecture()
     ert = specification.component_energy
 
     set_last_tile_shape_to_one(pmapping)
 
+    df = {}
+
     tile_shapes, is_symbol = generate_tile_shapes(pmapping, workload, constraints)
+
+    for i in range(tile_shapes.shape[1]):
+        df[f'__tile_shape{i}'] = tile_shapes[:,i]
+
     tile_shapes = tile_shapes[:, is_symbol]
     n_shapes = tile_shapes.shape[0]
     tile_shapes = [
@@ -112,11 +118,10 @@ def explore_tile_shapes(pmapping, constraints, specification: Specification):
     ]
 
     reuse = analyze_reuse(pmapping, workload)
-    overall_latency, _, _ = get_latency(reuse, pmapping, workload, architecture)
+    overall_latency, _, _ = get_latency(reuse, pmapping, workload, flattened_arch)
     actions = gather_actions(reuse, pmapping, workload, None, is_path=True, use_name=True)
-    energy = compute_energy_from_actions(actions, ert)
+    # energy = compute_energy_from_actions(actions, ert)
 
-    df = {}
     total_occupancy = {}
     compute_unit = pmapping.nodes[-1].compute
     max_n_loops = 0
@@ -147,12 +152,12 @@ def explore_tile_shapes(pmapping, constraints, specification: Specification):
         overall_latency = np.repeat(overall_latency, n_shapes)
     else:
         overall_latency = sympy.lambdify(reuse.symbols, overall_latency)(*tile_shapes)
-    df['Latency'] = overall_latency
+    df['metric_Latency'] = overall_latency
 
-    total_energy = sum(energy.values())
-    df['Energy'] = sympy.lambdify(reuse.symbols, total_energy)(*tile_shapes)
+    # total_energy = sum(energy.values())
+    # df['metric_Energy'] = sympy.lambdify(reuse.symbols, total_energy)(*tile_shapes)
 
-    return df
+    return pd.DataFrame(df)
 
 
 
