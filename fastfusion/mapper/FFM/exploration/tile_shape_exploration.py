@@ -16,7 +16,7 @@ from fastfusion.model.looptree.reuse.summarized.symbolic import analyze_reuse
 from fastfusion.model.looptree.energy import compute_energy_from_actions, gather_actions
 from fastfusion.model.looptree.latency import get_latency
 
-from fastfusion.mapper.FFM.pareto import nameloop2col
+from fastfusion.mapper.FFM.pareto import nameloop2col, col2nameloop
 
 
 
@@ -71,93 +71,34 @@ class TilingSegment:
             yield (n_loops, max_shape, min_shape)
 
 
-def dummy_tile_shape_exploration(pmapping, workload, constraints):
-    N_ROWS = 1000
-    n_loops = 0
-    memory_levels = []
-    for node in pmapping.nodes:
-        if isinstance(node, Temporal) or isinstance(node, Spatial):
-            n_loops += 1
-        elif isinstance(node, Storage):
-            memory_levels.append(node.memory)
-
-    result = {
-        f"tile_shape{n}": np.random.randint(1, 1024, size=N_ROWS)
-        for n in range(n_loops)
-    }
-
-    result["energy"] = np.random.random(size=N_ROWS)
-    result["latency"] = np.random.random(size=N_ROWS)
-    result["latency"] = np.random.random(size=N_ROWS)
-
-    for mem_level in memory_levels:
-        result[f"{mem_level}_Occupancy"] = np.random.random(size=N_ROWS)
-
-    return pd.DataFrame(result)
-
-
 def explore_tile_shapes(pmapping, constraints, specification: Specification, flattened_arch):
     workload = specification.workload
-    ert = specification.component_energy
 
     set_last_tile_shape_to_one(pmapping)
 
+    symbols, symbolic_df, per_memory_occupancy_df = run_model(pmapping, specification, flattened_arch)
+    compiled_df = compile_dict(symbols, symbolic_df)
+    compiled_per_memory_occupancy_df = compile_dict(symbols, per_memory_occupancy_df)
+
+    tile_shapes, is_symbol = generate_tile_shapes(pmapping, workload, constraints, compiled_per_memory_occupancy_df)
+
     df = {}
-
-    tile_shapes, is_symbol = generate_tile_shapes(pmapping, workload, constraints)
-
     for i in range(tile_shapes.shape[1]):
         df[f'__tile_shape{i}'] = tile_shapes[:,i]
 
     tile_shapes = tile_shapes[:, is_symbol]
-    n_shapes = tile_shapes.shape[0]
     tile_shapes = [
         tile_shapes[:,i]
         for i in range(tile_shapes.shape[1])
     ]
 
-    reuse = analyze_reuse(pmapping, workload)
-    overall_latency, _, _ = get_latency(reuse, pmapping, workload, flattened_arch)
-    actions = gather_actions(reuse, pmapping, workload, None, is_path=True, use_name=True)
-    energy = compute_energy_from_actions(actions, ert)
-
-    total_occupancy = {}
-    compute_unit = pmapping.nodes[-1].compute
-    max_n_loops = 0
-    for buffet, stats in reuse.buffet_stats.items():
-        if buffet.level == compute_unit:
-            continue
-        occupancy = sympy.lambdify(reuse.symbols, stats.occupancy)(*tile_shapes)
-        occupancy = np.asarray(occupancy, dtype=np.float32)
-
-        if buffet.level not in total_occupancy:
-            total_occupancy[buffet.level] = {stats.n_loops_above: occupancy}
-        else:
-            total_occupancy[buffet.level][stats.n_loops_above] = occupancy
-
-        max_n_loops = max(max_n_loops, stats.n_loops_above+1)
-
-    for memory, occupancies in total_occupancy.items():
-        running_total = 0.0
-        for n_loop in range(max_n_loops):
-            if n_loop in occupancies:
-                running_total += occupancies[n_loop]
-            df[nameloop2col(memory, n_loop)] = running_total
-
-    if isinstance(overall_latency, Number):
-        overall_latency = np.repeat(overall_latency, n_shapes)
-    else:
-        overall_latency = sympy.lambdify(reuse.symbols, overall_latency)(*tile_shapes)
-    df['metric_Latency'] = overall_latency
-
-    total_energy = sum(energy.values())
-    df['metric_Energy'] = sympy.lambdify(reuse.symbols, total_energy)(*tile_shapes)
+    for key in compiled_df:
+        df[key] = compiled_df[key](*tile_shapes)
 
     return pd.DataFrame(df)
 
 
-
-def generate_tile_shapes(pmapping, workload, constraints: list[tuple]):
+def generate_tile_shapes(pmapping, workload, constraints: list[tuple], occupancy_df: dict):
     pmapping = pmapping.nodes
 
     shape = get_rank_variable_bounds(workload, pmapping[-1].einsum)
@@ -216,11 +157,16 @@ def generate_tile_shapes(pmapping, workload, constraints: list[tuple]):
     is_symbol = np.asarray(is_symbol)
 
     # Invert indices
+    indices = invert_indices(inverted_indices)
+
+    return choices[:,indices], is_symbol[indices]
+
+
+def invert_indices(inverted_indices):
     indices = [0]*len(inverted_indices)
     for inverted_idx, idx in enumerate(inverted_indices):
         indices[idx] = inverted_idx
-
-    return choices[:,indices], is_symbol[indices]
+    return indices
 
 
 def collect_tiling_segments(
@@ -239,7 +185,7 @@ def collect_tiling_segments(
                     TilingSegment(rank_shape[rank_var])
             tiling_segment = rank_var_to_tiling_segments[rank_var]
 
-            if tile_shape == 'symbol':
+            if tile_shape == 'symbol' or isinstance(tile_shape, sympy.Symbol):
                 tiling_segment.add_symbol(loop_idx)
             elif isinstance(tile_shape, int):
                 tiling_segment.add_tile_shape(tile_shape, loop_idx)
@@ -286,3 +232,55 @@ def set_last_tile_shape_to_one(pmapping):
 
     for last_node in rank_var_to_last_node.values():
         last_node.tile_shape = 1
+
+
+def run_model(pmapping, spec, flattened_arch):
+    workload = spec.workload
+    ert = spec.component_energy
+
+    df = {}
+
+    reuse = analyze_reuse(pmapping, workload)
+    overall_latency, _, _ = get_latency(reuse, pmapping, workload, flattened_arch)
+    actions = gather_actions(reuse, pmapping, workload, None, is_path=True, use_name=True)
+    energy = compute_energy_from_actions(actions, ert)
+
+    total_occupancy = {}
+    compute_unit = pmapping.nodes[-1].compute
+    max_n_loops = 0
+    for buffet, stats in reuse.buffet_stats.items():
+        if buffet.level == compute_unit:
+            continue
+        occupancy = stats.occupancy
+
+        if buffet.level not in total_occupancy:
+            total_occupancy[buffet.level] = {stats.n_loops_above: occupancy}
+        else:
+            total_occupancy[buffet.level][stats.n_loops_above] = occupancy
+
+        max_n_loops = max(max_n_loops, stats.n_loops_above+1)
+
+    for memory, occupancies in total_occupancy.items():
+        running_total = 0
+        for n_loop in range(max_n_loops):
+            if n_loop in occupancies:
+                running_total += occupancies[n_loop]
+            df[nameloop2col(memory, n_loop)] = running_total
+
+    per_memory_occupancy_df = {}
+    for memory, occupancies in total_occupancy.items():
+        per_memory_occupancy_df[memory] = sum(occupancies.values())
+
+    df['metric_Latency'] = overall_latency
+
+    total_energy = sum(energy.values())
+    df['metric_Energy'] = total_energy
+
+    return reuse.symbols, df, per_memory_occupancy_df
+
+
+def compile_dict(symbols, dictionary):
+    return {
+        key: sympy.lambdify(symbols, value)
+        for key, value in dictionary.items()
+    }
