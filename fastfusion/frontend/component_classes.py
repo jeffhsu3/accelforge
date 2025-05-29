@@ -5,7 +5,6 @@ from fastfusion.util.basetypes import (
     NonParsableModel, ParsableList, ParsableModel, ParsesTo,
     ParseExtras
 )
-from fastfusion.util.parse_expressions import ParseError
 from fastfusion.version import assert_version, __version__
 
 class ComponentAttributes(ParsableModel, ParseExtras):
