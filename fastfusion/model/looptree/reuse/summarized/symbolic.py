@@ -430,18 +430,24 @@ def analyze_spatial(node_idx, current_shape, info: AnalysisInfo):
                      sympy.Max)
 
         key = (node.across, einsum_name)
-        child_fanout = child_result.fanout[key]
-        if key not in result_accumulator.fanout:
-            result_accumulator.fanout[key] = [1]*sympy.Max(dim+1, len(child_fanout))
-            result_accumulator.fanout[key][dim] = 0
-        fanout = result_accumulator.fanout[key]
-        for i, _ in enumerate(fanout):
-            if i == dim and i < len(child_fanout):
-                fanout[i] += child_fanout[i]*shape_repeats
-            elif i == dim:
-                fanout[i] = shape_repeats
-            elif i < len(child_fanout):
-                fanout[i] = sympy.Max(fanout[i], child_fanout[i])
+        if key in child_result.fanout:
+            child_fanout = child_result.fanout[key]
+            if key not in result_accumulator.fanout:
+                result_accumulator.fanout[key] = [1]*sympy.Max(dim+1, len(child_fanout))
+                result_accumulator.fanout[key][dim] = 0
+            fanout = result_accumulator.fanout[key]
+            for i, _ in enumerate(fanout):
+                if i == dim and i < len(child_fanout):
+                    fanout[i] += child_fanout[i]*shape_repeats
+                elif i == dim:
+                    fanout[i] = shape_repeats
+                elif i < len(child_fanout):
+                    fanout[i] = sympy.Max(fanout[i], child_fanout[i])
+        else:  # happens if node.across is bypassed by all tensors: no storage node seen yet
+            if key not in result_accumulator.fanout:
+                result_accumulator.fanout[key] = [1]*(dim+1)
+            result_accumulator.fanout[key][dim] = shape_repeats
+
 
         for key in child_result.compute_stats:
             if key not in result_accumulator.compute_stats:
