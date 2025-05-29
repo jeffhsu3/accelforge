@@ -21,7 +21,7 @@ class ComponentAttributes(ParsableModel, ParseExtras):
         self,
         symbol_table: Optional[Dict[str, Any]] = None,
         inherit_all: bool = False,
-        multiply_multipliers: bool = True,
+        multiply_multipliers: bool = False,
         **kwargs,
     ) -> tuple[Any, dict[str, Any]]:
         new_self, new_symbol_table = super().parse_expressions(symbol_table, **kwargs, multiply_multipliers=multiply_multipliers)

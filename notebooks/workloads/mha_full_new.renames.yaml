@@ -9,6 +9,9 @@ renames:
     - name: output
       source: Outputs()
       injective: True
+    - name: input
+      source: Inputs()
+      injective: True
 
   - name: Q
     tensor_accesses:

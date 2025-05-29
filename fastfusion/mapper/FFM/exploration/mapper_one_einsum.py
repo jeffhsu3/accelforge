@@ -255,14 +255,10 @@ def insert_spatial_loops(
                 insertion_point = i + 1
 
         rv = einsum.rank_variables
-        if fanout.spatial.fanout_Y > 1:
+        for fanout_dim, fanout_size in fanout.spatial.fanout.items():
             mapping.insert(
                 insertion_point, 
-                Spatial(rank_variable=rv, dimension=1, across_object=fanout, across=fanout.name, tile_shape='symbol'))
-        if fanout.spatial.fanout_X > 1:
-            mapping.insert(
-                insertion_point, 
-                Spatial(rank_variable=rv, dimension=0, across_object=fanout, across=fanout.name, tile_shape='symbol'))
+                Spatial(rank_variable=rv, dimension=fanout_dim, across_object=fanout, across=fanout.name, tile_shape='symbol'))
 
 def unpack_loops_to_rank_variables(mapping: List[MappingNode]):
     mapping_new = []
@@ -346,11 +342,10 @@ def get_constraints(
             parsed[key] = constraint.storage._parse_non_keep_bypass(symbol_table)
         return parsed[key]
     
-    def get_parsed_spatial_constraint(constraint: ConstraintGroup, for_X: bool) -> ConstraintGroup:
-        key = id((id(constraint), for_X))
-        if key not in parsed:
-            constraint = constraint.get_spatial_constraint(for_X=for_X, for_Y=not for_X)
-            parsed[key] = constraint._parse(symbol_table)
+    def get_parsed_spatial_constraint(constraint: ConstraintGroup, dimension: str) -> ConstraintGroup:
+        key = id((id(constraint), dimension))
+        if key not in parsed and dimension in constraint.spatial:
+            parsed[key] = constraint.spatial[dimension]._parse(symbol_table)
         return parsed[key]
             
     tile_shape_constraint_id_to_mapping_nodes = defaultdict(list)
@@ -374,9 +369,9 @@ def get_constraints(
             for c in constraint.tile_shape:
                 add_storage_constraint(m, c)
 
-        for dim, for_x in [("X", True), ("Y", False)]:
-            if isinstance(m, Spatial) and m.dimension == dim:
-                constraint = get_parsed_spatial_constraint(m.across_object.constraints, for_x)
+        if isinstance(m, Spatial):
+            constraint = get_parsed_spatial_constraint(m.across_object.constraints, m.dimension)
+            if constraint is not None:
                 for c in constraint.loop_bounds:
                     if m.rank_variable in c.expression:
                         add_loop_bounds_constraint(m, c)

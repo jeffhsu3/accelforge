@@ -43,7 +43,7 @@ architecture:
   - !Memory
     name: LocalBuffer
     component_class: SRAM 
-    spatial: {fanout_X: 16}
+    spatial: {fanout: {X: 16}}
     attributes:
       size: 1024*1024*32*8 # 32MB
       width: 2048
@@ -54,10 +54,11 @@ architecture:
       storage:
         keep: Intermediates()
       spatial:
-        loop_bounds:
-        - expression: All().rank_variables()
-          operator: product<=
-          value: 16
+        - dimension: X
+          loop_bounds:
+          - expression: All().rank_variables()
+            operator: product<=
+            value: 16
     actions:
     - {name: read, arguments: {energy: 3.98}}
     - {name: write, arguments: {energy: 4.69}}
@@ -66,7 +67,7 @@ architecture:
   - !Memory
     name: Register
     component_class: dummy_storage
-    spatial: {fanout_X: 128, fanout_Y: 128}
+    spatial: {fanout: {X: 128, Y: 128}}
     attributes:
       size: 8 # 8b
       datawidth: 8
@@ -77,18 +78,21 @@ architecture:
       storage:
         keep: weight
         bypass: ~weight
-        # tile_size:
-        # - [weight.rank_variables(), ==, 1]
-      spatial_X:
-        loop_bounds:
-        - expression: input.rank_variables()
+        tile_shape:
+        - expression: weight.rank_variables()
           operator: ==
           value: 1
-      spatial_Y:
-        loop_bounds:
-        - expression: output.rank_variables()
-          operator: ==
-          value: 1
+      spatial:
+        - dimension: X
+          loop_bounds:
+          - expression: input.rank_variables()
+            operator: ==
+            value: 1
+        - dimension: Y
+          loop_bounds:
+          - expression: output.rank_variables()
+            operator: ==
+            value: 1
     actions:
     - {name: read, arguments: {energy: 0}}
     - {name: write, arguments: {energy: 0}}

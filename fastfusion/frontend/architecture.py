@@ -1,10 +1,11 @@
 from abc import ABC
 from logging import Logger
+import math
 from numbers import Number
 from typing import Any, Dict, List, Optional, Tuple, Union, Annotated, TypeVar, TypeAlias
 from pydantic import ConfigDict, RootModel, BaseModel
 
-from fastfusion.util.basetypes import ParsableModel, ParsableList, ParsesTo, PostCall, parse_field, T
+from fastfusion.util.basetypes import ParsableDict, ParsableModel, ParsableList, ParsesTo, PostCall, parse_field, T
 from fastfusion.util.parse_expressions import ParseError
 
 from .component_classes import ComponentAttributes, SubcomponentAction
@@ -55,21 +56,13 @@ class ArchNodes(ParsableList):
         return super().parse_expressions(*args, **kwargs, post_calls=(PostCallArchNode(),))
 
 class Spatial(ParsableModel):
-    fanout_X: ParsesTo[Union[int, float]] = 1
-    fanout_Y: ParsesTo[Union[int, float]] = 1
-
-    def validate_fanout(self):
-        for target in ["fanout_X", "fanout_Y"]:
-            v = getattr(self, target)
-            assert int(v) == v, f"{target} must be an integer, but is {v}"
-            assert v > 0, f"{target} must be positive, but is {v}"
+    fanout: ParsableDict[str, ParsesTo[int]] = ParsableDict()
 
     def get_fanout(self):
-        return int(self.fanout_X * self.fanout_Y)
+        return int(math.prod(self.fanout.values()))
 
     def to_fanout_string(self):
         return f"[1..{self.get_fanout()}]"
-
 
 class Leaf(ArchNode, ABC):
     name: str

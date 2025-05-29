@@ -50,7 +50,7 @@ class Specification(ParsableModel):
     def estimate_energy_area(self):
         plug_ins = gather_plug_ins(self.config.component_plug_ins)
         with ParseExpressionsContext(self):
-            processed, _ = self.parse_expressions(multiply_multipliers=False)
+            processed, _ = self.parse_expressions()
             components = processed.architecture._flatten(processed.variables)
             area = ComponentArea()
             energy = ComponentEnergy()

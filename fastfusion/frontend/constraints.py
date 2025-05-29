@@ -132,12 +132,24 @@ class Iteration(ParsableModel):
         )
         
 class Spatial(Iteration):
+    dimension: str
     def combine(self, other: "Spatial"):
         if self.reuse != other.reuse:
             raise ValueError(f"Cannot combine iterations with different reuse constraints. Got {self.reuse} and {other.reuse}.")
         return type(self)(
             loop_bounds=self.loop_bounds + other.loop_bounds,
             reuse=self.reuse,
+        )
+        
+    @property
+    def name(self):
+        return self.dimension
+    
+    def _parse(self, symbol_table: dict[str, Any]):
+        return type(self)(
+            dimension=self.dimension,
+            loop_bounds=[x._parse(symbol_table) for x in self.loop_bounds],
+            reuse=eval_set_expression(self.reuse, symbol_table, "tensors"),
         )
 
 class Temporal(Iteration):
@@ -159,9 +171,7 @@ class Temporal(Iteration):
 
 class ConstraintGroup(ParsableModel):
     name: Optional[str] = None
-    spatial: Spatial = Spatial()
-    spatial_X: Spatial = Spatial()
-    spatial_Y: Spatial = Spatial()
+    spatial: ParsableList[Spatial] = ParsableList()
     temporal: Temporal = Temporal()
     storage: Storage = Storage()
     
@@ -191,27 +201,6 @@ class ConstraintGroup(ParsableModel):
     #             "\"spatial_Y\" constraint. Please specify either one \"spatial\" constraint "
     #             "or both \"spatial_X\" and \"spatial_Y\" constraints."
     #         )
-            
-    def get_spatial_constraint(self, for_X: bool=False, for_Y: bool=False) -> "Spatial":
-        base = copy.deepcopy(self.spatial)
-        
-        
-        if for_X:
-            base.combine(self.spatial_X)
-        elif for_Y:
-            base.combine(self.spatial_Y)
-        return base
-        
-        # if not for_X and not for_Y:
-        #     raise ValueError(
-        #         f"{self.name} has no spatial constraints. Please specify either "
-        #         "spatial_X or spatial_Y constraints."
-        #     )
-        # if for_X and self.spatial_X.notempty_recursive():
-        #     return self.spatial_X
-        # if for_Y and self.spatial_Y.notempty_recursive():
-        #     return self.spatial_Y
-        # return self.spatial
             
     def _parse_storage(self, symbol_table: dict[str, Any]):
         return self.storage._parse(symbol_table)

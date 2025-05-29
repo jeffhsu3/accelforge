@@ -135,7 +135,6 @@ def eval_set_expression(
                 f"expected \"{expected_space_name}\""
             )
     except Exception as e:
-        result = eval(expression, {"__builtins__": {}}, symbol_table)
         raise ValueError(
             f"{e}. Set expression: \"{expression}\". Symbol table:\n\t" + "\n\t".join(f"{k}: {v}" for k, v in symbol_table.items())
         ) from e
