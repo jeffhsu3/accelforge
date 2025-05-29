@@ -316,7 +316,7 @@ class TileShapeConstraintLambda:
         self.rank_variables = rank_variables
 
     def __call__(self, final: bool, sizes: np.ndarray) -> bool:
-        return self.constraint(final, sizes)
+        return self.constraint_lambda(final, sizes)
     
 class LoopBoundsConstraintLambda:
     def __init__(
@@ -329,7 +329,7 @@ class LoopBoundsConstraintLambda:
         self.target_mapping_nodes = target_mapping_nodes
 
     def __call__(self, final: bool, sizes: np.ndarray) -> bool:
-        return self.constraint(final, sizes)
+        return self.constraint_lambda(final, sizes)
 
 def get_constraints(
     mapping: List[MappingNode],
