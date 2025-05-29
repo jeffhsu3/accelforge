@@ -7,23 +7,16 @@ from pathlib import Path
 import re
 from pydantic import BaseModel, ConfigDict, ValidationError
 from pydantic_core.core_schema import CoreSchema, chain_schema, list_schema, union_schema, no_info_plain_validator_function, str_schema, dict_schema
-from ruamel.yaml.scalarstring import DoubleQuotedScalarString, SingleQuotedScalarString
 from typing import Iterator, List, TypeVar, Generic, Any, Callable, Union, Dict, Optional, Type, TypeAlias, get_args, get_origin
 
 from fastfusion.util import yaml
-from fastfusion.util.parse_expressions import parse_expression, ParseError
+from fastfusion.util.parse_expressions import parse_expression, ParseError, RawString, is_raw_string
 from fastfusion.util import yaml
 
 T = TypeVar('T')
 M = TypeVar('M', bound=BaseModel)
 K = TypeVar('K')
 V = TypeVar('V')
-
-class RawString(str):
-    pass
-
-def is_raw_string(value: Any) -> bool:
-    return isinstance(value, (DoubleQuotedScalarString, SingleQuotedScalarString, RawString))
 
 class ParsesTo(Generic[T]):
     """A type that parses to the specified type T.
@@ -67,12 +60,25 @@ class ParsesTo(Generic[T]):
 
         # Get the schema for the target type
         target_schema = handler(target_type)
-
-        # Create a schema that validates either strings or instances of the target type
+        
+        def validate_raw_string(value):
+            if isinstance(value, str) and is_raw_string(value):
+                return RawString(value)
+            raise ValueError("Not a raw string")
+            
+        # Create a union schema that either validates as raw string or normal validation
         return union_schema([
-            # First try to validate as a string
-            str_schema(),
-            # Then try to validate as an instance of the target type
+            # First option: validate as raw string
+            chain_schema([
+                no_info_plain_validator_function(validate_raw_string),
+                # target_schema
+            ]),
+            # Second option: normal validation (string then target type)
+            chain_schema([
+                str_schema(),
+                # target_schema
+            ]),
+            # Third option: direct target type validation
             target_schema
         ])
 
@@ -251,25 +257,26 @@ def parse_field(field, value, validator, symbol_table, **kwargs):
         if origin is ParsesTo:
             if value == "REQUIRED":
                 if field in symbol_table:
-                    return copy.deepcopy(symbol_table[field])
+                    parsed = copy.deepcopy(symbol_table[field])
                 else:
                     raise ParseError(
                         f"{field} is required. Please set it in "
                         f"either the attributes or an outer scope."
                     )
             elif is_raw_string(value):
-                return value
+                parsed = RawString(value)
             else:
                 parsed = copy.deepcopy(parse_expression(value, symbol_table))
-                # Get the target type from the validator
-                target_type = get_args(validator)[0]
-                target_any = target_type is Any or isinstance(target_type, tuple) and Any in target_type
-                if not target_any and not isinstance(parsed, target_type):
-                    raise ParseError(
-                        f"{value} parsed to {parsed} with type {type(parsed).__name__}. "
-                        f"Expected {target_type.__name__}.",
-                    )
-                return parsed
+
+            # Get the target type from the validator
+            target_type = get_args(validator)[0]
+            target_any = target_type is Any or isinstance(target_type, tuple) and Any in target_type
+            if not target_any and not isinstance(parsed, target_type):
+                raise ParseError(
+                    f"{value} parsed to {parsed} with type {type(parsed).__name__}. "
+                    f"Expected {target_type}.",
+                )
+            return parsed
         elif isinstance(value, Parsable):
             parsed, _ = value.parse_expressions(symbol_table, **kwargs)
             return parsed

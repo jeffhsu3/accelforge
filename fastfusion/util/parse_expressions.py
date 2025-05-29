@@ -1,15 +1,12 @@
 from inspect import signature
-import copy
 from importlib.machinery import SourceFileLoader
 import logging
 import math
 import re
 import threading
-import traceback
 from typing import Any, Callable, Union
-from numbers import Number
 from .yaml import load_yaml, SCRIPTS_FROM
-import ruamel.yaml
+from ruamel.yaml.scalarstring import DoubleQuotedScalarString, SingleQuotedScalarString
 import os
 import keyword
 
@@ -29,6 +26,12 @@ class ParseError(Exception):
         if self.message is not None:
             s += f": {self.message}"
         return s
+
+class RawString(str):
+    pass
+
+def is_raw_string(value: Any) -> bool:
+    return isinstance(value, (DoubleQuotedScalarString, SingleQuotedScalarString, RawString))
 
 MATH_FUNCS = {
     "ceil": math.ceil,
@@ -181,7 +184,10 @@ def parse_expression(expression, symbol_table):
         return expression
     
     if expression in symbol_table:
-        return symbol_table[expression]
+        result = symbol_table[expression]
+        if isinstance(result, str):
+            result = RawString(result)
+        return result
 
     FUNCTION_BINDINGS = {}
     FUNCTION_BINDINGS["__builtins__"] = None  # Safety
@@ -192,7 +198,7 @@ def parse_expression(expression, symbol_table):
         v = eval(expression, FUNCTION_BINDINGS, symbol_table)
         infostr = f'Calculated "{expression}" = {v}.'
         if isinstance(v, str):
-            v = ruamel.yaml.scalarstring.DoubleQuotedScalarString(v)
+            v = RawString(v)
         if isinstance(v, Callable):
             v = get_callable_lambda(v, expression)
         success = True
@@ -217,6 +223,10 @@ def parse_expression(expression, symbol_table):
                 bindings[k] = f"{k}{signature(getattr(v, '_func', v))}"
             else:
                 extras.append(f"\n    {k} = {v}")
+        for k, v in bindings.items():
+            bindings[k] = str(v).replace("\n", "\\n")
+            if len(bindings[k]) > 100:
+                bindings[k] = bindings[k][:100] + "..."
         errstr += "".join(f"\n\t{k} = {v}" for k, v in bindings.items())
         errstr += "\n\n" + err
         errstr += (
