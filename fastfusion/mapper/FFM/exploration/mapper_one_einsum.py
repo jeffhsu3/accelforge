@@ -303,7 +303,7 @@ def iterate_mappings_no_constraints(
 # =================================================================================================
 # Attach constraints to mapping
 # =================================================================================================
-class TileSizeConstraintLambda:
+class TileShapeConstraintLambda:
     def __init__(
         self,
         constraint: Comparison,
@@ -379,7 +379,7 @@ def get_constraints(
     constraint_lambdas = []
     for constraint in tile_shape_constraints:
         mapping_nodes = tile_shape_constraint_id_to_mapping_nodes[id(constraint)]
-        constraint_lambdas.append(TileSizeConstraintLambda(constraint, mapping_nodes, constraint.expression))
+        constraint_lambdas.append(TileShapeConstraintLambda(constraint, mapping_nodes, constraint.expression))
 
     for constraint in loop_bounds_constraints:
         mapping_nodes = loop_bounds_constraint_id_to_mapping_nodes[id(constraint)]
