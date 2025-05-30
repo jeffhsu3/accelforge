@@ -5,8 +5,8 @@ import logging
 import os
 from pathlib import Path
 import re
-from pydantic import BaseModel, ConfigDict, ValidationError
-from pydantic_core.core_schema import CoreSchema, chain_schema, list_schema, union_schema, no_info_plain_validator_function, str_schema, dict_schema
+from pydantic import BaseModel, ConfigDict, Tag, ValidationError
+from pydantic_core.core_schema import CoreSchema, chain_schema, list_schema, union_schema, no_info_plain_validator_function, str_schema, dict_schema, tagged_union_schema
 from typing import Iterator, List, TypeVar, Generic, Any, Callable, TypeVarTuple, Union, Dict, Optional, Type, TypeAlias, get_args, get_origin
 
 from fastfusion.util import yaml
@@ -19,6 +19,36 @@ K = TypeVar('K')
 V = TypeVar('V')
 
 Ts = TypeVarTuple('Ts')
+
+def get_tag(value: Any) -> str:
+    if not isinstance(value, dict):
+        return value.__class__.__name__
+    tag = None
+    def try_get_tag(attr: str) -> str:
+        if hasattr(value, attr) and getattr(value, attr) is not None:
+            return getattr(value, attr)
+        return None
+    def try_index(attr: str) -> str:
+        try:
+            return value[attr]
+        except:
+            return None
+
+    tag = None
+    for attr in ("type", "_type", "_yaml_tag"):
+        if tag := try_get_tag(attr):
+            break
+        if tag := try_index(attr):
+            break
+    if tag is None:
+        raise ValueError(
+            f"No tag found for {value}. Either set the type field "
+            "or use a YAML tag."
+        )
+    tag = str(tag)
+    if tag.startswith("!"):
+        tag = tag[1:]
+    return tag
 
 class InferFromTag(Generic[*Ts]):
     @classmethod
@@ -64,26 +94,32 @@ class InferFromTag(Generic[*Ts]):
                         pass
                 else:
                     raise ValueError(
-                        f"No tag found for. Either set the type field "
+                        f"No tag found for {value}. Either set the type field "
                         "or use a YAML tag."
                     )
             tag = str(tag)
             if tag.startswith("!"):
                 tag = tag[1:]
+            value._type = tag
+                
             print(f'Tag found! {tag}')
             if tag in tag2class:
                return tag2class[tag](**value)
             else:
-                raise ValueError(f"Unknown tag: {tag}")
+                raise ValueError(f"Unknown tag: {tag}. Supported tags are: {sorted(tag2class.keys())}")
         
         # target_schema = handler.generate_schema(target_types)
         schemas = []
         for t in target_types:
             schemas.append(handler.generate_schema(t))
         target_schema = union_schema(schemas)
+        # return chain_schema([
+        #     no_info_plain_validator_function(validate),
+        #     target_schema
+        # ])
         return chain_schema([
             no_info_plain_validator_function(validate),
-            target_schema
+            tagged_union_schema(tag2class, discriminator="_type")
         ])
         
 
@@ -127,7 +163,7 @@ class ParsesTo(Generic[T]):
         def validate_raw_string(value):
             if isinstance(value, str) and is_raw_string(value):
                 return RawString(value)
-            raise ValueError("Not a raw string")
+            raise ValueError("Not a raw string")  # pragma: no cover
             
         # Create a union schema that either validates as raw string or normal validation
         return union_schema([
@@ -412,8 +448,7 @@ class ParsableModel(BaseModel, Parsable['ParsableModel'], FromYAMLAble):
 
     def __init__(self, **data):
         if "type" in data:
-            data["_type"] = data["type"]
-            del data["type"]
+            data["_type"] = data.pop("type")
         try:
             super().__init__(**data)
         except ValidationError as e:
@@ -439,7 +474,8 @@ class ParsableModel(BaseModel, Parsable['ParsableModel'], FromYAMLAble):
 
 class NonParsableModel(BaseModel, FromYAMLAble):
     model_config = ConfigDict(extra="forbid")
-    
+    _type: Optional[str] = None
+
     def get_validator(self, field: str) -> type:
         return Any
 

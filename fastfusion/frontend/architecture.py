@@ -3,14 +3,15 @@ from logging import Logger
 import math
 from numbers import Number
 from typing import Any, Dict, List, Optional, Tuple, Union, Annotated, TypeVar, TypeAlias
-from pydantic import ConfigDict, RootModel, BaseModel
+from pydantic import ConfigDict, RootModel, BaseModel, Tag
 
-from fastfusion.util.basetypes import InferFromTag, ParsableDict, ParsableModel, ParsableList, ParsesTo, PostCall, parse_field, T
+from fastfusion.util.basetypes import InferFromTag, ParsableDict, ParsableModel, ParsableList, ParsesTo, PostCall, get_tag
 from fastfusion.util.parse_expressions import ParseError
 
 from .component_classes import ComponentAttributes, SubcomponentAction
 from . import constraints
 from fastfusion.version import assert_version, __version__
+from pydantic import Discriminator
 
 from fastfusion.frontend.constraints import ConstraintGroup
 
@@ -150,8 +151,16 @@ class MemoryAttributes(Attributes):
 
 
 class Branch(ArchNode, ABC):
-    nodes: ArchNodes[InferFromTag[Compute, Memory, "Hierarchical"]] = ArchNodes()
-    
+    # nodes: ArchNodes[InferFromTag[Compute, Memory, "Hierarchical"]] = ArchNodes()
+    nodes: ArchNodes[Annotated[
+        Union[
+            Annotated[Compute, Tag("Compute")],
+            Annotated[Memory, Tag("Memory")],
+            Annotated["Hierarchical", Tag("Hierarchical")],
+        ], 
+        Discriminator(get_tag)
+    ]] = ArchNodes()
+        
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 

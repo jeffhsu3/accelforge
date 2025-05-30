@@ -1,3 +1,4 @@
+import functools
 from inspect import signature
 from importlib.machinery import SourceFileLoader
 import logging
@@ -173,6 +174,9 @@ def get_callable_lambda(func, expression):
     l._func = func
     return l
 
+@functools.lru_cache(maxsize=1000)
+def infostr_log_cache(infostr: str):
+    logging.info(infostr)
 
 def parse_expression(expression, symbol_table):
     try:
@@ -252,7 +256,8 @@ def parse_expression(expression, symbol_table):
     if not success:
         raise ParseError(errstr)
 
-    logging.info(infostr)
+    infostr_log_cache(infostr)
+
     return v
 
 
