@@ -251,22 +251,19 @@ def insert_temporal_loops(
             rank_variables &= einsum.tensor2rank_variables[t]
 
         
-        # If there is a backing storage in the next block, include everything.
-        if any(s._backing for s in cur):
-            rank_variables = set(einsum.rank_variables)
-            
-        # Otherwise include loops that will get reuse for the previous block of
-        # storage nodes
+        rank_variables = set(einsum.rank_variables)
+
+        # If there is no backing storage in the next block, only include loops
+        # that reuse tensors in the previous block.
+        if not any(s._backing for s in cur):
+            prev_relevant = [einsum.tensor2rank_variables[t] for s in prev for t in s.tensors]
+            if prev_relevant:
+                rank_variables -= set.intersection(*prev_relevant)
+
+        # Only include loops that will index into the next block of storage nodes.
         else:
-            rank_variables = set()
-            for s in prev:
-                prev_irrelevant = [einsum.tensor2rank_variables[t] for t in s.tensors]
-                rank_variables |= set.union(*prev_irrelevant, set())
-                
-        # Loops must also index into the next block of storage nodes.
-        for s in cur:
-            cur_relevant = [einsum.tensor2rank_variables[t] for t in s.tensors]
-            rank_variables &= set.union(*cur_relevant, set())
+            next_relevant = [einsum.tensor2rank_variables[t] for s in cur for t in s.tensors]
+            rank_variables &= set.union(*next_relevant, set())
                 
         # If there are any tensors we haven't seen yet, we may only iterate over
         # their relevant rank variables.
@@ -338,8 +335,11 @@ def iterate_mappings_no_constraints(
     symbol_table = spec.workload.get_constraint_symbol_table(einsum_name, spec.renames)
     einsum = spec.workload.einsums[einsum_name]
     for mapping, symbol_table in get_storage_choices(arch_flattened, symbol_table):
+        # print(", ".join(m.compact_string() for m in mapping))
         mapping = insert_temporal_loops(mapping, einsum, first_memory)
+        # print(", ".join(m.compact_string() for m in mapping))
         insert_spatial_loops(mapping, einsum, arch_flattened)
+        # print(", ".join(m.compact_string() for m in mapping))
         mapping = unpack_loops_to_rank_variables(mapping)
         yield mapping, symbol_table
 
@@ -386,7 +386,7 @@ def get_constraints(
         return parsed[key]
     
     def get_parsed_spatial_constraint(constraint: ConstraintGroup, dimension: str) -> ConstraintGroup:
-        key = id((id(constraint), dimension))
+        key = (id(constraint), dimension)
         if key not in parsed and dimension in constraint.spatial:
             parsed[key] = constraint.spatial[dimension]._parse(symbol_table)
         return parsed[key]
@@ -570,6 +570,7 @@ def _per_proc_compatibility2sim(
     flattend_arch: list[architecture.Leaf],
 ) -> dict[Compatibility, SIM]:
     compatibility2sim = {}
+    print(", ".join(m.compact_string() for m in mapping.nodes))
     result = explore_tile_shapes(mapping, constraints, specification, flattend_arch)
     make_sims(mapping, result, rank_variable_to_size, compatibility2sim, intermediate_tensors)
     return compatibility2sim
