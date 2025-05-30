@@ -532,7 +532,7 @@ def analyze_reservation(node_idx, current_shape, info: AnalysisInfo):
 
     fanout_key = (node.memory, einsum_name)
     if fanout_key not in child_result.fanout:
-        child_result.fanout[fanout_key] = []
+        child_result.fanout[fanout_key] = {}
 
     return child_result
 

@@ -8,6 +8,7 @@ import sympy
 
 import pandas as pd
 
+import fastfusion.frontend.architecture as architecture
 from fastfusion.frontend.architecture import Memory
 from fastfusion.frontend.workload.isl import get_rank_variable_bounds
 from fastfusion.frontend.mapping import Temporal, Spatial, Storage
@@ -75,11 +76,12 @@ class TilingSegment:
 def explore_tile_shapes(pmapping, constraints, specification: Specification, flattened_arch):
     set_last_tile_shape_to_one(pmapping)
 
-    symbols, symbolic_df, per_memory_occupancy_df = run_model(pmapping, specification, flattened_arch)
+    symbols, symbolic_df, per_memory_occupancy_df, utilization_df = run_model(pmapping, specification, flattened_arch)
     compiled_df = compile_dict(symbols, symbolic_df)
     compiled_per_memory_occupancy_df = compile_dict(symbols, per_memory_occupancy_df)
+    compiled_utilization_df = compile_dict(symbols, utilization_df)
 
-    tile_shapes, is_symbol = generate_tile_shapes(pmapping, constraints, compiled_per_memory_occupancy_df, flattened_arch, specification)
+    tile_shapes, is_symbol = generate_tile_shapes(pmapping, constraints, compiled_per_memory_occupancy_df, compiled_utilization_df, specification)
 
     df = {}
     for i in range(tile_shapes.shape[1]):
@@ -97,7 +99,7 @@ def explore_tile_shapes(pmapping, constraints, specification: Specification, fla
     return pd.DataFrame(df)
 
 
-def generate_tile_shapes(pmapping, constraints, usage_df, flattened_arch, specification):
+def generate_tile_shapes(pmapping, constraints, usage_df, utilization_df, specification):
     pmapping = pmapping.nodes
     workload = specification.workload
 
@@ -139,18 +141,22 @@ def generate_tile_shapes(pmapping, constraints, usage_df, flattened_arch, specif
             ])
             mask = mask & (usage <= 1.0)
 
+        good_choices = choices[mask,:]
+
+        if good_choices.shape[0] == 0:
+            return good_choices, is_symbols
+
         rank_var_and_choices.append((
             frozenset(rank_var),
             tiling_segments.indices.copy(),
             tiling_segments.is_symbol.copy(),
-            choices[mask,:n_loops]
+            good_choices[:,:n_loops]
         ))
 
     while len(rank_var_and_choices) > 1:
         rank_a, index_a, is_symbol_a, choices_a = rank_var_and_choices.pop()
         rank_b, index_b, is_symbol_b, choices_b = rank_var_and_choices.pop()
 
-        # print(choices_a.shape[0], choices_b.shape[1])
         combined_choices = np.concatenate(
             (
                 np.tile(choices_a, (choices_b.shape[0], 1)),
@@ -165,14 +171,15 @@ def generate_tile_shapes(pmapping, constraints, usage_df, flattened_arch, specif
         indices = index_a + index_b
 
         # Insert ones
-        for _, other_indices, other_is_symbol, _ in rank_var_and_choices:
+        combined_choices_with_ones = combined_choices
+        for other_ranks, other_indices, other_is_symbol, other_choices in rank_var_and_choices:
             indices.extend(other_indices)
             is_symbols.extend(other_is_symbol)
 
             other_n_loops = len(other_indices)
-            combined_choices = np.concatenate(
+            combined_choices_with_ones = np.concatenate(
                 (
-                    combined_choices,
+                    combined_choices_with_ones,
                     np.ones((n_rows, other_n_loops), dtype=np.int32)
                 ),
                 axis=1
@@ -180,7 +187,7 @@ def generate_tile_shapes(pmapping, constraints, usage_df, flattened_arch, specif
 
         # TODO: there may be a more efficient order
         corrected_indices = np.asarray(invert_indices(indices))
-        corrected_choices = combined_choices[:,corrected_indices]
+        corrected_choices = combined_choices_with_ones[:,corrected_indices]
         is_symbols = np.asarray(is_symbols)[corrected_indices]
         corrected_choices = corrected_choices[:,is_symbols]
 
@@ -192,11 +199,50 @@ def generate_tile_shapes(pmapping, constraints, usage_df, flattened_arch, specif
             ])
             mask = mask & (usage <= 1.0)
 
+        # Compute utilization
+        utilization = {}
+        for (component, dim), utilization_model in utilization_df.items():
+            utilization[(component, dim)] = utilization_model(*[
+                corrected_choices[:,i] for i in range(corrected_choices.shape[1])
+            ])
+
+
+        # Insert largest value
+        combined_choices_with_largest = combined_choices
+        for other_ranks, other_indices, other_is_symbol, other_choices in rank_var_and_choices:
+            largest_other_choices = np.max(other_choices, axis=0, keepdims=True)
+            combined_choices_with_largest = np.concatenate(
+                (
+                    combined_choices_with_largest,
+                    np.repeat(largest_other_choices, n_rows, axis=0)
+                ),
+                axis=1
+            )
+        corrected_choices = combined_choices_with_largest[:,corrected_indices]
+        corrected_choices = corrected_choices[:,is_symbols]
+
+        for (component, dim), utilization_model in utilization_df.items():
+            utilization[(component, dim)] = np.minimum(
+                utilization[(component, dim)],
+                utilization_model(*[
+                    corrected_choices[:,i]
+                    for i in range(corrected_choices.shape[1])
+                ])
+            )
+            mask = mask & (utilization[(component, dim)] <= 1.0)
+
+        good_choices = combined_choices[mask,:]
+
+        # print(choices_a.shape[0], choices_b.shape[0], combined_choices.shape[0], np.sum(mask)/combined_choices.shape[0])
+
+        if good_choices.shape[0] == 0:
+            return combined_choices_with_largest[:,corrected_indices], is_symbols
+
         rank_var_and_choices.append((
             rank_a | rank_b,
             index_a + index_b,
             is_symbol_a + is_symbol_b,
-            combined_choices[mask,:n_loops]
+            good_choices
         ))
 
     _, inverted_indices, is_symbol, choices = rank_var_and_choices[0]
@@ -276,16 +322,18 @@ def set_last_tile_shape_to_one(pmapping):
         last_node.tile_shape = 1
 
 
-def run_model(pmapping, spec, flattened_arch):
+def run_model(pmapping, spec, flattened_arch: list[architecture.Leaf]):
     workload = spec.workload
     ert = spec.component_energy
 
+    component_to_max_fanout = {}
     memory_to_datawidth = {}
     memory_to_size = {}
     for node in flattened_arch:
         if isinstance(node, Memory):
             memory_to_datawidth[node.name] = node.attributes.datawidth
             memory_to_size[node.name] = node.attributes.size
+        component_to_max_fanout[node.name] = node.spatial.fanout
 
     df = {}
 
@@ -316,16 +364,23 @@ def run_model(pmapping, spec, flattened_arch):
                 running_total += occupancies[n_loop]
             df[nameloop2col(memory, n_loop)] = running_total
 
-    per_memory_usage_df = {}
-    for memory, occupancies in total_occupancy.items():
-        per_memory_usage_df[memory] = sum(occupancies.values()) / memory_to_size[memory]
-
     df['metric_Latency'] = overall_latency
 
     total_energy = sum(energy.values())
     df['metric_Energy'] = total_energy
 
-    return reuse.symbols, df, per_memory_usage_df
+    per_memory_usage_df = {}
+    for memory, occupancies in total_occupancy.items():
+        per_memory_usage_df[memory] = sum(occupancies.values()) / memory_to_size[memory]
+
+    utilization_df = {}
+    for (component, einsum), per_dim_fanout in reuse.fanout.items():
+        for dim, fanout in per_dim_fanout.items():
+            utilization_df[(component, dim)] = \
+                fanout / component_to_max_fanout[component][dim]
+
+
+    return reuse.symbols, df, per_memory_usage_df, utilization_df
 
 
 def compile_dict(symbols, dictionary):
