@@ -8,6 +8,7 @@ import sympy
 
 import pandas as pd
 
+from fastfusion.frontend.architecture import Memory
 from fastfusion.frontend.workload.isl import get_rank_variable_bounds
 from fastfusion.frontend.mapping import Temporal, Spatial, Storage
 from fastfusion.frontend.specification import Specification
@@ -72,15 +73,13 @@ class TilingSegment:
 
 
 def explore_tile_shapes(pmapping, constraints, specification: Specification, flattened_arch):
-    workload = specification.workload
-
     set_last_tile_shape_to_one(pmapping)
 
     symbols, symbolic_df, per_memory_occupancy_df = run_model(pmapping, specification, flattened_arch)
     compiled_df = compile_dict(symbols, symbolic_df)
     compiled_per_memory_occupancy_df = compile_dict(symbols, per_memory_occupancy_df)
 
-    tile_shapes, is_symbol = generate_tile_shapes(pmapping, workload, constraints, compiled_per_memory_occupancy_df)
+    tile_shapes, is_symbol = generate_tile_shapes(pmapping, constraints, compiled_per_memory_occupancy_df, flattened_arch, specification)
 
     df = {}
     for i in range(tile_shapes.shape[1]):
@@ -98,8 +97,9 @@ def explore_tile_shapes(pmapping, constraints, specification: Specification, fla
     return pd.DataFrame(df)
 
 
-def generate_tile_shapes(pmapping, workload, constraints: list[tuple], occupancy_df: dict):
+def generate_tile_shapes(pmapping, constraints, usage_df, flattened_arch, specification):
     pmapping = pmapping.nodes
+    workload = specification.workload
 
     shape = get_rank_variable_bounds(workload, pmapping[-1].einsum)
 
@@ -113,29 +113,44 @@ def generate_tile_shapes(pmapping, workload, constraints: list[tuple], occupancy
 
         # Insert ones
         indices = tiling_segments.indices.copy()
+        is_symbols = tiling_segments.is_symbol.copy()
         for other_rank, other_segments in rank_var_to_tiling_segments.items():
             if rank_var == other_rank:
                 continue
             other_n_loops = len(other_segments.indices)
             indices.extend(other_segments.indices)
+            is_symbols.extend(other_segments.is_symbol)
             choices = np.concatenate(
                 (choices, np.ones((n_rows, other_n_loops), dtype=np.int32)),
                 axis=1
             )
-        # TODO: select out of choices to put into constraints
-        # TODO: mask out bad choices
+
+        # TODO: there may be a more efficient order
+        corrected_indices = np.asarray(invert_indices(indices))
+        corrected_choices = choices[:,corrected_indices]
+        is_symbols = np.asarray(is_symbols)[corrected_indices]
+        corrected_choices = corrected_choices[:,is_symbols]
+
+        # Check if capacity is overused
+        mask = np.ones(corrected_choices.shape[0], dtype=np.bool)
+        for memory, usage_model in usage_df.items():
+            usage = usage_model(*[
+                corrected_choices[:,i] for i in range(corrected_choices.shape[1])
+            ])
+            mask = mask & (usage <= 1.0)
 
         rank_var_and_choices.append((
             frozenset(rank_var),
             tiling_segments.indices.copy(),
             tiling_segments.is_symbol.copy(),
-            choices[:,:n_loops]
+            choices[mask,:n_loops]
         ))
 
     while len(rank_var_and_choices) > 1:
         rank_a, index_a, is_symbol_a, choices_a = rank_var_and_choices.pop()
         rank_b, index_b, is_symbol_b, choices_b = rank_var_and_choices.pop()
 
+        print(choices_a.shape[0], choices_b.shape[1])
         combined_choices = np.concatenate(
             (
                 np.tile(choices_a, (choices_b.shape[0], 1)),
@@ -143,17 +158,48 @@ def generate_tile_shapes(pmapping, workload, constraints: list[tuple], occupancy
             ),
             axis=1
         )
+        n_rows = combined_choices.shape[0]
+        n_loops = combined_choices.shape[1]
 
-        # TODO: insert ones and constrain
+        is_symbols = is_symbol_a + is_symbol_b
+        indices = index_a + index_b
+
+        # Insert ones
+        for _, other_indices, other_is_symbol, _ in rank_var_and_choices:
+            indices.extend(other_indices)
+            is_symbols.extend(other_is_symbol)
+
+            other_n_loops = len(other_indices)
+            combined_choices = np.concatenate(
+                (
+                    combined_choices,
+                    np.ones((n_rows, other_n_loops), dtype=np.int32)
+                ),
+                axis=1
+            )
+
+        # TODO: there may be a more efficient order
+        corrected_indices = np.asarray(invert_indices(indices))
+        corrected_choices = combined_choices[:,corrected_indices]
+        is_symbols = np.asarray(is_symbols)[corrected_indices]
+        corrected_choices = corrected_choices[:,is_symbols]
+
+        # Check if capacity is overused
+        mask = np.ones(corrected_choices.shape[0], dtype=np.bool)
+        for memory, usage_model in usage_df.items():
+            usage = usage_model(*[
+                corrected_choices[:,i] for i in range(corrected_choices.shape[1])
+            ])
+            mask = mask & (usage <= 1.0)
 
         rank_var_and_choices.append((
             rank_a | rank_b,
             index_a + index_b,
             is_symbol_a + is_symbol_b,
-            combined_choices
+            combined_choices[mask,:n_loops]
         ))
 
-    all_rank_variables, inverted_indices, is_symbol, choices = rank_var_and_choices[0]
+    _, inverted_indices, is_symbol, choices = rank_var_and_choices[0]
     is_symbol = np.asarray(is_symbol)
 
     # Invert indices
@@ -238,6 +284,13 @@ def run_model(pmapping, spec, flattened_arch):
     workload = spec.workload
     ert = spec.component_energy
 
+    memory_to_datawidth = {}
+    memory_to_size = {}
+    for node in flattened_arch:
+        if isinstance(node, Memory):
+            memory_to_datawidth[node.name] = node.attributes.datawidth
+            memory_to_size[node.name] = node.attributes.size
+
     df = {}
 
     reuse = analyze_reuse(pmapping, workload)
@@ -251,7 +304,7 @@ def run_model(pmapping, spec, flattened_arch):
     for buffet, stats in reuse.buffet_stats.items():
         if buffet.level == compute_unit:
             continue
-        occupancy = stats.occupancy
+        occupancy = stats.occupancy*memory_to_datawidth[buffet.level]
 
         if buffet.level not in total_occupancy:
             total_occupancy[buffet.level] = {stats.n_loops_above: occupancy}
@@ -267,16 +320,16 @@ def run_model(pmapping, spec, flattened_arch):
                 running_total += occupancies[n_loop]
             df[nameloop2col(memory, n_loop)] = running_total
 
-    per_memory_occupancy_df = {}
+    per_memory_usage_df = {}
     for memory, occupancies in total_occupancy.items():
-        per_memory_occupancy_df[memory] = sum(occupancies.values())
+        per_memory_usage_df[memory] = sum(occupancies.values()) / memory_to_size[memory]
 
     df['metric_Latency'] = overall_latency
 
     total_energy = sum(energy.values())
     df['metric_Energy'] = total_energy
 
-    return reuse.symbols, df, per_memory_occupancy_df
+    return reuse.symbols, df, per_memory_usage_df
 
 
 def compile_dict(symbols, dictionary):
