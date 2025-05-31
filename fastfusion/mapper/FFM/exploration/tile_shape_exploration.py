@@ -96,8 +96,9 @@ def explore_tile_shapes(pmapping, constraints, specification: Specification, fla
     for key in compiled_df:
         df[key] = compiled_df[key](*tile_shapes)
 
-    return pd.DataFrame(df)
-
+    rval = pd.DataFrame(df)
+    print(f'Returning df: {rval.shape}')
+    return rval
 
 def generate_tile_shapes(pmapping, constraints, usage_df, utilization_df, specification):
     pmapping = pmapping.nodes
@@ -260,11 +261,10 @@ def generate_tile_shapes(pmapping, constraints, usage_df, utilization_df, specif
 
     # Invert indices
     indices = invert_indices(inverted_indices)
-    
+
     print(f"Returning choices of shape {choices[:,indices].shape}")
 
     return choices[:,indices], is_symbol[indices]
-
 
 def invert_indices(inverted_indices):
     return np.argsort(inverted_indices)
@@ -283,7 +283,7 @@ def collect_tiling_segments(
             if rank_var not in rank_var_to_tiling_segments:
                 rank_var_to_tiling_segments[rank_var] = \
                     TilingSegment(rank_shape[rank_var])
-            tiling_segment = rank_var_to_tiling_segments[rank_var]
+            tiling_segment: TilingSegment = rank_var_to_tiling_segments[rank_var]
 
             if tile_shape == 'symbol' or isinstance(tile_shape, sympy.Symbol):
                 tiling_segment.add_symbol(loop_idx)
@@ -300,7 +300,7 @@ def collect_tiling_segments(
     return rank_var_to_tiling_segments
 
 
-def make_shapes_for_one_rank(tiling_segments):
+def make_shapes_for_one_rank(tiling_segments: TilingSegment):
     all_tile_shapes = None
     total_loops = 0
     for n_loops, max_shape, min_shape in tiling_segments.iterate_segments():
