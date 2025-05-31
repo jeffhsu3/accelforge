@@ -332,21 +332,30 @@ def label_fused_loops(mapping: List[MappingNode]):
 # =================================================================================================
 # Iterate over mappings
 # =================================================================================================
-def temporal_fused_constraint_thing_fix_me(mapping: List[MappingNode], rank_variables: set[RankVariableName]):
+def temporal_fused_constraint_thing_fix_me(mapping: List[MappingNode], rank_variables: list[RankVariableName]):
+    rank_variables = list(rank_variables)
     if not rank_variables:
         yield mapping
         return
 
     my_rank_variable = RankVariableName(rank_variables.pop())
+    # indent = " " * (10 - len(rank_variables))
     fused_loops = [i for i, node in enumerate(mapping) if isinstance(node, Iteration) and node._fused and my_rank_variable == node.rank_variable]
+    
+    if not fused_loops or len(fused_loops) == 1:
+        # print(indent + f"Yielding for rank variable {my_rank_variable}. Length: {len(mapping)}")
+        # print(indent + ", ".join(m.compact_string() for m in mapping))
+        yield from temporal_fused_constraint_thing_fix_me(mapping, rank_variables)
+        return
+    
     for choice in fused_loops:
         mapping_new = list(mapping)
         for f in fused_loops[::-1]:
             if f != choice:
                 mapping_new.pop(f)
+        # print(indent + f"Yielding for rank variable {my_rank_variable}. Length: {len(mapping_new)}")
+        # print(indent + ", ".join(m.compact_string() for m in mapping_new))
         yield from temporal_fused_constraint_thing_fix_me(mapping_new, rank_variables)
-    if not fused_loops:
-        yield from temporal_fused_constraint_thing_fix_me(mapping, rank_variables)
 
 
 def iterate_mappings_no_constraints(
@@ -372,7 +381,8 @@ def iterate_mappings_no_constraints(
         # print(", ".join(m.compact_string() for m in mapping))
         mapping = unpack_loops_to_rank_variables(mapping)
         label_fused_loops(mapping)
-        for mapping2 in temporal_fused_constraint_thing_fix_me(mapping, spec.workload.einsums[einsum_name].rank_variables): # TODO
+        # print(", ".join(m.compact_string() for m in mapping))
+        for mapping2 in temporal_fused_constraint_thing_fix_me(mapping, list(spec.workload.einsums[einsum_name].rank_variables)): # TODO
             yield copy.deepcopy(mapping2), symbol_table
 
 # =================================================================================================
