@@ -170,6 +170,15 @@ def col_used_in_pareto(c):
 # Shared index -1: Sum -1 resources, max everyone below
 # Shared index 0: Sum 0 resources, max everyone below
 
+def makepareto(mappings: pd.DataFrame, extra_columns: set[str] = fzs()) -> pd.DataFrame:
+    if len(mappings) <= 1:
+        return mappings
+    columns = [c for c in mappings.columns if col_used_in_pareto(c)]
+    sense = ["min"] * len(columns)
+    columns += list(extra_columns)
+    sense += ["diff"] * len(extra_columns)
+    return mappings[paretoset(mappings[columns], sense=sense)].reset_index(drop=True)
+    
 class CompressedRecoveryMap(NamedTuple):
     multiplier: int
     recovery_map: dict[int, pd.DataFrame]
@@ -623,10 +632,7 @@ class PartialMappings:
         self._data = self.data.drop(columns=dropcols)
 
     def make_pareto(self):
-        if len(self._data) <= 1:
-            return
-        columns = [c for c in self.data.columns if col_used_in_pareto(c)]
-        self._data = self.data[paretoset(self.data[columns])].reset_index(drop=True)
+        self._data = makepareto(self.data)
 
     def has_reservations(self):
         return any(col2nameloop(c) is not None for c in self.data.columns)
