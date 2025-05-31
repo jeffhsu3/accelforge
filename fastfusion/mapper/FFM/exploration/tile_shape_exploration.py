@@ -153,9 +153,17 @@ def generate_tile_shapes(pmapping, constraints, usage_df, utilization_df, specif
             good_choices[:,:n_loops]
         ))
 
+    # rank_var_and_choices = sorted(
+    #     rank_var_and_choices,
+    #     key = lambda x: x[-1].shape[0],
+    #     reverse=True
+    # )
+
     while len(rank_var_and_choices) > 1:
         rank_a, index_a, is_symbol_a, choices_a = rank_var_and_choices.pop()
         rank_b, index_b, is_symbol_b, choices_b = rank_var_and_choices.pop()
+
+        print(f"With {len(rank_var_and_choices)} choices left, combining lengths {choices_a.shape[0]} and {choices_b.shape[0]} -> {choices_a.shape[0] * choices_b.shape[0]}")
 
         combined_choices = np.concatenate(
             (
