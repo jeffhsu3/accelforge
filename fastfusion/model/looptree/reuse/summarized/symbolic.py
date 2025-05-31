@@ -447,7 +447,12 @@ def analyze_spatial(node_idx, current_shape, info: AnalysisInfo):
 
             for i_dim in chain(fanout, child_fanout):
                 if i_dim in child_fanout and i_dim == dim: # true: dim in fanout
-                    fanout[i_dim] += child_fanout[i_dim]*shape_repeats
+                    if fanout[i_dim] != child_fanout[i_dim]*shape_repeats:
+                        fanout[i_dim] += child_fanout[i_dim]*shape_repeats
+                    else:
+                        # We were getting duplicates of fanout added so
+                        # utilization would be 2*(expression) for the expected expression
+                        print(f"Bugfix I don't know what's going on here")
                 elif i_dim == dim:
                     fanout[i_dim] += shape_repeats
                 elif i_dim in child_fanout and i_dim in fanout:
@@ -461,6 +466,14 @@ def analyze_spatial(node_idx, current_shape, info: AnalysisInfo):
                 result_accumulator.fanout[key] = {}
             result_accumulator.fanout[key][dim] = shape_repeats
 
+        # Fanouts weren't getting populated from the children so we were only
+        # getting fanout from the innermost
+        for child_key, child_fanout in child_result.fanout.items():
+            if child_key == key:
+                continue
+            if child_key in result_accumulator.fanout:
+                raise RuntimeError('BUG!')
+            result_accumulator.fanout[child_key] = child_fanout
 
         for key in child_result.compute_stats:
             if key not in result_accumulator.compute_stats:
