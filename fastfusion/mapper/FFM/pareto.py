@@ -625,9 +625,7 @@ class PartialMappings:
     def make_pareto(self):
         if len(self._data) <= 1:
             return
-        # columns = [c for c in self.data.columns if c not in RESERVED_COLUMNS]
-        # columns = [c for c in columns if not c.startswith("__")]
-        columns = [c for c in self.data.columns if c.startswith("metric_")]
+        columns = [c for c in self.data.columns if col_used_in_pareto(c)]
         self._data = self.data[paretoset(self.data[columns])].reset_index(drop=True)
 
     def has_reservations(self):
