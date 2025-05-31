@@ -195,50 +195,35 @@ class ConstraintGroup(ParsableModel):
     temporal: Temporal = Temporal()
     storage: Storage = Storage()
     dataflow: Dataflow = Dataflow()
-    # def validate_spatial(self, fanout_X: int, fanout_Y: int):
-    #     has_X = self.spatial_X.notempty_recursive()
-    #     has_Y = self.spatial_Y.notempty_recursive()
-    #     has_spatial = self.spatial.notempty_recursive()
-    #     if has_X and fanout_X == 1:
-    #         logging.warning(
-    #             f"Spatial_X constraint is set for {self.name}, but fanout_X is 1. "
-    #             f"The constraint will be ignored."
-    #         )
-    #     if has_Y and fanout_Y == 1:
-    #         logging.warning(
-    #             f"Spatial_Y constraint is set for {self.name}, but fanout_Y is 1. "
-    #             f"The constraint will be ignored."
-    #         )
-    #     if has_spatial and (has_X or has_Y):
-    #         raise ValueError(
-    #             f"{self.name} has a \"spatial\" constraint, but has fanout in both "
-    #             "X and Y dimensions. Please specify spatial_X and spatial_Y constraints "
-    #             "instead."
-    #         )
-    #     if has_spatial and (has_X or has_Y):
-    #         raise ValueError(
-    #             f"{self.name} has a \"spatial\" constraint, and a \"spatial_X\" or "
-    #             "\"spatial_Y\" constraint. Please specify either one \"spatial\" constraint "
-    #             "or both \"spatial_X\" and \"spatial_Y\" constraints."
-    #         )
-            
-    def _parse_storage(self, symbol_table: dict[str, Any]):
-        return self.storage._parse(symbol_table)
 
-    def _parse(
-        self, 
-        symbol_table: dict[str, Any],
-        fanout_X: int,
-        fanout_Y: int,
+class TileShapeConstraintLambda:
+    def __init__(
+        self,
+        constraint: Comparison,
+        target_mapping_nodes: list[Storage],
+        rank_variables: set[str],
     ):
-        self.validate_spatial(fanout_X, fanout_Y)
-        return type(self)(
-            self.spatial._parse(symbol_table),
-            self.spatial_X._parse(symbol_table),
-            self.spatial_Y._parse(symbol_table),
-            self.temporal._parse(symbol_table),
-            self.storage._parse(symbol_table),
-        )
+        self.constraint = constraint
+        self.constraint_lambda = constraint.to_constraint_lambda(True)
+        self.target_mapping_nodes = target_mapping_nodes
+        self.rank_variables = rank_variables
+
+    def __call__(self, final: bool, sizes: np.ndarray) -> bool:
+        return self.constraint_lambda(final, sizes)
+    
+class LoopBoundsConstraintLambda:
+    def __init__(
+        self,
+        constraint: Comparison,
+        target_mapping_nodes: list[Iteration],
+    ):
+        self.constraint = constraint
+        self.constraint_lambda = constraint.to_constraint_lambda(True)
+        self.target_mapping_nodes = target_mapping_nodes
+
+    def __call__(self, final: bool, sizes: np.ndarray) -> bool:
+        return self.constraint_lambda(final, sizes)
+
 
 
 class Constraints(ParsableModel):

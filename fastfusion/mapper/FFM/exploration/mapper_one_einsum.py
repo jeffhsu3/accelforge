@@ -9,7 +9,7 @@ from pandas import DataFrame
 from tqdm import tqdm
 
 from fastfusion.frontend import constraints
-from fastfusion.frontend.constraints import Comparison, ConstraintGroup
+from fastfusion.frontend.constraints import Comparison, ConstraintGroup, TileShapeConstraintLambda, LoopBoundsConstraintLambda
 from fastfusion.frontend.mapping import Iteration, Mapping, MappingNode, Storage, Temporal, Spatial, Compute, ModelOnlyNode
 import fastfusion.frontend.architecture as architecture
 from fastfusion.frontend.architecture import Leaf
@@ -252,7 +252,7 @@ def insert_temporal_loops(
 
         
         rank_variables = set(einsum.rank_variables)
-
+        
         # If there is no backing storage in the next block, only include loops
         # that reuse tensors in the previous block.
         if not any(s._backing for s in cur):
@@ -269,7 +269,10 @@ def insert_temporal_loops(
         # their relevant rank variables.
         for t in einsum.tensors - seen_tensors:
             rank_variables &= einsum.tensor2rank_variables[t]
-                    
+
+        if i == len(split_mapping) - 1:
+            rank_variables = set(einsum.rank_variables)
+
         if rank_variables:
             full_mapping.append(Temporal(rank_variable=rank_variables, tile_shape='symbol'))
 
@@ -346,34 +349,6 @@ def iterate_mappings_no_constraints(
 # =================================================================================================
 # Attach constraints to mapping
 # =================================================================================================
-class TileShapeConstraintLambda:
-    def __init__(
-        self,
-        constraint: Comparison,
-        target_mapping_nodes: list[Storage],
-        rank_variables: set[str],
-    ):
-        self.constraint = constraint
-        self.constraint_lambda = constraint.to_constraint_lambda(True)
-        self.target_mapping_nodes = target_mapping_nodes
-        self.rank_variables = rank_variables
-
-    def __call__(self, final: bool, sizes: np.ndarray) -> bool:
-        return self.constraint_lambda(final, sizes)
-    
-class LoopBoundsConstraintLambda:
-    def __init__(
-        self,
-        constraint: Comparison,
-        target_mapping_nodes: list[Iteration],
-    ):
-        self.constraint = constraint
-        self.constraint_lambda = constraint.to_constraint_lambda(True)
-        self.target_mapping_nodes = target_mapping_nodes
-
-    def __call__(self, final: bool, sizes: np.ndarray) -> bool:
-        return self.constraint_lambda(final, sizes)
-
 def get_constraints(
     mapping: List[MappingNode],
     symbol_table: dict[str, InvertibleSet],
@@ -581,6 +556,8 @@ def get_single_einsum_sims(
     rank_variable_to_size: dict[RankVariableName, int],
     flattened_arch: list[architecture.Leaf] | None = None,
 ) -> list[SIM]:
+    if einsum_name == "I":
+        return []
     compatibility2sim = {}
     workload = spec.workload
     intermediate_tensors = workload.intermediate_tensors()
