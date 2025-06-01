@@ -34,8 +34,6 @@ def get_sims(
     sims = {einsum_name: {} for einsum_name in spec.workload.einsum_names}
     jobs = []
     for einsum_name in spec.workload.einsum_names:
-        if einsum_name != "K":
-            continue
         jobs.extend(get_single_einsum_sims(
             spec,
             einsum_name,
