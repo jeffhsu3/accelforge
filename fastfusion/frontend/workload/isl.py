@@ -17,7 +17,13 @@ def get_dim_bounds(isl_set: isl.Set) -> list[int]:
         max_val = isl_set.dim_max_val(i)
         min_val = isl_set.dim_min_val(i)
         shape = max_val - min_val + 1  # max is inclusive
-        bounds.append(shape.to_python())
+        try:
+            bounds.append(shape.to_python())
+        except:
+            raise Exception(
+                f'Shape is not an integer. Are all rank variables bounded? '
+                f"Shape {shape} for rank variable {i} in {isl_set}"
+            )
     return bounds
 
 
