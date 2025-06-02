@@ -603,6 +603,10 @@ def add_to_compatibility2sim(compatibility2sim: dict[Compatibility, SIM], sim: S
             if not is_reservation_col(col):
                 prev.mappings.data[col] = 0
     prev.mappings = PartialMappings.concat([prev.mappings, sim.mappings])
+    
+def get_equivalent_sims(sim: SIM) -> list[SIM]:
+    equivalent_permutations = sim.compatibility.make_equivalent_permutations()
+    return [SIM(c, sim.mappings) for c in equivalent_permutations]
 
     
 def get_compatibility_loops(mapping: Mapping, tile_shapes: list[int]) -> "Mapping":
@@ -645,6 +649,7 @@ def make_sims(mapping: Mapping,
     else:
         groups = [((), explored_results)]
     compatibility2sim = {}
+
     for tile_shape, mappings in groups: #tqdm(groups, desc="Generating SIMs"):
         # Check for null loops
         new_compatibility = compatibility.populate_tile_shape(tile_shape, rank_variable_bounds)
@@ -652,6 +657,8 @@ def make_sims(mapping: Mapping,
         sim = SIM(new_compatibility, PartialMappings(mappings, free_to_loop_index=len(new_compatibility.loops) - 1))
         sim.mappings.data[MAPPING_COLUMN] = [mapping] * len(sim.mappings.data)
         add_to_compatibility2sim(compatibility2sim, sim)
+        # for equivalent_sim in get_equivalent_sims(sim):
+        #     add_to_compatibility2sim(compatibility2sim, equivalent_sim)
     
     return list(compatibility2sim.values())
 
@@ -713,11 +720,6 @@ def get_single_einsum_sims(
     if return_jobs:
         return jobs
 
-    jobs = parallel(
-        jobs,
-        pbar=f"Generating pmappings for Einsum {einsum_name}",
-        return_as="generator"
-    )
     compatibility2sim = {}
     for _, sims in parallel(
         jobs,
