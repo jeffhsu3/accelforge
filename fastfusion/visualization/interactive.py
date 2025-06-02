@@ -22,22 +22,20 @@ from fastfusion.mapper.FFM.pareto import (
 )
 
 import pandas as pd
+from fastfusion.mapper.FFM.visualization import make_mapping
+from fastfusion.frontend.mapping import Mapping
 
-
-def mapping2svg(mapping: pd.Series):
-    return SVG(
-        mappings2svg(
-            mapping[MAPPING_COLUMN],
-            mapping.get(STATS, None),
-            mapping.get(PER_COMPONENT_ACCESSES_ENERGY, None),
-        )
-    )
+def mapping2svg(mapping: pd.Series, einsum_names: list[str]):
+    mapping: Mapping = make_mapping(mapping, einsum_names)
+    mermaid_graph = mapping.mermaid_graph()
+    return SVG(mermaid_graph.svg_response.text)
 
 
 def diplay_mappings_on_fig(
     fig: plotly.graph_objs.FigureWidget,
     data: dict[str, pd.DataFrame],
     mapping_svg: bool,
+    einsum_names: list[str],
 ):
     # fig = go.FigureWidget(fig)
     out = Output()
@@ -55,15 +53,15 @@ def diplay_mappings_on_fig(
         out.clear_output()
         d = data[trace.name]
         index = points.point_inds[0]
-        display(mapping2svg(d.iloc[index]))
-        backing_tensors = set(
-            t for tn in d.iloc[index][MAPPING_COLUMN].values() for t in tn.storage
-        )
-        backing_tensors = TensorStorage.get_backing_stores(backing_tensors)
-        for t in sorted(backing_tensors):
-            print(f"{t.__repr__()},")
-        for v in d.iloc[index][MAPPING_COLUMN].values():
-            print(v)
+        display(mapping2svg(d.iloc[index], einsum_names))
+        # backing_tensors = set(
+        #     t for tn in d.iloc[index][MAPPING_COLUMN].values() for t in tn.storage
+        # )
+        # backing_tensors = TensorStorage.get_backing_stores(backing_tensors)
+        # for t in sorted(backing_tensors):
+        #     print(f"{t.__repr__()},")
+        # for v in d.iloc[index][MAPPING_COLUMN].values():
+        #     print(v)
 
     out2 = Output()
 
@@ -80,22 +78,23 @@ def diplay_mappings_on_fig(
             svg = mapping2svg(d.iloc[index])
             with open(f"plots/{trace.name}.svg", "w") as f:
                 f.write(svg.data)
-        backing_tensors = set(
-            t for tn in d.iloc[index][MAPPING_COLUMN].values() for t in tn.storage
-        )
-        backing_tensors = TensorStorage.get_backing_stores(backing_tensors)
-        for t in sorted(backing_tensors):
-            print(f"{t.__repr__()},")
-        for v in d.iloc[index][MAPPING_COLUMN].values():
-            print(v)
+        # backing_tensors = set(
+        #     t for tn in d.iloc[index][MAPPING_COLUMN].values() for t in tn.storage
+        # )
+        # backing_tensors = TensorStorage.get_backing_stores(backing_tensors)
+        # for t in sorted(backing_tensors):
+        #     print(f"{t.__repr__()},")
+        # for v in d.iloc[index][MAPPING_COLUMN].values():
+        #     print(v)
 
     for i in fig.data:
         i.on_hover(display_mapping)
         i.on_click(display_mapping_2)
     if not DUAL_OUT:
+        out.layout.width = "25%"
         return VBox([fig, out])
-    out.layout.width = "50%"
-    out2.layout.width = "50%"
+    out.layout.width = "25%"
+    out2.layout.width = "25%"
     return VBox([fig, HBox([out, out2])])
 
 
@@ -108,6 +107,7 @@ def plotly_show(
     show_mapping: Optional[bool] = True,
     logscales: bool = False,
     mapping_svg: bool = False,
+    einsum_names: Optional[list[str]] = None,
 ):
     fig = go.FigureWidget()
     markers = [
@@ -153,5 +153,8 @@ def plotly_show(
     fig.update_layout(showlegend=True)
     # fig = px.scatter(data, x=x, y=y, color=category, title=title, log_x=logscales, log_y=logscales)
     if show_mapping:
-        return diplay_mappings_on_fig(fig, data, mapping_svg)
+        assert einsum_names is not None, (
+            f"einsum_names must be provided if show_mapping is True"
+        )
+        return diplay_mappings_on_fig(fig, data, mapping_svg, einsum_names)
     return fig
