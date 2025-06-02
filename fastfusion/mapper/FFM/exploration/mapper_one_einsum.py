@@ -365,8 +365,10 @@ def temporal_fused_constraint_thing_fix_me(mapping: List[MappingNode], rank_vari
         yield from temporal_fused_constraint_thing_fix_me(mapping_new, rank_variables)
 
 def temporal_constraint_2_fix_me(mapping: List[MappingNode], einsum: Einsum):
+    return mapping
     # Between two storage nodes for the same memory, pop all loops that index
     # into the tensors for both storage nodes.
+    # return mapping
     to_pop = set()
     for i, node in enumerate(mapping):
         for j, node2 in enumerate(mapping):
@@ -631,7 +633,7 @@ def drop_cols(mappings: DataFrame):
         if col2nameloop(col) is None:
             continue
         name, loop_index = col2nameloop(col)
-        if name == "LocalBuffer" or name == "Register":
+        if name == "LocalBuffer" or name == "Register" or name == "MainMemory":
             to_drop.append(col)
     return mappings.drop(columns=to_drop)
 
@@ -656,9 +658,8 @@ def make_sims(mapping: Mapping,
         # mappings.drop(columns=fused_loop_columns, inplace=True)
         sim = SIM(new_compatibility, PartialMappings(mappings, free_to_loop_index=len(new_compatibility.loops) - 1))
         sim.mappings.data[MAPPING_COLUMN] = [mapping] * len(sim.mappings.data)
-        add_to_compatibility2sim(compatibility2sim, sim)
-        # for equivalent_sim in get_equivalent_sims(sim):
-        #     add_to_compatibility2sim(compatibility2sim, equivalent_sim)
+        for equivalent_sim in get_equivalent_sims(sim):
+            add_to_compatibility2sim(compatibility2sim, equivalent_sim)
     
     return list(compatibility2sim.values())
 

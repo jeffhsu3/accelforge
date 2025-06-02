@@ -1,5 +1,6 @@
 from collections import defaultdict
 from dataclasses import dataclass, replace
+import itertools
 from numbers import Number
 from typing import Any, NamedTuple, Union
 
@@ -272,6 +273,33 @@ class Compatibility(Updatable):
 
         return Compatibility(tuple(new_loops), fzs(storages))
 
+    def _permute(
+        self,
+        loop_changes: list[int]
+    ) -> "Compatibility":
+        assert len(loop_changes) == len(self.loops)
+        new_loops = [self.loops[loop_changes[i]] for i in range(len(self.loops))]
+        return self.update(loops=tuple(new_loops))
+
+    def make_equivalent_permutations(self) -> list["Compatibility"]:
+        # Get contiguous blocks of loops with no storage node between them
+        blocks = []
+        current_block = []
+        for i in range(len(self.loops)):
+            if any(s.above_loop_index == i for s in self.storage):
+                blocks.append(current_block)
+                current_block = []
+            current_block.append(i)
+        if current_block:
+            blocks.append(current_block)
+        
+        per_block_permutations = [
+            list(itertools.permutations(block))
+            for block in blocks
+        ]
+        all_permutations = list(itertools.product(*per_block_permutations))
+        result =  [self._permute(list(itertools.chain(*loop_changes))) for loop_changes in all_permutations]
+        return result
     # loops = mapping.loops
     # null_loops = []
     # for i, t in enumerate(tile_shape):
