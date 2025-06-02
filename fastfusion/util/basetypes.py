@@ -512,6 +512,7 @@ class ParsableList(list[T], Parsable['ParsableList[T]'], Generic[T]):
             return super().__getitem__(key)  # type: ignore
 
         elif isinstance(key, str):
+            found = None
             for elem in self:
                 name = None
                 if isinstance(elem, dict):
@@ -519,7 +520,11 @@ class ParsableList(list[T], Parsable['ParsableList[T]'], Generic[T]):
                 elif hasattr(elem, "name"):
                     name = elem.name
                 if name is not None and name == key:
-                    return elem
+                    if found is not None:
+                        raise ValueError(f"Multiple elements with name \"{key}\" found.")
+                    found = elem
+            if found is not None:
+                return found
         raise KeyError(f"No element with name \"{key}\" found.")
     
     def __contains__(self, item: Any) -> bool:
