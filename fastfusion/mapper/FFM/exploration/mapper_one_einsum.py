@@ -278,21 +278,6 @@ def insert_temporal_loops(
             full_mapping.append(Temporal(rank_variable=rank_variables, tile_shape='symbol'))
 
     full_mapping = list(full_mapping)
-
-    # If any rank variables are missing, add them as high as possible.
-    rank_variables = set(einsum.rank_variables)
-    for m in full_mapping:
-        if isinstance(m, Temporal):
-            rank_variables -= m.rank_variable
-            
-    insert_point = 0
-    while insert_point < len(full_mapping) and not isinstance(full_mapping[insert_point], Temporal):
-        insert_point += 1
-
-    if insert_point == len(full_mapping):
-        full_mapping.append(Temporal(rank_variable=rank_variables, tile_shape='symbol'))
-    else:
-        full_mapping.insert(insert_point, Temporal(rank_variable=rank_variables, tile_shape='symbol'))
     
     return full_mapping
 
@@ -399,6 +384,28 @@ def temporal_constraint_2_fix_me(mapping: List[MappingNode], einsum: Einsum):
                     to_pop.add(k)
     return [node for i, node in enumerate(mapping) if i not in to_pop]
 
+def place_missing_temporal_loops(mapping: List[MappingNode], einsum: Einsum):
+    # If any rank variables are missing, add them as high as possible.
+    rank_variables = set(einsum.rank_variables)
+    for m in mapping:
+        if isinstance(m, Temporal):
+            rank_variables.discard(m.rank_variable)
+            
+    insert_point = 0
+    while insert_point < len(mapping) and not isinstance(mapping[insert_point], Temporal):
+        insert_point += 1
+
+    temporals = [
+        Temporal(rank_variable=r, tile_shape='symbol')
+        for r in rank_variables
+    ]
+
+    if insert_point == len(mapping):
+        mapping.extend(temporals)
+    else:
+        for t in temporals:
+            mapping.insert(insert_point, t)
+
 def iterate_mappings_no_constraints(
     spec: Specification,
     einsum_name: str,
@@ -426,6 +433,7 @@ def iterate_mappings_no_constraints(
         # print(", ".join(m.compact_string() for m in mapping))
         for mapping2 in temporal_fused_constraint_thing_fix_me(mapping, list(spec.workload.einsums[einsum_name].rank_variables)): # TODO
             mapping2 = temporal_constraint_2_fix_me(mapping2, einsum)
+            place_missing_temporal_loops(mapping2, einsum)
             yield copy.deepcopy(mapping2), symbol_table
 
 # =================================================================================================
