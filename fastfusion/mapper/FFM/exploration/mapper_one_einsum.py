@@ -157,7 +157,6 @@ def recursive_order_storage_choices(
     for choice in list(remaining_choices):
         mapping.append(choice)
         remaining_choices.remove(choice)
-        label_backing_storages(mapping)
         if valid_storage_order(mapping, [n.name for n in nodes], required_order):
             yield from recursive_order_storage_choices(mapping, nodes, remaining_choices, required_order)
         mapping.pop()
@@ -263,8 +262,9 @@ def insert_temporal_loops(
                 rank_variables -= set.intersection(*prev_relevant)
 
         # Only include loops that will index into the next block of storage nodes.
-        next_relevant = [einsum.tensor2rank_variables[t] for s in cur for t in s.tensors]
-        rank_variables &= set.union(*next_relevant, set())
+        if cur:
+            next_relevant = [einsum.tensor2rank_variables[t] for s in cur for t in s.tensors]
+            rank_variables &= set.union(*next_relevant, set())
             
         # If there are any tensors we haven't seen yet, we may only iterate over
         # their relevant rank variables.
@@ -278,6 +278,22 @@ def insert_temporal_loops(
             full_mapping.append(Temporal(rank_variable=rank_variables, tile_shape='symbol'))
 
     full_mapping = list(full_mapping)
+
+    # If any rank variables are missing, add them as high as possible.
+    rank_variables = set(einsum.rank_variables)
+    for m in full_mapping:
+        if isinstance(m, Temporal):
+            rank_variables -= m.rank_variable
+            
+    insert_point = 0
+    while insert_point < len(full_mapping) and not isinstance(full_mapping[insert_point], Temporal):
+        insert_point += 1
+
+    if insert_point == len(full_mapping):
+        full_mapping.append(Temporal(rank_variable=rank_variables, tile_shape='symbol'))
+    else:
+        full_mapping.insert(insert_point, Temporal(rank_variable=rank_variables, tile_shape='symbol'))
+    
     return full_mapping
 
 def insert_spatial_loops(
@@ -325,6 +341,9 @@ def label_fused_loops(mapping: List[MappingNode]):
     for i, node in enumerate(mapping):
         if isinstance(node, Storage) and node._backing:
             last_backing_storage = i
+    if last_backing_storage is None:
+        raise ValueError(f"No backing storage found in mapping {", ".join(m.compact_string() for m in mapping)}")
+            
     for i, node in enumerate(mapping):
         if isinstance(node, Iteration):
             node._fused = i < last_backing_storage
@@ -396,6 +415,7 @@ def iterate_mappings_no_constraints(
     symbol_table = spec.workload.get_constraint_symbol_table(einsum_name, spec.renames)
     einsum = spec.workload.einsums[einsum_name]
     for mapping, symbol_table in get_storage_choices(arch_flattened, symbol_table):
+        label_backing_storages(mapping)
         # print(", ".join(m.compact_string() for m in mapping))
         mapping = insert_temporal_loops(mapping, einsum, first_memory)
         # print(", ".join(m.compact_string() for m in mapping))
@@ -522,7 +542,7 @@ def make_compatibility(mapping: Mapping, intermediate_tensors: set[TensorName]):
     compatibility_loops = []
     for loop in fused_loops:
         loop = Loop(
-            rank_variable_names=fzs(loop.rank_variable),
+            rank_variable_names=fzs((loop.rank_variable,)),
             bound=0, # Populated later
             is_spatial=isinstance(loop, Spatial)
         )
@@ -588,7 +608,7 @@ def drop_cols(mappings: DataFrame):
             to_drop.append(col)
     return mappings.drop(columns=to_drop)
 
-def make_sims(mapping: Mapping, explored_results: DataFrame, rank_variable_to_size: dict[RankVariableName, int], intermediate_tensors: set[TensorName]):
+def make_sims(mapping: Mapping, explored_results: DataFrame, rank_variable_bounds: dict[RankVariableName, int], intermediate_tensors: set[TensorName]):
     compatibility = make_compatibility(mapping, intermediate_tensors)
     fused_loop_columns = [f"__tile_shape{i}" for i in range(len(compatibility.loops))]
         
@@ -601,8 +621,8 @@ def make_sims(mapping: Mapping, explored_results: DataFrame, rank_variable_to_si
     compatibility2sim = {}
     for tile_shape, mappings in groups: #tqdm(groups, desc="Generating SIMs"):
         # Check for null loops
-        new_compatibility = compatibility.populate_tile_shape(tile_shape, rank_variable_to_size)
-        mappings.drop(columns=fused_loop_columns, inplace=True)
+        new_compatibility = compatibility.populate_tile_shape(tile_shape, rank_variable_bounds)
+        # mappings.drop(columns=fused_loop_columns, inplace=True)
         sim = SIM(new_compatibility, PartialMappings(mappings, free_to_loop_index=len(new_compatibility.loops) - 1))
         sim.mappings.data[MAPPING_COLUMN] = [mapping] * len(sim.mappings.data)
         add_to_compatibility2sim(compatibility2sim, sim)
@@ -616,19 +636,19 @@ def _per_proc_compatibility2sim(
     mapping: Mapping,
     constraints: list[Comparison],
     specification: Specification,
-    rank_variable_to_size: dict[RankVariableName, int],
+    rank_variable_bounds: dict[RankVariableName, int],
     intermediate_tensors: set[TensorName],
     flattend_arch: list[architecture.Leaf],
     einsum_name: EinsumName,
 ) -> tuple[str, dict[Compatibility, SIM]]:
     print(", ".join(m.compact_string() for m in mapping.nodes))
     result = explore_tile_shapes(mapping, constraints, specification, flattend_arch)
-    return einsum_name, make_sims(mapping, result, rank_variable_to_size, intermediate_tensors)
+    return einsum_name, make_sims(mapping, result, rank_variable_bounds, intermediate_tensors)
 
 def get_single_einsum_sims(
     spec: Specification,
     einsum_name: EinsumName,
-    rank_variable_to_size: dict[RankVariableName, int],
+    rank_variable_bounds: dict[RankVariableName, int],
     flattened_arch: list[architecture.Leaf] | None = None,
     return_jobs: bool = False,
 ) -> list[SIM] | list[Callable[[], tuple[str, list[SIM]]]]:
@@ -650,13 +670,13 @@ def get_single_einsum_sims(
             mapping,
             constraints,
             spec,
-            rank_variable_to_size,
+            rank_variable_bounds,
             intermediate_tensors,
             flattened_arch,
             einsum_name
        )
         for mapping, constraints in mappings_constraints
-    ][::-1]
+    ]
     
     if return_jobs:
         return jobs
