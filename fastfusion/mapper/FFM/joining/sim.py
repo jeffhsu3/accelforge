@@ -38,6 +38,7 @@ class SIM:
         live_tensors_with_right: set[str],
         aliased_tensors: dict[str, str],
         resource2capacity: dict[str, int] = None,
+        drop_valid_reservations: bool = True,
         delay: bool = False,
     ) -> "SIM":
         shared_loop_index = self.compatibility.shared_loop_index(
@@ -70,6 +71,7 @@ class SIM:
             still_live_reservations,
             duplicated_aliased_tensors,
             resource2capacity,
+            drop_valid_reservations=drop_valid_reservations
         )
 
         if not delay:

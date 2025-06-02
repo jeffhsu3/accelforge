@@ -498,6 +498,7 @@ class PartialMappings:
         still_live_reservations: set[TensorStorage],
         duplicated_aliased_tensors: set[TensorStorage],
         resource2capacity: dict[str, int] = None,
+        drop_valid_reservations: bool = True,
     ) -> "PartialMappings":
         """
             A  B            A2
@@ -599,7 +600,7 @@ class PartialMappings:
 
         result.free_to_loop_index(next_shared_loop_index, live_tensors=live_tensors)
         if not CHECK_CORRECTNESS:
-            result.limit_capacity(resource2capacity, next_shared_loop_index)
+            result.limit_capacity(resource2capacity, next_shared_loop_index, drop_valid_reservations)
         result.max_right_to_left()
         result.make_pareto()
         
@@ -684,6 +685,7 @@ class PartialMappings:
         self, 
         resource2capacity: dict[str, Optional[int]],
         next_shared_loop_index: int=None,
+        drop_valid_reservations: bool = True,
     ) -> bool:
         resource2capacity = resource2capacity or {}
         dropcols = []
@@ -700,7 +702,7 @@ class PartialMappings:
                 col = nameloop2col(resource, n)
                 self._data = self.data[self.data[col] <= capacity]
             for l in list(right_loops):
-                if l == 0 and next_shared_loop_index == -1:
+                if l == 0 and next_shared_loop_index == -1 and drop_valid_reservations:
                     right_loops.discard(l)
                     dropcols.append(col)
 
@@ -710,7 +712,7 @@ class PartialMappings:
             for l in list(left_loops):
                 col = nameloop2col(resource, l, left=True)
                 self._data = self.data[self.data[col] <= capacity]
-                if l == 0:
+                if l == 0 and drop_valid_reservations:
                     left_loops.discard(l)
                     dropcols.append(col)
                     
@@ -832,11 +834,13 @@ class PartialMappings:
 
     def _compress_data(self, prefix: str = None, offset: int = 0, multiplier: int = 1) -> pd.DataFrame:
         self.data.reset_index(drop=True, inplace=True)
-        src_idx_col = "data_source_index" if prefix is None else f"{prefix}_data_source_index"
-        self.data[src_idx_col] = self.data.index * multiplier + offset
-        keep_cols = [src_idx_col] + [c for c in self.data.columns if col_used_in_pareto(c)]
-        recovery = self.data[[c for c in self.data.columns if c not in keep_cols] + [src_idx_col]]
+        self.data["data_source_index"] = self.data.index * multiplier + offset
+        keep_cols = ["data_source_index"] + [c for c in self.data.columns if col_used_in_pareto(c)]
+        recovery = self.data[[c for c in self.data.columns if c not in keep_cols] + ["data_source_index"]]
         self._data = self.data[keep_cols]
+        if prefix is not None:
+            recovery.rename(columns={c: f"{prefix}_{c}" for c in recovery.columns}, inplace=True)
+            self.data.rename(columns={"data_source_index": f"{prefix}_data_source_index"}, inplace=True)
         return recovery
 
     def _decompress_data(self, recovery_map: CompressedRecoveryMap, prefix: str | list[str] = None):
@@ -851,38 +855,35 @@ class PartialMappings:
             dfs = []
             prev_len = len(self.data)
             
-            self.data["_recovery_key"] = self.data[src_idx_col] // recovery_map.multiplier
-            self.data["_recovery_offset"] = self.data[src_idx_col] % recovery_map.multiplier
+            self.data["_recovery_key"] = self.data[src_idx_col] % recovery_map.multiplier
             
             for recovery_key, recovery_df in self.data.groupby("_recovery_key"):
                 recovery_df = pd.merge(
                     recovery_df,
                     recovery_map.recovery_map[recovery_key],
-                    on=["_recovery_offset"],
+                    on=[src_idx_col],
                     how="left"
                 )
-                recovery_df.drop(columns=["_recovery_key", "_recovery_offset", src_idx_col], inplace=True)
+                recovery_df.drop(columns=["_recovery_key", src_idx_col], inplace=True)
                 dfs.append(recovery_df)
             self._data = pd.concat(dfs)
             assert len(self.data) == prev_len, \
                 f"Decompressed data has {len(self.data)} rows, expected {prev_len}"
 
     @classmethod
-    def compress_paretos(cls, paretos: list["PartialMappings"], prefix: str = None) -> CompressedRecoveryMap:
+    def compress_paretos(cls, paretos: list[tuple["PartialMappings", str]]) -> CompressedRecoveryMap:
         multiplier = len(paretos)
         
         def _compress(pareto, offset):
-            if isinstance(pareto, tuple):
-                pareto, prefix = pareto
-                assert isinstance(prefix, str)
-            return pareto._compress_data(prefix, offset, multiplier), pareto
+            pareto, prefix = pareto
+            assert isinstance(prefix, str)
+            recovery_map = pareto._compress_data(prefix, offset, multiplier)
+            return recovery_map, pareto
 
         result = parallel([delayed(_compress)(p, i) for i, p in enumerate(paretos)], pbar="Compressing PartialMappings", return_as="generator")
-        recovery_map = {}
-        for p, (r, new_p) in zip(paretos, result):
-            recovery_map.update(r)
-            if isinstance(p, tuple):
-                p = p[0]
+        recovery_map = [None] * len(paretos)
+        for offset, ((p, _), (r, new_p)) in enumerate(zip(paretos, result)):
+            recovery_map[offset] = r
             p._data = new_p.data
         return CompressedRecoveryMap(multiplier, recovery_map)
 
@@ -890,3 +891,4 @@ class PartialMappings:
     def decompress_paretos(cls, paretos: list["PartialMappings"], recovery_map: CompressedRecoveryMap, prefix: str | list[str] = None):
         for p in paretos:
             p._decompress_data(recovery_map, prefix=prefix)
+            

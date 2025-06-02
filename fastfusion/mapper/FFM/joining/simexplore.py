@@ -1,7 +1,7 @@
 from collections import defaultdict
 import itertools
 import time
-from typing import Union
+from typing import TypeAlias, Union
 import pandas as pd
 from fastfusion.frontend import architecture
 from fastfusion.frontend.specification import Specification
@@ -112,6 +112,8 @@ def make_full_equivalent_rank_variables(pairwise_equivalent_rank_variables):
 
 
 def compress(sims: dict[str, list[SIM]]) -> CompressedRecoveryMap:
+    if not isinstance(sims, dict):
+        raise TypeError(f"Expected dict, got {type(sims)}")
     # sims_flattened = list(itertools.chain.from_iterable(sims.values()))
     sims_flattened = (
         (s, einsum_name)
@@ -121,13 +123,12 @@ def compress(sims: dict[str, list[SIM]]) -> CompressedRecoveryMap:
     
     return PartialMappings.compress_paretos([(s.mappings, einsum_name) for s, einsum_name in sims_flattened])
 
+simlist: TypeAlias = list[Union[SIM, PartialMappings]]
 
-def decompress(recovery_map: CompressedRecoveryMap, data: list[Union[SIM, PartialMappings]], prefix: list[str] = None):
-    for d in data:
-        if isinstance(d, PartialMappings):
-            PartialMappings.decompress_paretos(d, recovery_map, prefix)
-        else:
-            PartialMappings.decompress_paretos([d.mappings], recovery_map, prefix)
+def decompress(recovery_map: CompressedRecoveryMap, data: PartialMappings, prefix: list[str] = None):
+    if not isinstance(data, PartialMappings):
+        raise TypeError(f"Expected PartialMappings, got {type(data)}")
+    PartialMappings.decompress_paretos([data], recovery_map, prefix)
 
 def join_sims(
     sims: dict[str, list[SIM]],
@@ -141,6 +142,7 @@ def join_sims(
     skip_invalid: bool = True,
     combine_reservations: bool = True,
     lookahead_filter: bool = True,
+    drop_valid_reservations: bool = True,
 ):
     """
     CONTRACT FOR MAPPINGS GETTING TO THIS POINT:
@@ -321,6 +323,7 @@ def join_sims(
                                 live_tensors_with_right,
                                 aliased_tensors,
                                 resource2capacity,
+                                drop_valid_reservations=drop_valid_reservations,
                                 delay=DELAY,
                             )
                         )
@@ -443,7 +446,8 @@ def join_sims(
     s_final = SIM.combine_combineable(left, set())  # , drop_tags=True)
     # decompress(recovery_map, s_final, prefix=spec.workload.einsum_names)
     assert len(s_final) == 1
-    data = s_final[0].mappings.data
+    mappings = s_final[0].mappings
+    data = mappings.data
 
     print_total_time()
     if evaluations_tracker is not None:
@@ -454,8 +458,8 @@ def join_sims(
         evaluations_tracker.runtime.update(runtime)
 
     if return_nmappings_nbuckets:
-        return data, n_mappings, nbuckets
-    return data
+        return mappings, n_mappings, nbuckets
+    return mappings
 
 
 def join_sims_no_skip_invalid(*args, **kwargs):
