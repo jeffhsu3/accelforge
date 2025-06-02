@@ -13,6 +13,7 @@ from fastfusion.frontend.constraints import Comparison, ConstraintGroup, TileSha
 from fastfusion.frontend.mapping import Iteration, Mapping, MappingNode, Storage, Temporal, Spatial, Compute, ModelOnlyNode
 import fastfusion.frontend.architecture as architecture
 from fastfusion.frontend.architecture import Leaf
+from fastfusion.frontend.workload.isl import get_rank_variable_bounds
 from fastfusion.mapper.FFM.exploration.tile_shape_exploration import explore_tile_shapes
 from fastfusion.mapper.FFM.joining.mappinginfo import Compatibility, Loop, Reservation
 from fastfusion.mapper.FFM.joining.sim import SIM
@@ -656,11 +657,14 @@ def _per_proc_compatibility2sim(
 def get_single_einsum_sims(
     spec: Specification,
     einsum_name: EinsumName,
-    rank_variable_bounds: dict[RankVariableName, int],
+    rank_variable_bounds: dict[RankVariableName, int] | None = None,
     flattened_arch: list[architecture.Leaf] | None = None,
     return_jobs: bool = False,
 ) -> list[SIM] | list[Callable[[], tuple[str, list[SIM]]]]:
     einsum_name = EinsumName(einsum_name)
+    
+    if rank_variable_bounds is None:
+        rank_variable_bounds = get_rank_variable_bounds(spec.workload, einsum_name)
     
     compatibility2sim = {}
     workload = spec.workload
