@@ -208,42 +208,35 @@ def quickpareto(df: pd.DataFrame) -> pd.DataFrame:
     return mask
 
 from fast_pareto import is_pareto_front
-def makepareto_quick2(mappings: pd.DataFrame, extra_columns: set[str] = fzs()) -> pd.DataFrame:
-    columns = [c for c in mappings.columns if col_used_in_pareto(c)]
+def makepareto_quick2(mappings: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
     m2 = mappings[columns]
     m2 = m2[is_pareto_front(m2.to_numpy())].drop_duplicates()
     return mappings.loc[m2.index]
     
-def makepareto_quick(mappings: pd.DataFrame, extra_columns: set[str] = fzs()) -> pd.DataFrame:
-    columns = [c for c in mappings.columns if col_used_in_pareto(c)]
+def makepareto_quick(mappings: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
     mappings = mappings.reset_index(drop=True)
     return mappings[quickpareto(mappings[columns])].reset_index(drop=True)
 
-def makepareto_merge(mappings: pd.DataFrame, extra_columns: set[str] = fzs()) -> pd.DataFrame:
+def makepareto_merge(mappings: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
     chunk_size = 10000
     if len(mappings) <= 1:
         return mappings
-    columns = [c for c in mappings.columns if col_used_in_pareto(c)]
-    sense = ["min"] * len(columns)
-    columns += list(extra_columns)
-    sense += ["diff"] * len(extra_columns)
-
     chunks = [mappings[i:i+chunk_size] for i in range(0, len(mappings), chunk_size)]
     paretos = []
     for chunk in chunks:
-        paretos.append(chunk[paretoset(chunk[columns], sense=sense)].reset_index(drop=True))
+        paretos.append(chunk[paretoset(chunk[columns])].reset_index(drop=True))
     mappings = pd.concat(paretos)
-    return mappings[paretoset(mappings[columns], sense=sense)].reset_index(drop=True)
+    return mappings[paretoset(mappings[columns])].reset_index(drop=True)
 
-def makepareto_time_compare(mappings: pd.DataFrame, extra_columns: set[str] = fzs()) -> pd.DataFrame:
+def makepareto_time_compare(mappings: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
     t0 = time.time()
-    pareto = makepareto_merge(mappings, extra_columns)
+    pareto = makepareto_merge(mappings, columns)
     t1 = time.time()
     merge_time = t1 - t0
     print(f"Time to make pareto with merge: {t1 - t0: .2f}. Number of pareto points: {len(pareto)}")
     
     t0 = time.time()
-    pareto2 = makepareto_quick2(mappings, extra_columns)
+    pareto2 = makepareto_quick2(mappings, columns)
     t1 = time.time()
     print(f"Time to make pareto with quick: {t1 - t0: .2f}. Number of pareto points: {len(pareto2)}")
     quick_time = t1 - t0
@@ -252,14 +245,16 @@ def makepareto_time_compare(mappings: pd.DataFrame, extra_columns: set[str] = fz
     
     if len(pareto) != len(pareto2):
         print(f"mismatch: {len(pareto)} != {len(pareto2)}")
-        makepareto_quick2(mappings, extra_columns)
+        makepareto_quick2(mappings)
         
     return pareto2
 
 
-def makepareto(mappings: pd.DataFrame, extra_columns: set[str] = fzs()) -> pd.DataFrame:
-    # return makepareto_time_compare(mappings, extra_columns)
-    return makepareto_quick2(mappings, extra_columns)
+def makepareto(mappings: pd.DataFrame, columns: list[str] = None) -> pd.DataFrame:
+    # return makepareto_time_compare(mappings)
+    if columns is None:
+        columns = [c for c in mappings.columns if col_used_in_pareto(c)]
+    return makepareto_merge(mappings, columns)
     if len(mappings) <= 1:
         return mappings
     columns = [c for c in mappings.columns if col_used_in_pareto(c)]
@@ -727,8 +722,8 @@ class PartialMappings:
                     
         self._data = self.data.drop(columns=dropcols)
 
-    def make_pareto(self):
-        self._data = makepareto(self.data)
+    def make_pareto(self, columns: list[str] = None):
+        self._data = makepareto(self.data, columns)
 
     def has_reservations(self):
         return any(col2nameloop(c) is not None for c in self.data.columns)
