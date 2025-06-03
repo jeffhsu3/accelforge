@@ -685,9 +685,6 @@ def make_sims(mapping: Mapping,
         shift_reservations_by_null_loop_indices(mappings, null_loop_indices)
         # mappings = shift_reservations_by_null_loop_indices(mappings, null_loop_indices)
         # mappings.drop(columns=fused_loop_columns, inplace=True)
-        if "Matmul2" and len(new_compatibility.loops) == 1 and "n1" in new_compatibility.loops[0].rank_variable and new_compatibility.loops[0].bound == 1 and len(new_compatibility.storage) == 2:
-            print(tile_shape)
-            print(new_compatibility)
         sim = SIM(new_compatibility, PartialMappings(mappings, free_to_loop_index=len(new_compatibility.loops)-1))
         assert mapping is not None
         sim.mappings.data[MAPPING_COLUMN] = [mapping] * len(sim.mappings.data)
