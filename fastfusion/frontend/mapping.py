@@ -194,9 +194,24 @@ class Split(MappingNodeWithChildren):
     def _render_node_shape(self) -> str:
         return "hexagon"
 
-    # def merge_branches(self) -> "Split":
-    #     branch2backing_storage = [node.get_backing_storage_nodes() for node in self.nodes]
-
+    def merge_branches(self) -> "Split":
+        branch2backing_storage = [node.get_backing_storage_nodes() for node in self.nodes]
+        i = 0
+        nodes = self.nodes
+        while i < len(nodes) - 1:
+            this_backing_storage = branch2backing_storage[i]
+            next_backing_storage = branch2backing_storage[i + 1]
+            if not set(str(b) for b in this_backing_storage) & set(str(b) for b in next_backing_storage):
+                i += 1
+                continue
+            if not isinstance(nodes[i], Nested) or not isinstance(nodes[i + 1], Nested):
+                raise ValueError(
+                    f"Can only merge branches if each is a Nested node. Is this mapping a sequential "
+                    f"of partial mappings?"
+                )
+            nodes[i] = nodes[i].merge(nodes.pop(i + 1))
+            branch2backing_storage.pop(i + 1)
+        return type(self)(nodes=nodes)
 
 class Nested(MappingNodeWithChildren):
     def _parent2child(self, parent: MappingNode) -> list[tuple[MappingNode, MappingNode]]:
@@ -230,6 +245,35 @@ class Nested(MappingNodeWithChildren):
             n.merge_branches()
             for n in self.nodes
         ])
+        
+    def merge(self, other: "Nested") -> "Nested":
+        # 1. Get the split location. This will be right below the last shared backing storage node.
+        my_backing_storage = [n.get_backing_storage_nodes() for n in self.nodes]
+        other_backing_storage = [n.get_backing_storage_nodes() for n in other.nodes]
+        my_backing_set = set(str(b) for b in my_backing_storage)
+        other_backing_set = set(str(b) for b in other_backing_storage)
+        shared_backing = my_backing_set & other_backing_set
+        if not shared_backing:
+            raise ValueError(
+                f"No shared backing storage nodes between {self} and {other}"
+            )
+
+        insert_above_my = None
+        for i, b in enumerate(my_backing_storage):
+            if b in shared_backing:
+                insert_above_my = i
+        insert_above_other = None
+        for i, b in enumerate(other_backing_storage):
+            if b in shared_backing:
+                insert_above_other = i
+        if insert_above_my is None or insert_above_other is None:
+            raise ValueError(
+                f"Could not find shared backing storage node between {self} and {other}"
+            )
+                
+        
+        
+        
 
 class Pipeline(Split):
     pass
@@ -302,8 +346,9 @@ class Mapping(Nested):
     def _render_node_label(self) -> str:
         return f"Root"
         
-    def render(self) -> str:
-        # self = self.merge_branches()
+    def render(self, merge_branches: bool = False) -> str:
+        if merge_branches:
+            self = self.merge_branches()
         
         graph = pydot.Dot(graph_type='digraph', rankdir='TD')
         graph.set_node_defaults(shape="box", fontname="Arial", fontsize="12")
@@ -323,7 +368,6 @@ class Mapping(Nested):
                         for n in node:
                             n.set_fillcolor('cyan')
                             n.set_style('filled')
-
             
         added_edges = set()
         for parent, child in self._parent2child(None):
