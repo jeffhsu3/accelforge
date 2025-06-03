@@ -270,10 +270,7 @@ class Nested(MappingNodeWithChildren):
             raise ValueError(
                 f"Could not find shared backing storage node between {self} and {other}"
             )
-                
-        
-        
-        
+
 
 class Pipeline(Split):
     pass
@@ -338,7 +335,7 @@ class Mapping(Nested):
             else:
                 to_add.append(new_node)
         return fused_slice
-    
+
     @property
     def loops(self) -> list[Iteration]:
         return [node for node in self.nodes if isinstance(node, Iteration)]

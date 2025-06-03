@@ -768,7 +768,7 @@ def get_single_einsum_sims(
     
     if return_jobs:
         return jobs
-    
+
     sims = {}
     for einsum_name, new_sims in parallel(
         jobs,
