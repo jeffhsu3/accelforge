@@ -19,7 +19,7 @@ from fastfusion.mapper.FFM.exploration.tile_shape_exploration import explore_til
 from fastfusion.mapper.FFM.joining.mappinginfo import Compatibility, Loop, Reservation
 from fastfusion.mapper.FFM.joining.sim import SIM
 from fastfusion.mapper.FFM.joining.simexplore import compress_sims
-from fastfusion.mapper.FFM.pareto import MAPPING_COLUMN, PartialMappings, is_reservation_col
+from fastfusion.mapper.FFM.pareto import MAPPING_COLUMN, PartialMappings, col2nameloop, is_reservation_col, nameloop2col
 from fastfusion.util.setexpressions import InvertibleSet
 from fastfusion.frontend.specification import Specification
 from fastfusion.frontend.workload.workload import Einsum, EinsumName, RankVariableName, TensorName, Workload
@@ -639,6 +639,30 @@ def drop_cols(mappings: DataFrame):
             to_drop.append(col)
     return mappings.drop(columns=to_drop)
 
+def shift_reservations_by_null_loop_indices(mappings: DataFrame, null_loop_indices: set[int]):
+    target2newabovename = {}
+    dropcols = []
+    for c in mappings.columns:
+        if not is_reservation_col(c):
+            continue
+        name, above = col2nameloop(c)
+        new_above = above - sum(above > i for i in null_loop_indices)
+        target = nameloop2col(name, new_above)
+        if target in target2newabovename:
+            if above > target2newabovename[target][1]:
+                dropcols.append(nameloop2col(name, above))
+                target2newabovename[target] = (name, above)
+        else:
+            target2newabovename[target] = (name, above)
+
+    mappings.drop(columns=dropcols, inplace=True)
+    renames = {}
+    for target, (name, above) in target2newabovename.items():
+        renames[nameloop2col(name, above)] = target
+    mappings.rename(columns=renames, inplace=True)
+    return mappings
+
+
 def make_sims(mapping: Mapping,
               explored_results: DataFrame,
               rank_variable_bounds: dict[RankVariableName, int],
@@ -656,9 +680,15 @@ def make_sims(mapping: Mapping,
 
     for tile_shape, mappings in groups: #tqdm(groups, desc="Generating SIMs"):
         # Check for null loops
-        new_compatibility = compatibility.populate_tile_shape(tile_shape, rank_variable_bounds)
+        new_compatibility, null_loop_indices = compatibility.populate_tile_shape(tile_shape, rank_variable_bounds)
+        shift_reservations_by_null_loop_indices(mappings, null_loop_indices)
+        # mappings = shift_reservations_by_null_loop_indices(mappings, null_loop_indices)
         # mappings.drop(columns=fused_loop_columns, inplace=True)
-        sim = SIM(new_compatibility, PartialMappings(mappings, free_to_loop_index=len(new_compatibility.loops) - 1))
+        if "Matmul2" and len(new_compatibility.loops) == 1 and "n1" in new_compatibility.loops[0].rank_variable and new_compatibility.loops[0].bound == 1 and len(new_compatibility.storage) == 2:
+            print(tile_shape)
+            print(new_compatibility)
+        sim = SIM(new_compatibility, PartialMappings(mappings, free_to_loop_index=len(new_compatibility.loops)-1))
+        assert mapping is not None
         sim.mappings.data[MAPPING_COLUMN] = [mapping] * len(sim.mappings.data)
         for equivalent_sim in get_equivalent_sims(sim):
             compatibility2sim.setdefault(equivalent_sim.compatibility, []).append(equivalent_sim)
@@ -714,7 +744,6 @@ def get_single_einsum_sims(
     if rank_variable_bounds is None:
         rank_variable_bounds = get_rank_variable_bounds(spec.workload, einsum_name)
     
-    compatibility2sim = {}
     workload = spec.workload
     intermediate_tensors = workload.intermediate_tensors()
 
