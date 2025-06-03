@@ -584,8 +584,10 @@ class PartialMappings:
         dropcols = [c for c in df.columns if c.endswith("_RIGHT_MERGE")]
         for source in dropcols:
             target = source[:-len("_RIGHT_MERGE")]
-            assert col_used_in_pareto(target), f"{target} is not used in pareto"
-            df.loc[:, target] += df[source]
+            if not col_used_in_pareto(target):
+                raise ValueError(f"{target} is not used in pareto")
+            if col2nameloop(target) is None:
+                df.loc[:, target] += df[source]
         df = df.drop(columns=dropcols)
         result = PartialMappings(df, skip_pareto=True, check_above_subset_below=False)
         # Remove tensors that were allocated in both branches and got added
@@ -616,6 +618,8 @@ class PartialMappings:
         alloc: Iterable[TensorStorage],
         free: Iterable[TensorStorage],
     ):
+        alloc, free = list(alloc), list(free)
+        assert not alloc and not free, f"Get tensor sizes from the model first"
         # Iterate through each reservation and level
         targets = defaultdict(int)
         
@@ -845,6 +849,12 @@ class PartialMappings:
         if prefix is not None:
             recovery.rename(columns={c: f"{prefix}_{c}" for c in recovery.columns}, inplace=True)
             self.data.rename(columns={"data_source_index": f"{prefix}_data_source_index"}, inplace=True)
+        for c in recovery.columns:
+            # If there's two instances of the prefix in the name, raise an error
+            if prefix is not None and prefix in c and c.count(prefix) > 1:
+                raise ValueError(f"Prefix {prefix} appears twice in column name {c}")
+        if f"{prefix}___MAPPING" not in recovery.columns:
+            raise ValueError(f"Missing {prefix}___MAPPING in recovery")
         return recovery
 
     def _decompress_data(self, decompress_data: DecompressData, prefix: str | list[str] = None):
@@ -867,9 +877,14 @@ class PartialMappings:
                     decompress_data.decompress_data[recovery_key],
                     on=[src_idx_col],
                     how="left",
-                    validate="many_to_one"
+                    # validate="many_to_one"
                 )
                 # Check for missing data after merge
+                if f"{p}_MAPPING" not in recovery_df.columns:
+                    print(f"Missing {p}_MAPPING for recovery_key {recovery_key}")
+                    print(recovery_df.columns)
+                if recovery_df[f"{p}__MAPPING"].isna().any():
+                    raise ValueError(f"Missing data found during decompression for recovery_key {recovery_key}")
                 if recovery_df[src_idx_col].isna().any():
                     raise ValueError(f"Missing data found during decompression for recovery_key {recovery_key}")
                 recovery_df.drop(columns=["_recovery_key", src_idx_col], inplace=True)
@@ -889,7 +904,7 @@ class PartialMappings:
             return decompress_data, pareto
 
         decompress_data = [None] * len(paretos)
-        for offset, ((p, _), (r, new_p)) in enumerate(zip(paretos, parallel([delayed(_compress)(p, i) for i, p in enumerate(paretos)], pbar="Compressing Partial Mappings", return_as="generator"))):
+        for offset, ((p, _), (r, new_p)) in enumerate(zip(paretos, parallel([delayed(_compress)(p, i) for i, p in enumerate(paretos)], pbar="Compressing Partial Mappings", return_as="generator_unordered"))):
             decompress_data[offset] = r
             p._data = new_p.data
         return DecompressData(multiplier, decompress_data)
