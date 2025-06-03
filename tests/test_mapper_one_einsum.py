@@ -26,9 +26,8 @@ class TestExploration(unittest.TestCase):
         einsum_name = "K"
         einsum = workload.einsums[einsum_name]
         rank_variables = einsum.rank_variables
-        rank_variable_to_size = {r: 16 for r in rank_variables}
 
-        sims, decompress_data = get_single_einsum_sims(spec, "Q", rank_variable_to_size)
+        sims, decompress_data = get_single_einsum_sims(spec, "Q")
 
     def test_mha_with_tags(self):
         spec = Specification.from_yaml(
@@ -43,14 +42,13 @@ class TestExploration(unittest.TestCase):
         einsum_name = "K"
         einsum = workload.einsums[einsum_name]
         rank_variables = einsum.rank_variables
-        rank_variable_to_size = {r: 16 for r in rank_variables}
 
         def tagger(pmapping):
             return get_one_split_tag(pmapping,
                                      workload.intermediate_tensors(),
                                      "MainMemory")
 
-        sims, decompress_data = get_single_einsum_sims(spec, "Q", rank_variable_to_size, tagger=tagger)
+        sims, decompress_data = get_single_einsum_sims(spec, "Q", tagger=tagger)
         for sim in sims['Q']:
             self.assertEqual(
                 TagMatch(sim.compatibility.tags),

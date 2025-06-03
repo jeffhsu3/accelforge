@@ -24,3 +24,6 @@ class TestTileShapeExploration(unittest.TestCase):
         self.assertTrue('RESOURCE_LocalBuffer_LEVEL_0' in result)
         self.assertTrue('RESOURCE_LocalBuffer_LEVEL_1' in result)
         self.assertTrue('RESOURCE_LocalBuffer_LEVEL_2' in result)
+
+if __name__ == '__main__':
+    unittest.main()

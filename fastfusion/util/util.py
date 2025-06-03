@@ -9,7 +9,7 @@ import sys
 
 from tqdm import tqdm
 
-N_PARALLEL_THREADS = 64
+N_PARALLEL_THREADS = 32
 
 
 class fzs(frozenset):
@@ -45,6 +45,7 @@ class fzs(frozenset):
 
 
 def debugger_active():
+    return False
     return 'pydevd' in sys.modules or sys.gettrace() is not None
 
 
@@ -97,7 +98,7 @@ def parallel(
 
     if one_job_if_debugging and debugger_active():
         n_jobs = 1
-
+        
     if isinstance(jobs, dict):
         assert return_as == None, "return_as is not supported for dict jobs"
         r = zip(

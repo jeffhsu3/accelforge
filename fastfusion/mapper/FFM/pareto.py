@@ -286,7 +286,7 @@ class PartialMappings:
 
         if free_to_loop_index is not None:
             self.free_to_loop_index(free_to_loop_index)
-        
+
         if fill_reservation_cols: # Affects PartialMappings so must go before
             self.fill_reservation_cols(fill_reservation_cols)
         if check_above_subset_below:
@@ -866,8 +866,12 @@ class PartialMappings:
                     recovery_df,
                     decompress_data.decompress_data[recovery_key],
                     on=[src_idx_col],
-                    how="left"
+                    how="left",
+                    validate="many_to_one"
                 )
+                # Check for missing data after merge
+                if recovery_df[src_idx_col].isna().any():
+                    raise ValueError(f"Missing data found during decompression for recovery_key {recovery_key}")
                 recovery_df.drop(columns=["_recovery_key", src_idx_col], inplace=True)
                 dfs.append(recovery_df)
             self._data = pd.concat(dfs)

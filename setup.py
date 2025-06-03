@@ -19,7 +19,8 @@ if __name__ == '__main__':
             'islpy',
             'combinatorics',
             'sympy',
-            'paretoset',
+            # 'paretoset',
+            'fast-pareto',
             
         ],
         packages=find_packages(),

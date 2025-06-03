@@ -240,10 +240,10 @@ class Compatibility(Updatable):
 
     def populate_tile_shape(
         self, tile_shape: list[int], rank_variable_bounds: dict[RankVariableName, int]
-    ) -> "Compatibility":
-        new_loops = []
+    ) -> tuple["Compatibility", set[int]]:
+        new_loops = list(self.loops)
         storages = []
-        null_loop_indices = []
+        null_loop_indices = set()
 
         assert len(tile_shape) == len(self.loops)
 
@@ -252,18 +252,20 @@ class Compatibility(Updatable):
             if i > 0:
                 prev_loop = next(
                     iter(
-                        l
-                        for l in self.loops[i - 1 :: -1]
-                        if l.rank_variable == l.rank_variable
+                        l2
+                        for l2 in new_loops[i - 1 :: -1]
+                        if l2.rank_variable == l.rank_variable
                     ),
                     None,
                 )
                 if prev_loop is not None:
-                    prev_size = tile_shape[self.loops.index(prev_loop)]
+                    prev_size = tile_shape[new_loops.index(prev_loop)]
             if prev_size == t:
-                null_loop_indices.append(i)
+                null_loop_indices.add(i)
             else:
-                new_loops.append(l.update(bound=t))
+                new_loops[i] = l.update(bound=t)
+                
+        new_loops = [l for i, l in enumerate(new_loops) if i not in null_loop_indices]
 
         storages = []
         for s in self.storage:
@@ -271,7 +273,7 @@ class Compatibility(Updatable):
             above -= sum(above > i for i in null_loop_indices)
             storages.append(s.update(above_loop_index=above))
 
-        return Compatibility(tuple(new_loops), fzs(storages), self.tags)
+        return Compatibility(tuple(new_loops), fzs(storages), self.tags), null_loop_indices
 
     def _permute(
         self,
