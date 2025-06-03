@@ -224,12 +224,7 @@ class Workload(ParsableModel):
     def tensors(self) -> set[TensorName]:
         return {TensorName(t.name) for e in self.einsums for t in e.tensor_accesses}
 
-    def mermaid_graph(self) -> str:
-        """
-        Get the mermaid graph of the workload.
-        Returns a Mermaid graph string showing relationships between Einsums and Tensors.
-        Einsums are shown as rectangles and Tensors as circles.
-        """
+    def render(self) -> str:
         import mermaid as md
         from mermaid.graph import Graph
         lines = [

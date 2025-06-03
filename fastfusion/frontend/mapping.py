@@ -12,6 +12,7 @@ from typing import Callable, Iterator, List, Optional, Type, TypeVar, Union, Ann
 from abc import ABC
 from fastfusion.util.basetypes import ParsableModel, ParsableList, ParsesTo, InferFromTag
 from fastfusion.version import assert_version, __version__
+import pydot
 
 T = TypeVar("T")
 
@@ -39,14 +40,21 @@ class MappingNode(ParsableModel, ABC):
     _required: bool = False  # Must the mapper keep this node?
     # children: ParsableList["MappingNode"] = ParsableList()
 
-    def _mermaid_graph_node_name(self) -> str:
+    def _render_node_name(self) -> str:
         return f"{self.__class__.__name__}_{id(self)}"
     
-    def _mermaid_graph_node_label(self) -> str:
-        return f"[\"{self.__class__.__name__}\"]"
+    def _render_node_label(self) -> str:
+        return self.__str__()
+        # return f"[\"{str(self)}\"]"
+        # return self.__class__.__name__
+        # return f"[\"{self.__class__.__name__}\"]"
+    
+    def _render_node_shape(self) -> str:
+        return "box"
 
-    def _mermaid_graph_node(self) -> str:
-        return f"{self._mermaid_graph_node_name()}{self._mermaid_graph_node_label()}"
+    def _render_node(self) -> str:
+        return pydot.Node(self._render_node_name(), label=self._render_node_label(), shape=self._render_node_shape())
+        return f"{self._render_node_name()}{self._render_node_label()}"
     
     def _parent2next(self) -> "MappingNode":
         return self
@@ -54,14 +62,13 @@ class MappingNode(ParsableModel, ABC):
     def _parent2child(self, parent: "MappingNode") -> list[tuple["MappingNode", "MappingNode"]]:
         return []
     
-    def _mermaid_make_children(self) -> list[str]:
+    def _render_make_children(self) -> list[str]:
         return []
 
 class Pattern(ParsableModel):
     stride: ParsesTo[Literal['symbol'] | int]
     initial_tile_shape: ParsesTo[Literal['symbol'] | int | None] = None
     tile_shape: ParsesTo[Literal['symbol'] | int | None] = None
-
 
 class Iteration(MappingNode):
     rank_variable: Union[set[RankVariableName], RankVariableName]
@@ -93,9 +100,6 @@ class Iteration(MappingNode):
 class Temporal(Iteration):
     def compact_string(self) -> str:
         return f"{self.rank_variable}-{self.loop_bound}"
-    
-    def _mermaid_graph_node_label(self) -> str:
-        return f"[\"{str(self)}\"]"
 
 class Spatial(Iteration):
     dimension: Union[int, str]
@@ -107,9 +111,6 @@ class Spatial(Iteration):
 
     def __str__(self) -> str:
         return f"S{self.dimension}" + super().__str__()
-
-    def _mermaid_graph_node_label(self) -> str:
-        return f"[\"{str(self)}\"]"
 
 class Storage(MappingNode):
     tensors: ParsableList[TensorName]
@@ -126,9 +127,7 @@ class Storage(MappingNode):
         tname = ", ".join(self.tensors)
         return f"{tname} in {self.memory}"
     
-    def _mermaid_graph_node_label(self) -> str:
-        tensors = ", ".join(self.tensors)
-        return f"[(\"{tensors} in {self.memory}\")]"
+        # return f"[(\"{tensors} in {self.memory}\")]"
     
     @property
     def tensor(self) -> TensorName:
@@ -138,6 +137,9 @@ class Storage(MappingNode):
                 f"Access the tensors property instead."
             )
         return self.tensors[0]
+    
+    def _render_node_shape(self) -> str:
+        return "cylinder"
 
 
 
@@ -148,8 +150,11 @@ class Compute(MappingNode):
     def compact_string(self) -> str:
         return f"Einsum {self.einsum}"
     
-    def _mermaid_graph_node_label(self) -> str:
-        return f"([\"Einsum {self.einsum}\"])"
+    def __str__(self) -> str:
+        return f"Einsum {self.einsum}"
+    
+    def _render_node_shape(self) -> str:
+        return "ellipse"
 
 class MappingNodeWithChildren(MappingNode):
     nodes: node_list = ParsableList()
@@ -163,19 +168,35 @@ class MappingNodeWithChildren(MappingNode):
     def _parent2next(self) -> MappingNode:
         return None
     
-    def _mermaid_make_children(self) -> list[str]:
+    def _render_make_children(self) -> list[str]:
         lines = []
         for child in self.nodes:
-            lines.append(child._mermaid_graph_node())
-            lines.extend(child._mermaid_make_children())
+            lines.append(child._render_node())
+            lines.extend(child._render_make_children())
         return lines
+    
+    def get_backing_storage_nodes(self) -> list[Storage]:
+        backing = []
+        for child in self.nodes:
+            if isinstance(child, Storage) and child._backing:
+                backing.append(child)
+            elif isinstance(child, MappingNodeWithChildren):
+                backing.extend(child.get_backing_storage_nodes())
+        return backing
 
 
 class Split(MappingNodeWithChildren):
     pass
 
-    def _mermaid_graph_node_label(self) -> str:
-        return f"{{{{\"Split\"}}}}"
+    def __str__(self) -> str:
+        return "Split"
+    
+    def _render_node_shape(self) -> str:
+        return "hexagon"
+
+    # def merge_branches(self) -> "Split":
+    #     branch2backing_storage = [node.get_backing_storage_nodes() for node in self.nodes]
+
 
 class Nested(MappingNodeWithChildren):
     def _parent2child(self, parent: MappingNode) -> list[tuple[MappingNode, MappingNode]]:
@@ -191,20 +212,25 @@ class Nested(MappingNodeWithChildren):
             raise ValueError("Nested node has no children")
         return self.nodes[-1]._parent2next()
     
-    # def _mermaid_connect_children(self, names_lines: list[tuple[str, str]], parent_name: str=None) -> list[str]:
-    #     return super()._mermaid_connect_children(names_lines)
+    # def _render_connect_children(self, names_lines: list[tuple[str, str]], parent_name: str=None) -> list[str]:
+    #     return super()._render_connect_children(names_lines)
     
-    def _mermaid_graph_node_label(self) -> str:
+    def _render_node_label(self) -> str:
         if not self.nodes:
             raise ValueError("Nested node has no children")
-        return self.nodes[0]._mermaid_graph_node_label()
+        return self.nodes[0]._render_node_label()
     
-    def _mermaid_graph_node_name(self) -> str:
+    def _render_node_name(self) -> str:
         if not self.nodes:
             raise ValueError("Nested node has no children")
-        return self.nodes[0]._mermaid_graph_node_name()
+        return self.nodes[0]._render_node_name()
     
-    
+    def merge_branches(self) -> "Nested":
+        return type(self)(nodes=[
+            n.merge_branches()
+            for n in self.nodes
+        ])
+
 class Pipeline(Split):
     pass
 
@@ -273,50 +299,84 @@ class Mapping(Nested):
     def loops(self) -> list[Iteration]:
         return [node for node in self.nodes if isinstance(node, Iteration)]
     
-    def _mermaid_graph_node_label(self) -> str:
+    def _render_node_label(self) -> str:
         return f"Root"
-    
-    def mermaid_graph(self) -> str:
-        import mermaid as md
-        from mermaid.graph import Graph
-        lines = []
-        lines = [
-            "graph TD",
-            "%%{init: {'flowchart': {'nodeSpacing': 30, 'rankSpacing': 30, 'padding': 2}, 'themeVariables': {'fontFamily': 'Arial, sans-serif'}}}%%"
-        ]
-        lines.extend(self._mermaid_make_children())
+        
+    def render(self) -> str:
+        # self = self.merge_branches()
+        
+        graph = pydot.Dot(graph_type='digraph', rankdir='TD')
+        graph.set_node_defaults(shape="box", fontname="Arial", fontsize="12")
+        graph.set_edge_defaults(fontname="Arial", fontsize="10")
+        # graph.add_nodes_from(self._render_make_children())
+        for node in self._render_make_children():
+            graph.add_node(node)
+            
+        backing_storage_nodes = self.get_backing_storage_nodes()
+        for a in backing_storage_nodes:
+            for b in backing_storage_nodes:
+                if str(a) == str(b) and id(a) != id(b):
+                    edge = pydot.Edge(a._render_node_name(), b._render_node_name())
+                    edge.set_constraint('false')
+                    graph.add_edge(edge)
+                    for node in [graph.get_node(a._render_node_name()), graph.get_node(b._render_node_name())]:
+                        for n in node:
+                            n.set_fillcolor('cyan')
+                            n.set_style('filled')
+
+            
+        added_edges = set()
         for parent, child in self._parent2child(None):
             if parent is not None:
-                lines.append(f"{parent._mermaid_graph_node_name()} --> {child._mermaid_graph_node_name()}")
-            # if _is_root:
-        #     lines.extend([
-        #         "",
-        #         "classDef default fill:#fff,stroke:#000,stroke-width:1px,color:#000,font-family:Arial,font-size:12px,padding:2px;",
-        #         "classDef compact fill:#fff,stroke:#000,stroke-width:1px,color:#000,font-family:Arial,font-size:12px,padding:2px;"
-        #     ])
-
-        # Create the graph with the flowchart script
-        flowchart_script = "\n".join(lines)
-        graph = Graph('Flowchart', flowchart_script)
+                parent_name = parent._render_node_name()
+                child_name = child._render_node_name()
+                if (parent_name, child_name) not in added_edges:
+                    graph.add_edge(pydot.Edge(parent_name, child_name))
+                    added_edges.add((parent_name, child_name))
+        return graph.create_svg(prog='dot')
         
-        # Set the configuration for compact layout
-        config = md.Config()
-        config.theme = 'base'
-        # config.theme_variables = {
-        #     'primaryColor': '#ffffff',
-        #     'primaryTextColor': '#000000', 
-        #     'primaryBorderColor': '#000000',
-        #     'lineColor': '#000000',
-        #     'fontSize': '12px'
-        # }
-        # config.flowchart = {
-        #     'nodeSpacing': 20,
-        #     'rankSpacing': 10,
-        #     'curve': 'linear'
-        # }
-        graph.config = config
+        
+        
+        # import mermaid as md
+        # from mermaid.graph import Graph
+        # lines = []
+        # lines = [
+        #     "graph TD",
+        #     "%%{init: {'flowchart': {'nodeSpacing': 30, 'rankSpacing': 30, 'padding': 2}, 'themeVariables': {'fontFamily': 'Arial, sans-serif'}}}%%"
+        # ]
+        # lines.extend(self._render_make_children())
+        # for parent, child in self._parent2child(None):
+        #     if parent is not None:
+        #         lines.append(f"{parent._render_node_name()} --> {child._render_node_name()}")
+        #     # if _is_root:
+        # #     lines.extend([
+        # #         "",
+        # #         "classDef default fill:#fff,stroke:#000,stroke-width:1px,color:#000,font-family:Arial,font-size:12px,padding:2px;",
+        # #         "classDef compact fill:#fff,stroke:#000,stroke-width:1px,color:#000,font-family:Arial,font-size:12px,padding:2px;"
+        # #     ])
 
-        return md.Mermaid(graph)
+        # # Create the graph with the flowchart script
+        # flowchart_script = "\n".join(lines)
+        # graph = Graph('Flowchart', flowchart_script)
+        
+        # # Set the configuration for compact layout
+        # config = md.Config()
+        # config.theme = 'base'
+        # # config.theme_variables = {
+        # #     'primaryColor': '#ffffff',
+        # #     'primaryTextColor': '#000000', 
+        # #     'primaryBorderColor': '#000000',
+        # #     'lineColor': '#000000',
+        # #     'fontSize': '12px'
+        # # }
+        # # config.flowchart = {
+        # #     'nodeSpacing': 20,
+        # #     'rankSpacing': 10,
+        # #     'curve': 'linear'
+        # # }
+        # graph.config = config
+
+        # return md.Mermaid(graph)
 
 class MappingTree(MappingNode): # TODO: Make this a full mapping
     version: Annotated[str, assert_version] = __version__

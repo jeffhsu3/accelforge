@@ -27,8 +27,8 @@ from fastfusion.frontend.mapping import Mapping
 
 def mapping2svg(mapping: pd.Series, einsum_names: list[str]):
     mapping: Mapping = make_mapping(mapping, einsum_names)
-    mermaid_graph = mapping.mermaid_graph()
-    return SVG(mermaid_graph.svg_response.text)
+    render = mapping.render()
+    return SVG(render)
 
 
 def diplay_mappings_on_fig(
@@ -91,10 +91,9 @@ def diplay_mappings_on_fig(
         i.on_hover(display_mapping)
         i.on_click(display_mapping_2)
     if not DUAL_OUT:
-        out.layout.width = "25%"
         return VBox([fig, out])
-    out.layout.width = "25%"
-    out2.layout.width = "25%"
+    out.layout.width = "50%"
+    out2.layout.width = "50%"
     return VBox([fig, HBox([out, out2])])
 
 
