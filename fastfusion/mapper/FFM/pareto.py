@@ -904,7 +904,7 @@ class PartialMappings:
             return decompress_data, pareto
 
         decompress_data = [None] * len(paretos)
-        for offset, ((p, _), (r, new_p)) in enumerate(zip(paretos, parallel([delayed(_compress)(p, i) for i, p in enumerate(paretos)], pbar="Compressing Partial Mappings", return_as="generator_unordered"))):
+        for offset, ((p, _), (r, new_p)) in enumerate(zip(paretos, parallel([delayed(_compress)(p, i) for i, p in enumerate(paretos)], pbar="Compressing Partial Mappings", return_as="generator"))):
             decompress_data[offset] = r
             p._data = new_p.data
         return DecompressData(multiplier, decompress_data)
