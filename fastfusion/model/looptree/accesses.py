@@ -166,6 +166,9 @@ def buffer_accesses_from_buffet_actions(
 
         parent_buffer = parent_buffers[(buffer_id, tensor, einsum)]
         if parent_buffer is not None:
+            parent_is_backing = \
+                parent_buffers[(parent_buffer, tensor, einsum)] is None
+
             accesses = accesses_results.get_accesses(parent_buffer,
                                                      tensor,
                                                      einsum)
@@ -173,12 +176,18 @@ def buffer_accesses_from_buffet_actions(
                 accesses.total_writes += read_to_parent
                 accesses.total_reads += read_to_parent
 
-                # # TODO: figure out how to do this per unit
-                # total_elided_reads = get_tensor_size(workload, tensor)
-                # accesses.total_reads -= total_elided_reads
-
                 accesses.max_per_unit_reads += max_per_parent_read_to_parent
                 accesses.max_per_unit_writes += max_per_parent_read_to_parent
+
+                per_unit_to_total = max_per_parent_read_to_parent / read_to_parent
+
+                # TODO: Do this per unit properly by recursing on first iteration in symbolic.py
+                # and passing a flag that says whether this is first iteration
+                if parent_is_backing:
+                    elidable_reads = reuse_analysis_result.elidable_reads[tensor]
+                    accesses.total_reads -= elidable_reads
+                    accesses.max_per_unit_reads -= per_unit_to_total*elidable_reads
+
             elif tensor in workload.tensors_read_by_einsum(einsum):
                 accesses.total_reads += read_to_parent
 

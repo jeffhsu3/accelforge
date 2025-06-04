@@ -21,6 +21,7 @@ class TestSymbolicModel(unittest.TestCase):
 
         self.assertEqual(result.compute_stats[Compute('Q', 'MAC')].total_ops, 64.0)
         self.assertEqual(result.compute_stats[Compute('Q', 'MAC')].max_per_unit_ops, 16.0)
+        self.assertEqual(result.elidable_reads['Q'], 16)
 
     def test_conv_mapping(self):
         mapping = Mapping.from_yaml(Path(__file__).parent / 'conv.mapping.yaml')
@@ -30,6 +31,7 @@ class TestSymbolicModel(unittest.TestCase):
 
         self.assertEqual(result.compute_stats[Compute('conv', 'MAC')].total_ops, 120.0)
         self.assertEqual(result.compute_stats[Compute('conv', 'MAC')].max_per_unit_ops, 10.0)
+        self.assertEqual(result.elidable_reads['O'], 20)
 
     def test_matmul_mapping(self):
         mapping = Mapping.from_yaml(Path(__file__).parent / 'matmul.mapping.yaml')
@@ -64,6 +66,13 @@ class TestSymbolicAccesses(unittest.TestCase):
                                   total_writes=0.0,
                                   max_per_unit_reads=64.0,
                                   max_per_unit_writes=0.0))
+
+        main_memory_Q_accesses = accesses.get_accesses('MainMemory', 'Q', 'Q')
+        self.assertEqual(main_memory_Q_accesses,
+                         Accesses(total_reads=0,
+                                  total_writes=16.0,
+                                  max_per_unit_reads=0,
+                                  max_per_unit_writes=16.0))
 
         local_buffer_I_accesses = accesses.get_accesses('LocalBuffer', 'I', 'Q')
         self.assertEqual(local_buffer_I_accesses,
@@ -105,7 +114,7 @@ class TestSymbolicLatency(unittest.TestCase):
             Path(__file__).parent / 'four_level.arch.yaml'
         ])
         workload = spec.workload
-        architecture = spec.architecture
+        architecture = spec.get_flattened_architecture()
         mapping = Mapping.from_yaml(Path(__file__).parent / 'Q_mapping.yaml')
 
         result = analyze_reuse(mapping, workload)

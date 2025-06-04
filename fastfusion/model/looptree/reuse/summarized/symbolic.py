@@ -1,8 +1,7 @@
 from dataclasses import dataclass, field
 from functools import reduce
 from operator import mul
-from typing import Any
-from itertools import chain
+from typing import Any, Iterable
 
 import fastfusion.frontend.mapping as mapping_spec
 from fastfusion.frontend.mapping import Mapping, Spatial, Temporal, Storage, Reservation, Fill, Iteration
@@ -91,6 +90,9 @@ class SummarizedAnalysisOutput:
 
     temporal_steps: dict = field(default_factory=dict)
 
+    # Elidable reads of output tensor
+    elidable_reads: dict = field(default_factory=dict)
+
     symbols: list = field(default_factory=list)
 
 
@@ -106,6 +108,8 @@ class AnalysisInfo:
 
     einsum_tensor_to_projection: dict
     tensor_to_relevancy: dict
+
+    tensor_to_backing_storage_id: dict[TensorName, int]
 
 
 def analyze_reuse(
@@ -135,7 +139,8 @@ def analyze_reuse(
                                                            einsum_name),
         all_tensors=all_tensors,
         einsum_tensor_to_projection=einsum_tensor_to_projection,
-        tensor_to_relevancy=tensor_to_relevancy
+        tensor_to_relevancy=tensor_to_relevancy,
+        tensor_to_backing_storage_id=get_tensor_to_backing_storage_id(mapping),
     )
     symbols = insert_sympy_symbols(mapping)
 
@@ -145,6 +150,17 @@ def analyze_reuse(
     result.symbols = symbols
 
     return result
+
+
+def get_tensor_to_backing_storage_id(mapping: Mapping):
+    tensor_to_ids: dict[TensorName, set[int]] = {}
+    for node in mapping:
+        if isinstance(node, Storage):
+            for tensor in node.tensors:
+                if tensor in tensor_to_ids:
+                    continue
+                tensor_to_ids[tensor] = id(node)
+    return tensor_to_ids
 
 
 class ReservationAnalysisTracker:
@@ -359,6 +375,10 @@ def analyze_temporal(node_idx,
             compute_stats.max_per_unit_ops += \
                 child_result.compute_stats[key].max_per_unit_ops * shape_repeats
 
+        for tensor, child_elidable in child_result.elidable_reads.items():
+            if tensor not in result_accumulator.elidable_reads:
+                result_accumulator.elidable_reads[tensor] = 0
+            result_accumulator.elidable_reads[tensor] += child_elidable*shape_repeats
 
     shape = stride_and_shape.shape
     if isinstance(shape, SequenceOfRepatedvalues):
@@ -471,6 +491,11 @@ def analyze_spatial(node_idx, current_shape, info: AnalysisInfo):
                     child_result.compute_stats[key].max_per_unit_ops
                 )
 
+        for tensor, child_elidable in child_result.elidable_reads.items():
+            if tensor not in result_accumulator.elidable_reads:
+                result_accumulator.elidable_reads[tensor] = 0
+            result_accumulator.elidable_reads[tensor] += child_elidable*shape_repeats
+
     shape = stride_and_shape.shape
     if isinstance(shape, SequenceOfRepatedvalues):
         for repeated_shape in shape.sequence:
@@ -502,6 +527,14 @@ def analyze_storage(node_idx, current_shape, info: AnalysisInfo):
         buffet = Buffet(tensor, einsum_name, node.memory)
         buffet_stats = child_result.buffet_stats[buffet]
         buffet_stats.reads_to_peer = 0  # TODO: peer-to-peer support
+
+        if (
+            id(node) == info.tensor_to_backing_storage_id[tensor]
+            and tensor in info.workload.einsums[einsum_name].output_tensors()
+        ):
+            projection = info.einsum_tensor_to_projection[(einsum_name, tensor)]
+            child_result.elidable_reads[tensor] = \
+                compute_dense_tile_occupancy(projection, current_shape)
 
     return child_result
 
