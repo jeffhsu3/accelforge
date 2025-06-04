@@ -370,7 +370,11 @@ def run_model(pmapping, spec, flattened_arch: list[architecture.Leaf]):
         if buffet.level not in total_occupancy:
             total_occupancy[buffet.level] = {stats.n_loops_above: occupancy}
         else:
-            total_occupancy[buffet.level][stats.n_loops_above] = occupancy
+            occupancy_per_level = total_occupancy[buffet.level]
+            if stats.n_loops_above not in occupancy_per_level:
+                occupancy_per_level[stats.n_loops_above] = occupancy
+            else:
+                occupancy_per_level[stats.n_loops_above] += occupancy
 
         max_n_loops = max(max_n_loops, stats.n_loops_above+1)
 
