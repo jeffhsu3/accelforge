@@ -9,7 +9,8 @@ import sys
 
 from tqdm import tqdm
 
-N_PARALLEL_THREADS = 32
+PARALLELIZE = True
+N_PARALLEL_THREADS = 16
 
 
 class fzs(frozenset):
@@ -45,7 +46,7 @@ class fzs(frozenset):
 
 
 def debugger_active():
-    return False
+    return not PARALLELIZE
     return 'pydevd' in sys.modules or sys.gettrace() is not None
 
 
