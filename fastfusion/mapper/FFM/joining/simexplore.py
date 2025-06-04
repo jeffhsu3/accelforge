@@ -149,6 +149,7 @@ def join_sims(
     )
 
     aliased_tensors = {"I_n_to_I": "I_I_to_Q_K_V"}
+    aliased_tensors = spec.workload.get_tensor_copies()
 
     full_equivalent_rank_variables = make_full_equivalent_rank_variables(
         pairwise_equivalent_rank_variables
@@ -175,6 +176,9 @@ def join_sims(
     init_print_time()
 
     sims = [GroupOfSIMsHolder(*s) for s in sims]
+
+    if not sims:
+        raise ValueError("No SIMs to join")
 
     # ======================================================================
     # Initial consolidate and group all SIMs
@@ -465,7 +469,7 @@ def join_sims_no_either(*args, **kwargs):
         args[0] = {k: v for k, v in list(args[0].items())[:2]}
     return join_sims(*args, skip_invalid=False, combine_reservations=False, **kwargs)
 
-def compress_sims(sims: dict[str, list[SIM]] | list[tuple[str, SIM]]) -> DecompressData:
+def compress_sims(sims: dict[str, list[SIM]] | list[tuple[str, SIM]], id2mapping: dict[int, "Mapping"] | None = None) -> DecompressData:
     if not isinstance(sims, (dict, list)):
         raise TypeError(f"Expected dict or list, got {type(sims)}")
     if isinstance(sims, dict):
@@ -476,7 +480,7 @@ def compress_sims(sims: dict[str, list[SIM]] | list[tuple[str, SIM]]) -> Decompr
         )
     else:
         sims_flattened = sims
-    return PartialMappings.compress_paretos([(s.mappings, einsum_name) for s, einsum_name in sims_flattened])
+    return PartialMappings.compress_paretos([(s.mappings, einsum_name) for s, einsum_name in sims_flattened], id2mapping)
 
 simlist: TypeAlias = list[Union[SIM, PartialMappings]]
 
