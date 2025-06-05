@@ -412,6 +412,17 @@ def run_model(pmapping, spec, flattened_arch: list[architecture.Leaf]):
     actions = gather_actions(reuse, pmapping, workload, None, is_path=True, use_name=True)
     energy = compute_energy_from_actions(actions, ert)
 
+    intermediate_tensors = workload.intermediate_tensors()
+    tensor_to_backing = {}
+    for node in pmapping:
+        if isinstance(node, Storage):
+            for tensor in node.tensors:
+                if (
+                    tensor not in tensor_to_backing
+                    and tensor in intermediate_tensors
+                ):
+                    tensor_to_backing[tensor] = node.memory
+
     total_occupancy = {}
     compute_unit = pmapping.nodes[-1].compute
     max_n_loops = 0
@@ -421,7 +432,11 @@ def run_model(pmapping, spec, flattened_arch: list[architecture.Leaf]):
 
         occupancy = stats.occupancy*memory_to_datawidth[buffet.level]
 
-        df[nametensor2col(buffet.level, buffet.tensor)] = occupancy
+        if (
+            buffet.tensor in tensor_to_backing
+            and tensor_to_backing[buffet.tensor] == buffet.level
+        ):
+            df[nametensor2col(buffet.level, buffet.tensor)] = occupancy
 
         if buffet.level not in total_occupancy:
             total_occupancy[buffet.level] = {stats.n_loops_above: occupancy}
