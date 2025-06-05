@@ -1,5 +1,3 @@
-from numbers import Number
-
 from combinatorics.integer import *
 
 import numpy as np
@@ -18,7 +16,7 @@ from fastfusion.model.looptree.reuse.summarized.symbolic import analyze_reuse
 from fastfusion.model.looptree.energy import compute_energy_from_actions, gather_actions
 from fastfusion.model.looptree.latency import get_latency
 
-from fastfusion.mapper.FFM.pareto import nameloop2col, col2nameloop
+from fastfusion.mapper.FFM.pareto import nameloop2col, nametensor2col
 
 
 
@@ -420,7 +418,10 @@ def run_model(pmapping, spec, flattened_arch: list[architecture.Leaf]):
     for buffet, stats in reuse.buffet_stats.items():
         if buffet.level == compute_unit:
             continue
+
         occupancy = stats.occupancy*memory_to_datawidth[buffet.level]
+
+        df[nametensor2col(buffet.level, buffet.tensor)] = occupancy
 
         if buffet.level not in total_occupancy:
             total_occupancy[buffet.level] = {stats.n_loops_above: occupancy}

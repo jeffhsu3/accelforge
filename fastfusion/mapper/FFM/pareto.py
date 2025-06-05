@@ -54,6 +54,7 @@ CHECK_CORRECTNESS = False
 
 _resource_name_nloops_reg = re.compile(r"RESOURCE_(.+?)(?:_LEFT)?_LEVEL_(-?\d+)")
 
+_resource_name_tensor_reg = re.compile(r"RESOURCE_(.+?)_LEVEL_(.+?)")
 
 def dict_cached(func):
     cache = {}
@@ -105,6 +106,15 @@ def nameloop2col(name, nloops, left: bool = False):
     if left:
         return f"RESOURCE_{name}_LEFT_LEVEL_{nloops}"
     return f"RESOURCE_{name}_LEVEL_{nloops}"
+
+@dict_cached
+def nametensor2col(name, tensor):
+    return f"RESOURCE_{name}_TENSOR_{tensor}"
+
+@dict_cached
+def col2nametensor(col):
+    m = _resource_name_tensor_reg.match(col)
+    return (m.group(1), m.group(2)) if m is not None else None
 
 @dict_cached
 def col2nameloopleft(x):
