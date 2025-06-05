@@ -257,9 +257,6 @@ def insert_temporal_loops(
         # variables.
         for t in einsum.tensors - seen_tensors:
             rank_variables &= einsum.tensor2rank_variables[t]
-
-        
-        rank_variables = set(einsum.rank_variables)
         
         # If there is no backing storage in the next block, only include loops
         # that reuse tensors in the previous block.
@@ -443,16 +440,23 @@ def iterate_mappings_n_loops_constraint(mapping: Mapping, einsum: Einsum):
     rank_variables = einsum.rank_variables
 
     index2iteration = [i for i, node in enumerate(mapping.nodes) if isinstance(node, Iteration)]
+
+    # Don't drop the innermost loop of any rank variable
+    need_rank_variables = set(rank_variables)
+    for i, node in list(enumerate(mapping.nodes))[::-1]:
+        if isinstance(node, Iteration) and node.rank_variable in need_rank_variables:
+            need_rank_variables.discard(node.rank_variable)
+            index2iteration.remove(i)
+        
+    assert not need_rank_variables
+    
+    # print(', '.join(m.compact_string() for m in mapping.nodes))
+
     # print(f"Dropping {n_to_drop} loops from {n_loops} loops. {len(list(itertools.combinations(index2iteration, n_to_drop)))} combinations")
     for choices in itertools.combinations(index2iteration, n_to_drop):
         mapping_new = [m for i, m in enumerate(mapping.nodes) if i not in choices]
-        need_rank_variables = set(rank_variables)
-        for i, node in enumerate(mapping_new):
-            if isinstance(node, Iteration):
-                need_rank_variables.discard(node.rank_variable)
-        if need_rank_variables:
-            continue
         # print(f', '.join(m.compact_string() for m in mapping_new))
+        # print('\t\t' + ', '.join(m.compact_string() for m in mapping_new))
         yield Mapping(nodes=mapping_new)
 
 def iterate_mappings_no_constraints(
@@ -484,7 +488,7 @@ def iterate_mappings_no_constraints(
         for mapping2 in temporal_fused_constraint_thing_fix_me(mapping, list(spec.workload.einsums[einsum_name].rank_variables)): # TODO
             mapping2 = temporal_constraint_2_fix_me(mapping2, einsum)
             place_missing_temporal_loops(mapping2, einsum)
-            yield copy.deepcopy(mapping2), symbol_table
+            yield mapping2, symbol_table
 
 # =================================================================================================
 # Attach constraints to mapping
@@ -574,11 +578,11 @@ def iterate_mappings_constraints(
         for mapping, symbol_table in iterate_mappings_no_constraints(spec, einsum_name, arch_flattened):
             constraints = get_constraints(mapping, symbol_table)
             mapping.append(Compute(einsum=einsum_name, compute=compute_name))
-            mapping = copy.copy(mapping)
+            # mapping = copy.copy(mapping)
             mapping = Mapping(nodes=mapping)
-            yield mapping, constraints
-            # for mapping2 in iterate_mappings_n_loops_constraint(mapping, spec.workload.einsums[einsum_name]):
-            #     yield mapping2, constraints
+            # yield mapping, constraints
+            for mapping2 in iterate_mappings_n_loops_constraint(mapping, spec.workload.einsums[einsum_name]):
+                yield Mapping(nodes=[copy.copy(n) for n in mapping2.nodes]), symbol_table
 
 # =================================================================================================
 # Make sims
@@ -737,9 +741,6 @@ def make_sims(mapping: Mapping,
     else:
         groups = [((), explored_results)]
     compatibility2sim = {}
-    
-    # if matches_storage_order(mapping, ["W1", "T1", "T2", "W1"]):
-    #     print(mapping.nodes)
 
     for tile_shape, mappings in list(groups)[::-1]: #tqdm(groups, desc="Generating SIMs"):
         # Check for null loops
@@ -766,6 +767,37 @@ def make_sims(mapping: Mapping,
             compatibility2sim.setdefault(equivalent_sim.compatibility, []).append(equivalent_sim)
     
     return compatibility2sim
+
+    # if matches_storage_order(mapping, ["W1", "T1", "T2", "W1"]):
+    #     print(mapping.nodes)
+    
+    def get_sim(tile_shape, mappings, parallelize_pareto: bool = False):
+        new_compatibility, null_loop_indices = compatibility.populate_tile_shape(tile_shape, rank_variable_bounds)
+        shift_reservations_by_null_loop_indices(mappings, null_loop_indices)
+        sim = SIM(new_compatibility, PartialMappings(mappings, free_to_loop_index=len(new_compatibility.loops), parallelize_pareto=parallelize_pareto))#-1))
+        assert mapping is not None
+        sim.mappings.data[MAPPING_COLUMN] = [id(mapping)] * len(sim.mappings.data)
+        sim.mappings.data[TAGS_COLUMN] = [compatibility.tags] * len(sim.mappings.data)
+        return sim
+
+
+    if len(groups) > 32:
+        sims = parallel(
+            delayed(get_sim)(tile_shape, mappings)
+            for tile_shape, mappings in groups
+        )
+    else:
+        print(f'Parallelizing Pareto')
+        sims = [get_sim(tile_shape, mappings, parallelize_pareto=True) for tile_shape, mappings in groups]
+    
+        
+    compatibility2sim = {}
+    for sim in sims:
+        for equivalent_sim in get_equivalent_sims(sim):
+            compatibility2sim.setdefault(equivalent_sim.compatibility, []).append(equivalent_sim)
+    
+    return compatibility2sim
+    
 
 # =================================================================================================
 # Top level
