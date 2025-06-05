@@ -229,6 +229,7 @@ def insert_temporal_loops(
     mapping: List[MappingNode],
     einsum: Einsum,
     first_memory: architecture.Memory,
+    rank_variable_bounds: dict[RankVariableName, int],
 ):
     # First establish insertion points. Insertion points are:
     # - Below the last instance of the first memory
@@ -250,7 +251,8 @@ def insert_temporal_loops(
         full_mapping.extend(prev)
         cur = split_mapping[i+1] if i < len(split_mapping) - 1 else []
 
-        rank_variables = set(einsum.rank_variables)
+        rank_variables = einsum.rank_variables
+        rank_variables = {r for r in rank_variables if rank_variable_bounds[r] > 1}
         seen_tensors |= set.union(*(set(t.tensors) for t in prev), set())
         
         # If we haven't seen a tensor yet, must only iterate over relevant rank
@@ -289,6 +291,7 @@ def insert_spatial_loops(
     mapping: List[MappingNode],
     einsum: Einsum,
     arch_flattened: list[architecture.Memory],
+    rank_variable_bounds: dict[RankVariableName, int],
 ):
     nodes_with_fanout = [n for n in arch_flattened if n.spatial.get_fanout() > 1]
     arch_node_names = [n.name for n in arch_flattened]
@@ -304,6 +307,7 @@ def insert_spatial_loops(
                 insertion_point = i + 1
 
         rv = einsum.rank_variables
+        rv = {r for r in rv if rank_variable_bounds[r] > 1}
         for fanout_dim, fanout_size in fanout.spatial.fanout.items():
             mapping.insert(
                 insertion_point, 
@@ -390,9 +394,10 @@ def temporal_constraint_2_fix_me(mapping: List[MappingNode], einsum: Einsum):
                     to_pop.add(k)
     return [node for i, node in enumerate(mapping) if i not in to_pop]
 
-def place_missing_temporal_loops(mapping: List[MappingNode], einsum: Einsum):
+def place_missing_temporal_loops(mapping: List[MappingNode], einsum: Einsum, rank_variable_bounds: dict[RankVariableName, int]):
     # If any rank variables are missing, add them as high as possible.
-    rank_variables = set(einsum.rank_variables)
+    rank_variables = einsum.rank_variables
+    rank_variables = {r for r in rank_variables if rank_variable_bounds[r] > 1}
     for m in mapping:
         if isinstance(m, Temporal) and not m._fused:
             rank_variables.discard(m.rank_variable)
@@ -463,6 +468,7 @@ def iterate_mappings_no_constraints(
     spec: Specification,
     einsum_name: str,
     arch_flattened: list[architecture.Leaf],
+    rank_variable_bounds: dict[RankVariableName, int],
 ):
     first_memory = None
     for node in arch_flattened:
@@ -478,16 +484,16 @@ def iterate_mappings_no_constraints(
         mapping = copy.deepcopy(mapping)
         label_backing_storages(mapping)
         # print(", ".join(m.compact_string() for m in mapping))
-        mapping = insert_temporal_loops(mapping, einsum, first_memory)
+        mapping = insert_temporal_loops(mapping, einsum, first_memory, rank_variable_bounds)
         # print(", ".join(m.compact_string() for m in mapping))
-        insert_spatial_loops(mapping, einsum, arch_flattened)
+        insert_spatial_loops(mapping, einsum, arch_flattened, rank_variable_bounds)
         # print(", ".join(m.compact_string() for m in mapping))
         mapping = unpack_loops_to_rank_variables(mapping)
         label_fused_loops(mapping)
         # print(", ".join(m.compact_string() for m in mapping))
         for mapping2 in temporal_fused_constraint_thing_fix_me(mapping, list(spec.workload.einsums[einsum_name].rank_variables)): # TODO
             mapping2 = temporal_constraint_2_fix_me(mapping2, einsum)
-            place_missing_temporal_loops(mapping2, einsum)
+            place_missing_temporal_loops(mapping2, einsum, rank_variable_bounds)
             yield mapping2, symbol_table
 
 # =================================================================================================
@@ -564,6 +570,7 @@ def iterate_mappings_constraints(
     spec: Specification,
     einsum_names: list[str] | str | None = None,
     arch_flattened: list[architecture.Leaf] | None = None,
+    rank_variable_bounds: dict[RankVariableName, int] | None = None,
 ):
     if arch_flattened is None:
         arch_flattened = spec.get_flattened_architecture()
@@ -573,9 +580,12 @@ def iterate_mappings_constraints(
         einsum_names = [einsum_names]
     if einsum_names is None:
         einsum_names = [e.name for e in spec.workload.einsums]
+        
+    if rank_variable_bounds is None:
+        rank_variable_bounds = get_rank_variable_bounds(spec, einsum_names)
 
     for einsum_name in einsum_names:
-        for mapping, symbol_table in iterate_mappings_no_constraints(spec, einsum_name, arch_flattened):
+        for mapping, symbol_table in iterate_mappings_no_constraints(spec, einsum_name, arch_flattened, rank_variable_bounds):
             constraints = get_constraints(mapping, symbol_table)
             mapping.append(Compute(einsum=einsum_name, compute=compute_name))
             # mapping = copy.copy(mapping)
@@ -743,6 +753,10 @@ def make_sims(mapping: Mapping,
 
     for tile_shape, mappings in list(groups)[::-1]: #tqdm(groups, desc="Generating SIMs"):
         # Check for null loops
+        # tensor2size = {}
+        # for tensor in in intermediate_tensors:
+        #     tensor2size[tensor] = tensor
+        
         new_compatibility, null_loop_indices = compatibility.populate_tile_shape(tile_shape, rank_variable_bounds)
         if tagger is None:
             tags = Tags()
@@ -818,7 +832,6 @@ def concat_sims(sims: dict[EinsumName, dict[Compatibility, list[SIM]]], id2mappi
             for s in s3:
                 if id(s.mappings) in seen:
                     s.mappings = s.mappings.copy()
-                    s.mappings._data = s.mappings.data.copy()
                 seen.add(id(s.mappings))
                 target.append(s)
     decompress_data = compress_sims(to_decompress, id2mapping)
@@ -903,14 +916,15 @@ def get_single_einsum_sims(
         rank_variable_bounds = get_rank_variable_bounds(spec.workload, einsum_name)
     
     workload = spec.workload
-    intermediate_tensors = workload.intermediate_tensors()
+    intermediate_tensors = workload.intermediate_tensors() & workload.einsums[einsum_name].tensor_names
 
     if flattened_arch is None:
         flattened_arch = spec.get_flattened_architecture()
 
     mappings_constraints = tqdm(iterate_mappings_constraints(spec,
                                 einsum_name,
-                                flattened_arch),
+                                flattened_arch,
+                                rank_variable_bounds),
                                 desc=f"Generating storage and loop choices for Einsum {einsum_name}")
 
     jobs = [
