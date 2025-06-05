@@ -20,7 +20,7 @@ from fastfusion.mapper.FFM.exploration.tile_shape_exploration import explore_til
 from fastfusion.mapper.FFM.joining.mappinginfo import Compatibility, Loop, Reservation
 from fastfusion.mapper.FFM.joining.sim import SIM
 from fastfusion.mapper.FFM.joining.simexplore import compress_sims, DecompressData
-from fastfusion.mapper.FFM.pareto import TAGS_COLUMN, MAPPING_COLUMN, PartialMappings, col2nameloop, is_reservation_col, nameloop2col
+from fastfusion.mapper.FFM.pareto import TAGS_COLUMN, MAPPING_COLUMN, PartialMappings, col2nameloop, is_reservation_col, nameloop2col, tensor2col
 from fastfusion.util.setexpressions import InvertibleSet
 from fastfusion.frontend.specification import Specification
 from fastfusion.frontend.workload.workload import Einsum, EinsumName, RankVariableName, TensorName, Workload
@@ -752,12 +752,12 @@ def make_sims(mapping: Mapping,
     compatibility2sim = {}
 
     for tile_shape, mappings in list(groups)[::-1]: #tqdm(groups, desc="Generating SIMs"):
-        # Check for null loops
-        # tensor2size = {}
-        # for tensor in in intermediate_tensors:
-        #     tensor2size[tensor] = tensor
+        tensor2size = {}
+    
+        for tensor in intermediate_tensors: # Sizes are all the same
+            tensor2size[tensor] = mappings[tensor2col(tensor)].iloc[0]
         
-        new_compatibility, null_loop_indices = compatibility.populate_tile_shape(tile_shape, rank_variable_bounds)
+        new_compatibility, null_loop_indices = compatibility.populate_tile_shape(tile_shape, rank_variable_bounds, tensor2size)
         if tagger is None:
             tags = Tags()
         else:
@@ -854,7 +854,7 @@ def concat_sims(sims: dict[EinsumName, dict[Compatibility, list[SIM]]], id2mappi
         for compatibility2sim in compatibility2sim.values()
     ]
     sims: dict[EinsumName, list[SIM]] = {}
-    for einsum_name, sim in parallel(to_pack, pbar="Concatenating SIMs"):
+    for einsum_name, sim in parallel(to_pack, pbar="Grouping Partial Mappings"):
         sims.setdefault(einsum_name, []).append(sim)
 
     # if not _compress_before:
@@ -894,7 +894,7 @@ def _per_proc_compatibility2sim(
     einsum_name: EinsumName,
     tagger=None,
 ) -> tuple[str, dict[Compatibility, SIM]]:
-    # print(f", ".join(m.compact_string() for m in mapping.nodes))
+    print(f", ".join(m.compact_string() for m in mapping.nodes))
     # s = ", ".join(m.compact_string() for m in mapping.nodes)
     # import re
     # if re.search(r"MainMemory W1.*GlobalBuffer T1.*GlobalBuffer T2.*GlobalBuffer W1", s):

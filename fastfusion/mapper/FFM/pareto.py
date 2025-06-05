@@ -108,8 +108,8 @@ def nameloop2col(name, nloops, left: bool = False):
     return f"RESOURCE_{name}_LEVEL_{nloops}"
 
 @dict_cached
-def nametensor2col(name, tensor):
-    return f"RESOURCE_{name}_TENSOR_{tensor}"
+def tensor2col(tensor):
+    return f"TENSOR_{tensor}"
 
 @dict_cached
 def col2nametensor(col):
@@ -227,15 +227,21 @@ def makepareto_quick(mappings: pd.DataFrame, columns: list[str]) -> pd.DataFrame
     mappings = mappings.reset_index(drop=True)
     return mappings[quickpareto(mappings[columns])].reset_index(drop=True)
 
-def makepareto_merge(mappings: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
+def paretofy_chunk(chunk):
+    return paretoset(chunk)
+
+def makepareto_merge(mappings: pd.DataFrame, columns: list[str], parallelize: bool = False) -> pd.DataFrame:
     chunk_size = 10000
     if len(mappings) <= 1:
         return mappings
-    chunks = [mappings[i:i+chunk_size] for i in range(0, len(mappings), chunk_size)]
-    paretos = []
-    for chunk in chunks:
-        paretos.append(chunk[paretoset(chunk[columns])].reset_index(drop=True))
-    mappings = pd.concat(paretos)
+    
+    to_chunk = mappings[columns]
+    chunks = parallel(
+        [delayed(paretofy_chunk)(chunk)
+        for chunk in [to_chunk[i:i+chunk_size] for i in range(0, len(to_chunk), chunk_size)]],
+        n_jobs = 1 if parallelize else None
+    )
+    mappings = mappings[np.concatenate(chunks)]
     return mappings[paretoset(mappings[columns])].reset_index(drop=True)
 
 def makepareto_time_compare(mappings: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
@@ -260,11 +266,11 @@ def makepareto_time_compare(mappings: pd.DataFrame, columns: list[str]) -> pd.Da
     return pareto2
 
 
-def makepareto(mappings: pd.DataFrame, columns: list[str] = None) -> pd.DataFrame:
+def makepareto(mappings: pd.DataFrame, columns: list[str] = None, parallelize: bool = False) -> pd.DataFrame:
     # return makepareto_time_compare(mappings)
     if columns is None:
         columns = [c for c in mappings.columns if col_used_in_pareto(c)]
-    return makepareto_merge(mappings, columns)
+    return makepareto_merge(mappings, columns, parallelize=parallelize)
     if len(mappings) <= 1:
         return mappings
     columns = [c for c in mappings.columns if col_used_in_pareto(c)]
@@ -287,12 +293,14 @@ class PartialMappings:
             check_above_subset_below: bool = CHECK_CORRECTNESS,
             max_right_to_left: bool = False,
             free_to_loop_index: int = None,
+            parallelize_pareto: bool = False,
         ):
         self._data: pd.DataFrame = data
         self.right_reservations: dict[set] = None
         self.left_reservations: dict[set] = None
         self.parents = []
         self._prev_free_to_loop_index = None
+        self._parallelize_pareto = parallelize_pareto
         self._make_reservations()
 
         if free_to_loop_index is not None:
@@ -308,7 +316,7 @@ class PartialMappings:
             self.check_above_subset_below()
 
         if not skip_pareto:
-            self.make_pareto()
+            self.make_pareto(parallelize=parallelize_pareto)
             
         if check_above_subset_below:
             self.check_above_subset_below()
@@ -630,7 +638,6 @@ class PartialMappings:
         free: Iterable[TensorStorage],
     ):
         alloc, free = list(alloc), list(free)
-        assert not alloc and not free, f"Get tensor sizes from the model first"
         # Iterate through each reservation and level
         targets = defaultdict(int)
         
@@ -737,8 +744,8 @@ class PartialMappings:
                     
         self._data = self.data.drop(columns=dropcols)
 
-    def make_pareto(self, columns: list[str] = None):
-        self._data = makepareto(self.data, columns)
+    def make_pareto(self, columns: list[str] = None, parallelize: bool = False):
+        self._data = makepareto(self.data, columns, parallelize=parallelize)
 
     def has_reservations(self):
         return any(col2nameloop(c) is not None for c in self.data.columns)
@@ -860,10 +867,10 @@ class PartialMappings:
         if prefix is not None:
             recovery.rename(columns={c: f"{prefix}_{c}" for c in recovery.columns}, inplace=True)
             self.data.rename(columns={"data_source_index": f"{prefix}_data_source_index"}, inplace=True)
-        for c in recovery.columns:
-            # If there's two instances of the prefix in the name, raise an error
-            if prefix is not None and prefix in c and c.count(prefix) > 1:
-                raise ValueError(f"Prefix {prefix} appears twice in column name {c}")
+        # for c in recovery.columns:
+        #     # If there's two instances of the prefix in the name, raise an error
+        #     if prefix is not None and prefix in c and c.count(prefix) > 1:
+        #         raise ValueError(f"Prefix {prefix} appears twice in column name {c}")
         if f"{prefix}___MAPPING" not in recovery.columns:
             raise ValueError(f"Missing {prefix}___MAPPING in recovery")
         return recovery

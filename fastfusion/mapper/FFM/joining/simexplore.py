@@ -148,7 +148,6 @@ def join_sims(
         spec.workload.get_pairwise_equivalent_rank_variables()
     )
 
-    aliased_tensors = {"I_n_to_I": "I_I_to_Q_K_V"}
     aliased_tensors = spec.workload.get_tensor_copies()
 
     full_equivalent_rank_variables = make_full_equivalent_rank_variables(
@@ -364,7 +363,7 @@ def join_sims(
                             print(f"\tLOOKAHEAD: No match for {b.compatibility}")
                     del combined[k]
             if not combined:
-                raise ValueError("No match found for any bucket")
+                raise ValueError("No match found for any group")
             combined = list(itertools.chain.from_iterable(combined.values()))
             print(
                 f"Removed {prev_len - len(combined)}/{prev_len} ({len(combined)/prev_len*100:.2f}% remaining)"
@@ -372,7 +371,7 @@ def join_sims(
             print_time("Removing mappings that can't be combined later")
 
         if not combined:
-            raise ValueError("No match found for any bucket")
+            raise ValueError("No match found for any group")
 
         # ======================================================================
         # If we delayed the mapping merging, do it now.
@@ -415,7 +414,7 @@ def join_sims(
         for_einsum_text = f"for Einsum {right_einsum}"
         print(f"\tNumber of buckets {for_einsum_text}: {len(combined)}")
         print(f"\tNumber of mappings {for_einsum_text}: {nmappings}")
-        print(f"\tMappings per bucket {for_einsum_text}: {nmappings / len(combined)}")
+        print(f"\tMappings per group {for_einsum_text}: {nmappings / len(combined)}")
 
         # ======================================================================
         # Update left for the next iteration.
@@ -436,12 +435,12 @@ def join_sims(
     data = mappings.data
 
     print_total_time()
-    if evaluations_tracker is not None:
-        edp = data["Latency"] * data["Energy"]
-        edp_min = edp.min()
-        evaluations_tracker.add_evaluation(n_evaluations, edp_min)
-        evaluations_tracker.n_mappings.update(n_mappings)
-        evaluations_tracker.runtime.update(runtime)
+    # if evaluations_tracker is not None and "metric_Latency" in data.columns and "metric_Energy" in data.columns:
+    #     edp = data["metric_Latency"] * data["metric_Energy"]
+    #     edp_min = edp.min()
+    #     evaluations_tracker.add_evaluation(n_evaluations, edp_min)
+    #     evaluations_tracker.n_mappings.update(n_mappings)
+    #     evaluations_tracker.runtime.update(runtime)
 
     if return_nmappings_nbuckets:
         return mappings, n_mappings, nbuckets

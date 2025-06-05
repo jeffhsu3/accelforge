@@ -249,7 +249,7 @@ class Compatibility(Updatable):
         )
 
     def populate_tile_shape(
-        self, tile_shape: list[int], rank_variable_bounds: dict[RankVariableName, int]
+        self, tile_shape: list[int], rank_variable_bounds: dict[RankVariableName, int], tensor2size: dict[str, int]
     ) -> tuple["Compatibility", set[int]]:
         new_loops = list(self.loops)
         storages = []
@@ -281,7 +281,7 @@ class Compatibility(Updatable):
         for s in self.storage:
             above = s.above_loop_index
             above -= sum(above > i for i in null_loop_indices)
-            storages.append(s.update(above_loop_index=above))
+            storages.append(s.update(above_loop_index=above, size=tensor2size[s.name]))
 
         return Compatibility(tuple(new_loops), fzs(storages), self.tags), null_loop_indices
 

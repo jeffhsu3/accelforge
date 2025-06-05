@@ -353,18 +353,18 @@ class Mapping(Nested):
     
     def _render_node_label(self) -> str:
         return f"Root"
-        
+
     def render(self, merge_branches: bool = False) -> str:
         if merge_branches:
             self = self.merge_branches()
-        
+
         graph = pydot.Dot(graph_type='digraph', rankdir='TD')
         graph.set_node_defaults(shape="box", fontname="Arial", fontsize="12")
         graph.set_edge_defaults(fontname="Arial", fontsize="10")
         # graph.add_nodes_from(self._render_make_children())
         for node in self._render_make_children():
             graph.add_node(node)
-            
+
         backing_storage_nodes = self.get_backing_storage_nodes()
         for a in backing_storage_nodes:
             for b in backing_storage_nodes:

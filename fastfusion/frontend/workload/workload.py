@@ -369,3 +369,4 @@ class Workload(ParsableModel):
             for input_tensor in einsum.input_tensors():
                 for output_tensor in einsum.output_tensors():
                     tensor_copies[input_tensor] = output_tensor
+        return tensor_copies
