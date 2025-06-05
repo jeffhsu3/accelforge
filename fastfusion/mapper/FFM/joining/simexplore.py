@@ -171,6 +171,8 @@ def join_sims(
         lookahead_filter = False
 
     for einsum_name, s in sims:
+        if not s:
+            raise ValueError(f"No SIMs for {einsum_name}")
         print(f"SIM {einsum_name} tensors: {s[0].tensor_names}")
     init_print_time()
 
