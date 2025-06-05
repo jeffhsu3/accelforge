@@ -347,6 +347,7 @@ class FromYAMLAble:
             logging.info(
                 "Parsing extra attributes %s", ", ".join([x[0] for x in extra_elems])
             )
+        c._yaml_source = ",".join(files)
         return c
 
 def parse_field(field, value, validator, symbol_table, **kwargs):
