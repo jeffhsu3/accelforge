@@ -66,7 +66,7 @@ def get_sims(
             tagger=tagger,
             return_jobs=True,
         ))
-    
+
     sims = {einsum_name: {} for einsum_name in spec.workload.einsum_names}
     id2mapping = {}
     for einsum_name, new_sims, id, mapping in parallel(
