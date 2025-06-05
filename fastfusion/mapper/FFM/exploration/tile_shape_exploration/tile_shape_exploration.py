@@ -162,104 +162,106 @@ def generate_tile_shapes(pmapping, constraints, usage_df, utilization_df, specif
         ))
 
 
-    def get_combined_choices(rank_var_and_choices_a, rank_var_and_choices_b, other_rank_var_and_choices):
+    def get_combined_choices(rank_var_and_choices_a, rank_var_and_choices_b, other_rank_var_and_choices, tile_shape=8):
         rank_a, index_a, is_symbol_a, choices_a = rank_var_and_choices_a
         rank_b, index_b, is_symbol_b, choices_b = rank_var_and_choices_b
-        combined_choices = np.concatenate(
-            (
-                np.tile(choices_a, (choices_b.shape[0], 1)),
-                np.repeat(choices_b, choices_a.shape[0], axis=0)
-            ),
-            axis=1
-        )
-        
-        # print(f'\t Combined rank {rank_a} and {rank_b}: {choices_a.shape[0]} x {choices_b.shape[0]} -> {combined_choices.shape[0]}')
-        n_rows = combined_choices.shape[0]
-        n_loops = combined_choices.shape[1]
 
-        is_symbols = is_symbol_a + is_symbol_b
-        indices = index_a + index_b
-
-        # Insert ones
-        combined_choices_with_ones = combined_choices
-        for other_ranks, other_indices, other_is_symbol, other_choices in other_rank_var_and_choices:
-            indices.extend(other_indices)
-            is_symbols.extend(other_is_symbol)
-
-            other_n_loops = len(other_indices)
-            combined_choices_with_ones = np.concatenate(
+        all_good_choices = []
+        for b_idx in range(0, choices_b.shape[0], tile_shape):
+            b_idx_max = min(b_idx+tile_shape, choices_b.shape[0])
+            tile_occupancy = b_idx_max - b_idx
+            combined_choices = np.concatenate(
                 (
-                    combined_choices_with_ones,
-                    np.ones((n_rows, other_n_loops), dtype=np.int64)
+                    np.tile(choices_a, (tile_occupancy, 1)),
+                    np.repeat(choices_b[b_idx:b_idx_max,:],
+                              choices_a.shape[0],
+                              axis=0)
                 ),
                 axis=1
             )
 
-        # TODO: there may be a more efficient order
-        corrected_indices = np.asarray(invert_indices(indices))
-        corrected_choices = combined_choices_with_ones[:,corrected_indices]
-        is_symbols = np.asarray(is_symbols)[corrected_indices]
-        corrected_choices = corrected_choices[:,is_symbols]
+            # print(f'\t Combined rank {rank_a} and {rank_b}: {choices_a.shape[0]} x {choices_b.shape[0]} -> {combined_choices.shape[0]}')
+            n_rows = combined_choices.shape[0]
+            n_loops = combined_choices.shape[1]
 
-        # Check if capacity is overused
-        mask = np.ones(corrected_choices.shape[0], dtype=np.bool)
-        for memory, usage_model in usage_df.items():
-            usage = usage_model(*[
-                corrected_choices[:,i] for i in range(corrected_choices.shape[1])
-            ])
-            mask = mask & (usage <= 1.0)
+            is_symbols = is_symbol_a + is_symbol_b
+            indices = index_a + index_b
 
-        # Compute utilization
-        utilization = {}
-        for (component, dim), utilization_model in utilization_df.items():
-            utilization[(component, dim)] = utilization_model(*[
-                corrected_choices[:,i] for i in range(corrected_choices.shape[1])
-            ])
+            # Insert ones
+            combined_choices_with_ones = combined_choices
+            for other_ranks, other_indices, other_is_symbol, other_choices in other_rank_var_and_choices:
+                indices.extend(other_indices)
+                is_symbols.extend(other_is_symbol)
 
-        # Insert largest value
-        combined_choices_with_largest = combined_choices
-        for other_ranks, other_indices, other_is_symbol, other_choices in other_rank_var_and_choices:
-            largest_other_choices = np.max(other_choices, axis=0, keepdims=True)
-            combined_choices_with_largest = np.concatenate(
-                (
-                    combined_choices_with_largest,
-                    np.repeat(largest_other_choices, n_rows, axis=0)
-                ),
-                axis=1
-            )
-        corrected_choices = combined_choices_with_largest[:,corrected_indices]
-        corrected_choices = corrected_choices[:,is_symbols]
+                other_n_loops = len(other_indices)
+                combined_choices_with_ones = np.concatenate(
+                    (
+                        combined_choices_with_ones,
+                        np.ones((n_rows, other_n_loops), dtype=np.int64)
+                    ),
+                    axis=1
+                )
 
-        for (component, dim), utilization_model in utilization_df.items():
-            utilization[(component, dim)] = np.minimum(
-                utilization[(component, dim)],
-                utilization_model(*[
-                    corrected_choices[:,i]
-                    for i in range(corrected_choices.shape[1])
+            # TODO: there may be a more efficient order
+            corrected_indices = np.asarray(invert_indices(indices))
+            corrected_choices = combined_choices_with_ones[:,corrected_indices]
+            is_symbols = np.asarray(is_symbols)[corrected_indices]
+            corrected_choices = corrected_choices[:,is_symbols]
+
+            # Check if capacity is overused
+            mask = np.ones(corrected_choices.shape[0], dtype=np.bool)
+            for memory, usage_model in usage_df.items():
+                usage = usage_model(*[
+                    corrected_choices[:,i] for i in range(corrected_choices.shape[1])
                 ])
-            )
-            # TODO: Remove this constraint
-            mask = mask & (utilization[(component, dim)] <= 1.0)
-            if np.any(mask & (utilization[(component, dim)] == 1)):
-                mask = mask & (utilization[(component, dim)] == 1)
-            else:
-                min_check = utilization[(component, dim)] + ~mask
-                min_utilization = np.min(min_check)
-                mask = mask & (min_check == min_utilization)
+                mask = mask & (usage <= 1.0)
 
-        good_choices = combined_choices[mask,:]
+            # Compute utilization
+            utilization = {}
+            for (component, dim), utilization_model in utilization_df.items():
+                utilization[(component, dim)] = utilization_model(*[
+                    corrected_choices[:,i] for i in range(corrected_choices.shape[1])
+                ])
 
-        # print(choices_a.shape[0], choices_b.shape[0], combined_choices.shape[0], np.sum(mask)/combined_choices.shape[0])
+            # Insert largest value
+            combined_choices_with_largest = combined_choices
+            for other_ranks, other_indices, other_is_symbol, other_choices in other_rank_var_and_choices:
+                largest_other_choices = np.max(other_choices, axis=0, keepdims=True)
+                combined_choices_with_largest = np.concatenate(
+                    (
+                        combined_choices_with_largest,
+                        np.repeat(largest_other_choices, n_rows, axis=0)
+                    ),
+                    axis=1
+                )
+            corrected_choices = combined_choices_with_largest[:,corrected_indices]
+            corrected_choices = corrected_choices[:,is_symbols]
 
-        if good_choices.shape[0] == 0:
-            print(f"No good choices found")
-            return combined_choices_with_largest[:,corrected_indices], is_symbols
+            for (component, dim), utilization_model in utilization_df.items():
+                utilization[(component, dim)] = np.minimum(
+                    utilization[(component, dim)],
+                    utilization_model(*[
+                        corrected_choices[:,i]
+                        for i in range(corrected_choices.shape[1])
+                    ])
+                )
+                # TODO: Remove this constraint
+                mask = mask & (utilization[(component, dim)] <= 1.0)
+                if np.any(mask & (utilization[(component, dim)] == 1)):
+                    mask = mask & (utilization[(component, dim)] == 1)
+                else:
+                    min_check = utilization[(component, dim)] + ~mask
+                    min_utilization = np.min(min_check)
+                    mask = mask & (min_check == min_utilization)
+
+            good_choices = combined_choices[mask,:]
+            all_good_choices.append(good_choices)
 
         return (
             rank_a | rank_b,
             index_a + index_b,
             is_symbol_a + is_symbol_b,
-            good_choices
+            np.concatenate(all_good_choices, axis=0)
         )
 
     while len(rank_var_and_choices) > 1:
