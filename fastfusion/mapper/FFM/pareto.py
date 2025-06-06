@@ -309,6 +309,7 @@ class PartialMappings:
             max_right_to_left: bool = False,
             free_to_loop_index: int = None,
             parallelize_pareto: bool = False,
+            n_pmappings: int = None,
         ):
         self._data: pd.DataFrame = data
         self.right_reservations: dict[set] = None
@@ -317,6 +318,7 @@ class PartialMappings:
         self._prev_free_to_loop_index = None
         self._parallelize_pareto = parallelize_pareto
         self._make_reservations()
+        self.n_pmappings = n_pmappings if n_pmappings is not None else len(self.data)
 
         if free_to_loop_index is not None:
             self.free_to_loop_index(free_to_loop_index)
@@ -623,7 +625,8 @@ class PartialMappings:
             if col2nameloop(target) is None:
                 df.loc[:, target] += df[source]
         df = df.drop(columns=dropcols)
-        result = PartialMappings(df, skip_pareto=True, check_above_subset_below=False)
+        n_pmappings = self.n_pmappings * right.n_pmappings
+        result = PartialMappings(df, skip_pareto=True, check_above_subset_below=False, n_pmappings=n_pmappings)
         # Remove tensors that were allocated in both branches and got added
         # together.
         shared_to_free = [s for s in shared_storage if s.above_loop_index <= shared_loop_index]
@@ -717,6 +720,7 @@ class PartialMappings:
             concatenated.fillna(0),
             skip_pareto=len(paretos) == 1 or skip_pareto,
             fill_reservation_cols=fill_cols,
+            n_pmappings=sum(p.n_pmappings for p in paretos),
         )
 
         p.parents = paretos[0].parents
