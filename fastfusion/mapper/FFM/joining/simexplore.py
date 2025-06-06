@@ -333,7 +333,7 @@ def join_sims(
         print_time("Bucket merging")
 
         # ======================================================================
-        # Look ahead to the next Einsum and see if any of our buckets will not
+        # Look ahead to the next Einsum and see if any of our groups will not
         # be able to merge with it. If so, we can drop them immediately.
         # ======================================================================
         if sims and lookahead_filter:
@@ -413,7 +413,7 @@ def join_sims(
 
         nmappings = sum(len(s.mappings.data) for s in combined)
         for_einsum_text = f"for Einsum {right_einsum}"
-        print(f"\tNumber of buckets {for_einsum_text}: {len(combined)}")
+        print(f"\tNumber of groups {for_einsum_text}: {len(combined)}")
         print(f"\tNumber of mappings {for_einsum_text}: {nmappings}")
         print(f"\tMappings per group {for_einsum_text}: {nmappings / len(combined)}")
 

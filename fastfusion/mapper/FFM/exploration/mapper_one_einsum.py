@@ -32,17 +32,6 @@ def powerset(iterable):
     s = list(iterable)
     return chain.from_iterable(combinations(s, r) for r in range(len(s) + 1))
 
-def _rename_columns_we_should_fix_this_later(df):
-    # tile_shape --> __tile_shape
-    def rename(col: str):
-        if col.startswith("tile_shape"):
-            col = col.replace("tile_shape", "__tile_shape")
-        if col == "energy" or col == "latency":
-            col = f"metric_{col}"
-        return col
-    df.rename(columns=rename, inplace=True)
-    return df
-
 # =================================================================================================
 # Choose what data to store in each memory
 # =================================================================================================
@@ -723,11 +712,14 @@ def shift_reservations_by_null_loop_indices(mappings: DataFrame, null_loop_indic
 #     found = set(s.tensor for s in mapping.nodes if isinstance(s, Storage))
 #     return found >= set(tensors)
 
-def make_sims(mapping: Mapping,
-              explored_results: DataFrame,
-              rank_variable_bounds: dict[RankVariableName, int],
-              intermediate_tensors: set[TensorName],
-              tagger: Callable[[Mapping], Tags] =  None):    
+def make_sims(
+        mapping: Mapping,
+        explored_results: DataFrame,
+        rank_variable_bounds: dict[RankVariableName, int],
+        intermediate_tensors: set[TensorName],
+        tagger: Callable[[Mapping], Tags] =  None,
+        total_pmappings: int = None
+    ):    
     if explored_results.empty:
         return {}
     compatibility = make_compatibility(mapping, intermediate_tensors)
@@ -742,9 +734,11 @@ def make_sims(mapping: Mapping,
     explored_results = drop_cols(explored_results)
         
     if fused_loop_columns:
-        groups = explored_results.groupby(fused_loop_columns)
+        groups = list(explored_results.groupby(fused_loop_columns))
     else:
         groups = [((), explored_results)]
+        
+    pmappings_per_group = None if total_pmappings is None else total_pmappings / len(groups)
 
     sims = []
 
@@ -761,7 +755,8 @@ def make_sims(mapping: Mapping,
         tags = Tags() if tagger is None else tagger(new_compatibility)
         new_compatibility = new_compatibility.update(tags=tags)
         shift_reservations_by_null_loop_indices(mappings, null_loop_indices)
-        sim = SIM(new_compatibility, PartialMappings(mappings, free_to_loop_index=len(new_compatibility.loops)))#-1))
+        partial_mappings = PartialMappings(mappings, free_to_loop_index=len(new_compatibility.loops), n_pmappings=pmappings_per_group)
+        sim = SIM(new_compatibility, partial_mappings)
         sim.mappings.data[TAGS_COLUMN] = [compatibility.tags] * len(sim.mappings.data)
         sims.append(sim)
 
@@ -807,8 +802,8 @@ def _per_proc_compatibility2sim(
     tagger=None,
 ) -> tuple[str, dict[Compatibility, SIM], str, Mapping]:
     # print(f", ".join(m.compact_string() for m in mapping.nodes))
-    result = explore_tile_shapes(mapping, constraints, specification, flattend_arch)
-    sims = make_sims(mapping, result, rank_variable_bounds, intermediate_tensors, tagger=tagger)
+    result, total_pmappings = explore_tile_shapes(mapping, constraints, specification, flattend_arch)
+    sims = make_sims(mapping, result, rank_variable_bounds, intermediate_tensors, tagger=tagger, total_pmappings=total_pmappings)
     decompress_data = PartialMappings.compress_paretos(
         einsum_name, 
         [s.mappings for s in sims], 

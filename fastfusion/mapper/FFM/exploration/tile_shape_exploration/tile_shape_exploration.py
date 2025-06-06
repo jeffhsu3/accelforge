@@ -79,7 +79,7 @@ def explore_tile_shapes(pmapping, constraints, specification: Specification, fla
     compiled_per_memory_occupancy_df = compile_dict(symbols, per_memory_occupancy_df)
     compiled_utilization_df = compile_dict(symbols, utilization_df)
 
-    tile_shapes, is_symbol = generate_tile_shapes(pmapping, constraints, compiled_per_memory_occupancy_df, compiled_utilization_df, specification)
+    tile_shapes, is_symbol, total_pmappings = generate_tile_shapes(pmapping, constraints, compiled_per_memory_occupancy_df, compiled_utilization_df, specification)
 
     df = {}
     for i in range(tile_shapes.shape[1]):
@@ -94,9 +94,7 @@ def explore_tile_shapes(pmapping, constraints, specification: Specification, fla
     for key in compiled_df:
         df[key] = compiled_df[key](*tile_shapes)
 
-    rval = pd.DataFrame(df)
-    # print(f'Returning df: {rval.shape}')
-    return rval
+    return pd.DataFrame(df), total_pmappings
 
 def generate_tile_shapes(pmapping, constraints, usage_df, utilization_df, specification):
     pmapping = pmapping.nodes
@@ -166,6 +164,10 @@ def generate_tile_shapes(pmapping, constraints, usage_df, utilization_df, specif
             good_choices[:,:n_loops]
         ))
 
+
+    total_pmappings = 1
+    for rv in rank_var_and_choices:
+        total_pmappings *= rv[-1].shape[0]
 
     def get_combined_choices(rank_var_and_choices_a, rank_var_and_choices_b, other_rank_var_and_choices, tile_shape=128):
         rank_a, index_a, is_symbol_a, choices_a = rank_var_and_choices_a
@@ -334,7 +336,7 @@ def generate_tile_shapes(pmapping, constraints, usage_df, utilization_df, specif
 
     # print(f"Returning choices of shape {choices[:,indices].shape}")
 
-    return choices[:,indices], is_symbol[indices]
+    return choices[:,indices], is_symbol[indices], total_pmappings
 
 def invert_indices(inverted_indices):
     return np.argsort(inverted_indices)
