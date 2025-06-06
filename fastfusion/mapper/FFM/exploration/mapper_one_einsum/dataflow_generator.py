@@ -95,11 +95,21 @@ def valid_storage_order(
                 return False
 
             if s1 == s2 and s1 in required_orders:
-                tensor_i = next(iter(mapping[i].tensors))
-                tensor_j = next(iter(mapping[j].tensors))
                 required_order = required_orders[s1]
-                if required_order.index(tensor_i) > required_order.index(tensor_j):
-                    return False
+                def _get_order_index(tensor):
+                    for i, order_term in enumerate(required_order.order):
+                        if tensor in order_term:
+                            return i
+                    return None
+
+                i1s = [_get_order_index(t) for t in mapping[i].tensors]
+                i1s = [i for i in i1s if i is not None]
+                i2s = [_get_order_index(t) for t in mapping[j].tensors]
+                i2s = [i for i in i2s if i is not None]
+                
+                for i1, i2 in zip(i1s, i2s):
+                    if i1 > i2:
+                        return False
 
             if not (set(mapping[i].tensors) & set(mapping[j].tensors)):
                 continue
