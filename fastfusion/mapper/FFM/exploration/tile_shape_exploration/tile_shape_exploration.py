@@ -155,7 +155,7 @@ def generate_tile_shapes(pmapping, constraints, usage_df, utilization_df, specif
         good_choices = choices[mask,:]
 
         if good_choices.shape[0] == 0:
-            return good_choices, is_symbols
+            return good_choices, is_symbols, 0
 
         rank_var_and_choices.append((
             frozenset(rank_var),
