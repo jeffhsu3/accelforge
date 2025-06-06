@@ -1,9 +1,10 @@
 from collections import defaultdict
+from collections.abc import Generator
 import hashlib
 from itertools import chain, combinations
 import copy
 import itertools
-from typing import Callable, List
+from typing import Any, Callable, List
 
 from joblib import delayed
 import numpy as np
@@ -144,7 +145,7 @@ def recursive_order_storage_choices(
     nodes: list[architecture.Memory],
     remaining_choices: list,
     required_order: list[list[Storage]],
-):
+) -> Generator[list[MappingNode], None, None]:
     mapping = list(mapping)
     if not remaining_choices:
         yield mapping
@@ -161,7 +162,7 @@ def recursive_order_storage_choices(
 def get_storage_choices(
     nodes: list[architecture.Memory],
     symbol_table: dict[str, InvertibleSet],
-):
+) -> Generator[tuple[list[Storage], Any], None, None]:
     while not isinstance(nodes[0], architecture.Memory):
         nodes = nodes[1:]
     first_storage = nodes[0]
@@ -235,35 +236,31 @@ def insert_temporal_loops(
     
     full_mapping = []
     seen_tensors = set()
-    for i, prev in enumerate(split_mapping):
-        full_mapping.extend(prev)
-        cur = split_mapping[i+1] if i < len(split_mapping) - 1 else []
+    for i, prev_storages in enumerate(split_mapping):
+        full_mapping.extend(prev_storages)
+        next_storages = split_mapping[i+1] if i < len(split_mapping) - 1 else []
+        assert len(next_storages) <= 1
 
         rank_variables = einsum.rank_variables
         rank_variables = {r for r in rank_variables if rank_variable_bounds[r] > 1}
-        seen_tensors |= set.union(*(set(t.tensors) for t in prev), set())
+        seen_tensors |= set.union(*(set(t.tensors) for t in prev_storages), set())
         
         # If we haven't seen a tensor yet, must only iterate over relevant rank
         # variables.
         for t in einsum.tensors - seen_tensors:
             rank_variables &= einsum.tensor2rank_variables[t]
-        
+
         # If there is no backing storage in the next block, only include loops
         # that reuse tensors in the previous block.
-        if not any(s._backing for s in cur):
-            prev_relevant = [einsum.tensor2rank_variables[t] for s in prev for t in s.tensors]
+        if not any(s._backing for s in next_storages):
+            prev_relevant = [einsum.tensor2rank_variables[t] for s in prev_storages for t in s.tensors]
             if prev_relevant:
                 rank_variables -= set.intersection(*prev_relevant)
 
         # Only include loops that will index into the next block of storage nodes.
-        if cur:
-            next_relevant = [einsum.tensor2rank_variables[t] for s in cur for t in s.tensors]
+        if next_storages:
+            next_relevant = [einsum.tensor2rank_variables[t] for s in next_storages for t in s.tensors]
             rank_variables &= set.union(*next_relevant, set())
-            
-        # If there are any tensors we haven't seen yet, we may only iterate over
-        # their relevant rank variables.
-        for t in einsum.tensors - seen_tensors:
-            rank_variables &= einsum.tensor2rank_variables[t]
 
         # if i == len(split_mapping) - 1:
         #     rank_variables = set(einsum.rank_variables)
@@ -752,8 +749,12 @@ def make_sims(
         mappings.drop(columns=dropcols, inplace=True)
         
         new_compatibility, null_loop_indices = compatibility.populate_tile_shape(tile_shape, rank_variable_bounds, tensor2size)
+
         tags = Tags() if tagger is None else tagger(new_compatibility)
+        if tags.matches(Tags(("INVALID",))):
+            continue
         new_compatibility = new_compatibility.update(tags=tags)
+
         shift_reservations_by_null_loop_indices(mappings, null_loop_indices)
         partial_mappings = PartialMappings(mappings, free_to_loop_index=len(new_compatibility.loops), n_pmappings=pmappings_per_group)
         sim = SIM(new_compatibility, partial_mappings)

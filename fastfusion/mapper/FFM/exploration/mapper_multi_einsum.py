@@ -54,10 +54,10 @@ def get_sims(
             )
         return sims
 
-    jobs = []
+    single_einsum_jobs = []
     einsum_names = einsum_names or spec.workload.einsum_names
     for einsum_name in einsum_names:
-        jobs.extend(get_single_einsum_jobs(
+        single_einsum_jobs.extend(get_single_einsum_jobs(
             spec,
             einsum_name,
             rank_variable_bounds,
@@ -68,7 +68,7 @@ def get_sims(
     sims = {einsum_name: [] for einsum_name in spec.workload.einsum_names}
     grouped_decompress_data: GroupedDecompressData = GroupedDecompressData(prefix2datalist={})
     for einsum_name, new_sims, decompress_data in parallel(
-        jobs,
+        single_einsum_jobs,
         pbar="Generating Partial Mappings",
         return_as="generator_unordered",
     ):
