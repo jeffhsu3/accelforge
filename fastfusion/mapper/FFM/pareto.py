@@ -920,7 +920,6 @@ class PartialMappings:
         for einsum_name, decompress_data_list in decompress_data.prefix2datalist.items():
             assert decompress_data_list, f"No decompress data found for {einsum_name}"
             self._decompress_data(einsum_name, decompress_data_list)
-            print(f'After decompressing {einsum_name}, we have columns: {list(self.data.columns)}')
         
 
     @classmethod
