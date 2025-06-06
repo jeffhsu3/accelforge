@@ -2,8 +2,10 @@ workload:
   shape:
     b: 0 <= b < 2
     m: 0 <= m < 2
+    p: 0 <= p < 2
     h: 0 <= h < 2
     e: 0 <= e < 2
+    f: 0 <= f < 2
     d: 0 <= d < 4
     c: 0 <= c < 1
     j: 0 <= j < 1
@@ -31,8 +33,8 @@ workload:
   - name: QK
     tensor_accesses:
     - {name: Q, projection: [ b, m, h, e ]}
-    - {name: K, projection: { B: b, M: P, H: h, E: e }}
-    - {name: QK, projection: [ b, m, P, h ], output: True}
+    - {name: K, projection: { B: b, M: p, H: h, E: e }}
+    - {name: QK, projection: [ b, m, p, h ], output: True}
 
   - name: AV
     tensor_accesses:
@@ -42,8 +44,8 @@ workload:
 
   - name: Z
     tensor_accesses:
-    - {name: AV, projection: [ b, m, h, F ]}  
-    - {name: WZ, projection: [ h, F, g ]}
+    - {name: AV, projection: [ b, m, h, f ]}  
+    - {name: WZ, projection: [ h, f, g ]}
     - {name: Z, projection: [ b, m, g ], output: True}
 
   - name: FFA
