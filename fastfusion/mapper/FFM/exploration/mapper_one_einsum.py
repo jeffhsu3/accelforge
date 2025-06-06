@@ -794,22 +794,24 @@ def make_sims(
 def _per_proc_compatibility2sim(
     mapping: Mapping,
     constraints: list[Comparison],
-    specification: Specification,
+    spec: Specification,
     rank_variable_bounds: dict[RankVariableName, int],
     intermediate_tensors: set[TensorName],
-    flattend_arch: list[architecture.Leaf],
+    flattened_arch: list[architecture.Leaf],
     einsum_name: EinsumName,
+    job_id: int,
     tagger=None,
 ) -> tuple[str, dict[Compatibility, SIM], str, Mapping]:
     # print(f", ".join(m.compact_string() for m in mapping.nodes))
-    result, total_pmappings = explore_tile_shapes(mapping, constraints, specification, flattend_arch)
+    result, total_pmappings = explore_tile_shapes(mapping, constraints, spec, flattened_arch)
     sims = make_sims(mapping, result, rank_variable_bounds, intermediate_tensors, tagger=tagger, total_pmappings=total_pmappings)
     decompress_data = PartialMappings.compress_paretos(
         einsum_name, 
-        [s.mappings for s in sims], 
+        [s.mappings for s in sims],
+        job_id=job_id,
         extra_data={MAPPING_COLUMN: mapping}
     )
-    return einsum_name, sims, decompress_data
+    return einsum_name, sims, decompress_data, job_id
 
 def get_single_einsum_jobs(
     spec: Specification,
@@ -817,6 +819,7 @@ def get_single_einsum_jobs(
     rank_variable_bounds: dict[RankVariableName, int] | None = None,
     flattened_arch: list[architecture.Leaf] | None = None,
     tagger: Callable[[Mapping], Tags] | None = None,
+    start_index: int = 0,
 ) -> list[SIM] | tuple[dict[EinsumName, dict[Compatibility, list[SIM]]], DecompressData]:
     einsum_name = EinsumName(einsum_name)
 
@@ -832,19 +835,21 @@ def get_single_einsum_jobs(
     mappings_constraints = tqdm(iterate_mappings_constraints(spec,
                                 einsum_name,
                                 flattened_arch,
-                                rank_variable_bounds),
+                                rank_variable_bounds,
+                                ),
                                 desc=f"Generating storage and loop choices for Einsum {einsum_name}")
 
     return  [
         delayed(_per_proc_compatibility2sim)(
-            mapping,
-            constraints,
-            spec,
-            rank_variable_bounds,
-            intermediate_tensors,
-            flattened_arch,
-            einsum_name,
-            tagger
+            mapping=mapping,
+            constraints=constraints,
+            spec=spec,
+            rank_variable_bounds=rank_variable_bounds,
+            intermediate_tensors=intermediate_tensors,
+            flattened_arch=flattened_arch,
+            einsum_name=einsum_name,
+            tagger=tagger,
+            job_id=start_index + i,
        )
-        for mapping, constraints in mappings_constraints
+        for i, (mapping, constraints) in enumerate(mappings_constraints)
     ]

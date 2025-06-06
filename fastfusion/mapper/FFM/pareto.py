@@ -290,14 +290,12 @@ class DecompressData(NamedTuple):
     
     
 class GroupedDecompressData(NamedTuple):
-    prefix2datalist: dict[EinsumName, list[DecompressData]]
+    prefix2datalist: dict[EinsumName, dict[int, DecompressData]]
     
-    def register_decompress_data(self, einsum_name: EinsumName, decompress_data: DecompressData, mappings: list["PartialMappings"]):
-        target = self.prefix2datalist.setdefault(einsum_name, [])
-        decompress_data_index = len(target)
-        target.append(decompress_data)
-        for m in mappings:
-            m._tuplefy_compress_data(decompress_data_index, decompress_data)
+    def register_decompress_data(self, einsum_name: EinsumName, job_id: int, decompress_data: DecompressData, ):
+        target = self.prefix2datalist.setdefault(einsum_name, {})
+        assert job_id not in target
+        target[job_id] = decompress_data
 
 class PartialMappings:
     def __init__(
@@ -882,11 +880,12 @@ class PartialMappings:
         rename = lambda col: f"{prefix}_{col}" if not col_used_in_pareto(col) else col
         self.data.rename(columns=rename, inplace=True)
         
-    def _compress_data(self, prefix: EinsumName = None) -> pd.DataFrame:
+    def _compress_data(self, prefix: EinsumName = None, job_id: int = None) -> pd.DataFrame:
         self.data[COMPRESSED_INDEX] = self.data.index
         keep_cols = [COMPRESSED_INDEX] + [c for c in self.data.columns if col_used_in_pareto(c)]
         recovery = self.data[[c for c in self.data.columns if c not in keep_cols] + [COMPRESSED_INDEX]]
         self._data = self.data[keep_cols]
+        self._data[COMPRESSED_INDEX] = self._data[COMPRESSED_INDEX].apply(lambda x: (job_id, x))
         if prefix is not None:
             recovery.rename(columns={c: f"{prefix}{c}" for c in recovery.columns}, inplace=True)
             self.data.rename(columns={COMPRESSED_INDEX: f"{prefix}{COMPRESSED_INDEX}"}, inplace=True)
@@ -927,14 +926,14 @@ class PartialMappings:
         
 
     @classmethod
-    def compress_paretos(cls, prefix: EinsumName, paretos: list["PartialMappings"], extra_data: dict[str, Any]) -> DecompressData:
+    def compress_paretos(cls, prefix: EinsumName, paretos: list["PartialMappings"], job_id: int, extra_data: dict[str, Any]) -> DecompressData:
         index = 0
         decompress_data = []
         for p in paretos:
             p.data.reset_index(drop=True, inplace=True)
             p.data.index += index
             index += len(p.data)
-            decompress_data.append(p._compress_data(prefix))
+            decompress_data.append(p._compress_data(prefix, job_id))
             
         decompress_data = pd.concat(decompress_data) if decompress_data else pd.DataFrame()
         decompress_data.reset_index(drop=True, inplace=True)

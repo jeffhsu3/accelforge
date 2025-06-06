@@ -62,23 +62,24 @@ def get_sims(
             einsum_name,
             rank_variable_bounds,
             flattened_architecture,
+            start_index=len(jobs),
             tagger=tagger,
         ))
 
     sims = {einsum_name: [] for einsum_name in spec.workload.einsum_names}
     grouped_decompress_data: GroupedDecompressData = GroupedDecompressData(prefix2datalist={})
-    for einsum_name, new_sims, decompress_data in parallel(
+    for einsum_name, new_sims, decompress_data, job_id in parallel(
         jobs,
         pbar="Generating Partial Mappings",
         return_as="generator_unordered",
     ):
         grouped_decompress_data.register_decompress_data(
             einsum_name,
+            job_id,
             decompress_data,
-            [s.mappings for s in new_sims],
         )
         sims[einsum_name].extend(new_sims)
-            
+
     intermediate_tensors = spec.workload.intermediate_tensors()
     for einsum_name, sims2 in sims.items():
         sims2 = SIM.combine_combineable(sims2, live_tensors=intermediate_tensors, pbar_postfix = f" for {einsum_name}")
