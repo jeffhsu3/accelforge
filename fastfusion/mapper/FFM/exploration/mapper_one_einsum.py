@@ -640,11 +640,15 @@ def add_to_compatibility2sim(compatibility2sim: dict[Compatibility, SIM], sim: S
                 prev.mappings.data[col] = 0
     prev.mappings = PartialMappings.concat([prev.mappings, sim.mappings])
     
-def get_equivalent_sims(sim: SIM) -> list[SIM]:
+def get_equivalent_sims(sim: SIM, tagger: Callable[[Mapping], Tags]) -> list[SIM]:
     equivalent_permutations = sim.compatibility.make_equivalent_permutations()
-    return [SIM(c, sim.mappings) for c in equivalent_permutations]
+    result = []
+    for c in equivalent_permutations:
+        tags = Tags() if tagger is None else tagger(c)
+        if not tags.matches(Tags(("INVALID",))):
+            result.append(SIM(c.update(tags=tags), sim.mappings))
+    return result
 
-    
 def get_compatibility_loops(mapping: Mapping, tile_shapes: list[int]) -> "Mapping":
     compatibility = Mapping(nodes=[])
     i = 0
@@ -761,33 +765,11 @@ def make_sims(
         sim.mappings.data[TAGS_COLUMN] = [compatibility.tags] * len(sim.mappings.data)
         sims.append(sim)
 
-    return sims
-
-    def get_sim(tile_shape, mappings, parallelize_pareto: bool = False):
-        new_compatibility, null_loop_indices = compatibility.populate_tile_shape(tile_shape, rank_variable_bounds)
-        shift_reservations_by_null_loop_indices(mappings, null_loop_indices)
-        sim = SIM(new_compatibility, PartialMappings(mappings, free_to_loop_index=len(new_compatibility.loops), parallelize_pareto=parallelize_pareto))#-1))
-        assert mapping is not None
-        sim.mappings.data[MAPPING_COLUMN] = [id(mapping)] * len(sim.mappings.data)
-        sim.mappings.data[TAGS_COLUMN] = [compatibility.tags] * len(sim.mappings.data)
-        return sim
-
-
-    if len(groups) > 32:
-        sims = parallel(
-            delayed(get_sim)(tile_shape, mappings)
-            for tile_shape, mappings in groups
-        )
-    else:
-        print(f'Parallelizing Pareto')
-        sims = [get_sim(tile_shape, mappings, parallelize_pareto=True) for tile_shape, mappings in groups]
-    
-    compatibility2sim = {}
+    new_sims = []
     for sim in sims:
-        for equivalent_sim in get_equivalent_sims(sim):
-            compatibility2sim.setdefault(equivalent_sim.compatibility, []).append(equivalent_sim)
-    
-    return compatibility2sim
+        for equivalent_sim in get_equivalent_sims(sim, tagger):
+            new_sims.append(equivalent_sim)
+    return new_sims
 
 # =================================================================================================
 # Top level
