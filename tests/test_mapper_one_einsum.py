@@ -44,9 +44,7 @@ class TestExploration(unittest.TestCase):
         rank_variables = einsum.rank_variables
 
         def tagger(pmapping):
-            return get_one_split_tag(pmapping,
-                                     workload.intermediate_tensors(),
-                                     "MainMemory")
+            return get_one_split_tag(pmapping, "MainMemory")
 
         sims, decompress_data = get_sims(spec, einsum_names=["Q"], tagger=tagger)
         for sim in sims['Q']:
