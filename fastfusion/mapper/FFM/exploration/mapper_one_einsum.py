@@ -751,8 +751,11 @@ def make_sims(mapping: Mapping,
     for tile_shape, mappings in groups:
         tensor2size = {}
     
+        dropcols = []
         for tensor in intermediate_tensors: # Sizes are all the same
             tensor2size[tensor] = mappings[tensor2col(tensor)].iloc[0]
+            dropcols.append(tensor2col(tensor))
+        mappings.drop(columns=dropcols, inplace=True)
         
         new_compatibility, null_loop_indices = compatibility.populate_tile_shape(tile_shape, rank_variable_bounds, tensor2size)
         tags = Tags() if tagger is None else tagger(new_compatibility)
