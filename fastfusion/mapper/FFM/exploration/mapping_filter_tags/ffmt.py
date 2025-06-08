@@ -32,9 +32,6 @@ def get_ffmt_matmul_tag(compatibility, pmapping, non_fused_memory):
     if untiled_fused:
         return Tags((FFMT_VALID,))
 
-    for node in pmapping:
-        if isinstance(node, Storage):
-
     min_weight_idx, max_weight_idx, max_non_weight_idx = float('inf'), 0, 0
     max_weight_idx = 0
     for tensor, n_loops in tensor_to_n_fused_loops.items():

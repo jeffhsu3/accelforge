@@ -51,7 +51,10 @@ def get_storage_choices(
                         order.add_together_tensors(in_mapping_together_tensors)
                 required_order[node.name] = order
 
-        for mapping in recursive_order_storage_choices(base_mapping, nodes, all_storage_nodes, required_order):
+        for mapping in recursive_order_storage_choices(base_mapping,
+                                                       nodes,
+                                                       all_storage_nodes,
+                                                       required_order):
             yield mapping, symbol_table
 
 
@@ -70,7 +73,10 @@ def recursive_order_storage_choices(
         mapping.append(choice)
         new_remaining = [c for c in remaining_choices if c != choice]
         if valid_storage_order(mapping, [n.name for n in nodes], required_order):
-            yield from recursive_order_storage_choices(mapping, nodes, new_remaining, required_order)
+            yield from recursive_order_storage_choices(mapping,
+                                                       nodes,
+                                                       new_remaining,
+                                                       required_order)
         mapping.pop()
 
 
@@ -97,12 +103,17 @@ def valid_storage_order(
             if s1 == s2 and s1 in required_orders:
                 for t1 in mapping[i].tensors:
                     for t2 in mapping[j].tensors:
-                        i1 = required_orders[s1].index(t1)
-                        i2 = required_orders[s1].index(t2)
-                        if i1 is None or i2 is None:
+                        idx_of_i_in_order = required_orders[s1].index(t1)
+                        idx_of_j_in_order = required_orders[s1].index(t2)
+
+                        if idx_of_i_in_order is None or idx_of_j_in_order is None:
                             continue
-                        if i1 > i2:
+
+                        if idx_of_i_in_order > idx_of_j_in_order:
                             return False
+
+                        if idx_of_i_in_order == idx_of_j_in_order:
+                            mapping[i]._even_with_below = True
 
             if not (set(mapping[i].tensors) & set(mapping[j].tensors)):
                 continue

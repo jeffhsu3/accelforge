@@ -51,8 +51,9 @@ def insert_temporal_loops(
         if m.memory == first_memory.name:
             while len(split_mapping) > 1:
                 split_mapping[0].extend(split_mapping.pop(1))
-    
-    
+
+
+    accumulative_prev_relevant = []
     full_mapping = []
     seen_tensors = set()
     for i, prev_storages in enumerate(split_mapping):
@@ -63,7 +64,7 @@ def insert_temporal_loops(
         rank_variables = einsum.rank_variables
         rank_variables = {r for r in rank_variables if rank_variable_bounds[r] > 1}
         seen_tensors |= set.union(*(set(t.tensors) for t in prev_storages), set())
-        
+
         # If we haven't seen a tensor yet, must only iterate over relevant rank
         # variables.
         for t in einsum.tensors - seen_tensors:
@@ -71,10 +72,15 @@ def insert_temporal_loops(
 
         # If there is no backing storage in the next block, only include loops
         # that reuse tensors in the previous block.
+        # If must be even, then it has to reuse accumulatively all the storages
+        # above that must be even.
         if not any(s._backing for s in next_storages):
             prev_relevant = [einsum.tensor2rank_variables[t] for s in prev_storages for t in s.tensors]
-            if prev_relevant:
-                rank_variables -= set.intersection(*prev_relevant)
+            if not any(s._even_with_below for s in prev_storages):
+                accumulative_prev_relevant = []
+            accumulative_prev_relevant += prev_relevant
+            if accumulative_prev_relevant:
+                rank_variables -= set.intersection(*accumulative_prev_relevant)
 
         # Only include loops that will index into the next block of storage nodes.
         if next_storages:
