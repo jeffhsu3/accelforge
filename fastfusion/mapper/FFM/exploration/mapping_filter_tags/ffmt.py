@@ -1,4 +1,4 @@
-from fastfusion.frontend.mapping import Iteration, Temporal
+from fastfusion.frontend.mapping import Iteration, Temporal, Storage
 from fastfusion.mapper.FFM.tags import Tags
 
 from .util import get_fused_loops_per_tensor
@@ -10,37 +10,30 @@ FFMT_WEIGHT_UNTILED = "FFMT_WEIGHT_UNTILED"
 FFMT_WEIGHT_TILED = "FFMT_WEIGHT_TILED"
 
 
-def get_ffmt_tag(pmapping, intermediate_tensors, non_fused_memory):
+def get_ffmt_tag(compatibility, pmapping, non_fused_memory):
     einsum_name = pmapping[-1].einsum_name
     if "Matmul" in einsum_name:
-        return get_ffmt_matmul_tag(pmapping,
-                                   intermediate_tensors,
-                                   non_fused_memory)
+        return get_ffmt_matmul_tag(compatibility, pmapping, non_fused_memory)
     else:
-        return get_ffmt_mha_tag(pmapping,
-                                intermediate_tensors,
-                                non_fused_memory)
+        return get_ffmt_mha_tag(compatibility, pmapping, non_fused_memory)
 
 
+def get_ffmt_matmul_tag(compatibility, pmapping, non_fused_memory):
+    unique_loops = set()
+    for storage in compatibility.storage:
+        if storage.resource_name == non_fused_memory:
+            continue
+        unique_loops.add(storage.above_loop_index)
 
-def get_ffmt_matmul_tag(pmapping, intermediate_tensors, non_fused_memory):
-    tensor_to_n_fused_loops = get_fused_loops_per_tensor(pmapping,
-                                                         intermediate_tensors,
-                                                         non_fused_memory)
+    if len(unique_loops) == 0:
+        return Tags()  # unfused is compatible with anything
 
-
-    # TODO: this is *unfused* and *uneven*. Do we need this?
-    # unfused = all(n is None for n in tensor_to_n_fused_loops.values())
-    # if unfused:
-    #     if is_even(tiling, tensor_to_relevant_ranks, skip_tensors=["Filter"]):
-    #         return (FFMT_VALID,)
-    #     return (FFMT_INVALID,)
-
-    untiled_fused = all(n == 0
-                        for t, n in tensor_to_n_fused_loops
-                        if t in intermediate_tensors)
+    untiled_fused = len(unique_loops) == 1 and next(iter(unique_loops)) == 0
     if untiled_fused:
-        return Tags((FFMT_VALID, ))
+        return Tags((FFMT_VALID,))
+
+    for node in pmapping:
+        if isinstance(node, Storage):
 
     min_weight_idx, max_weight_idx, max_non_weight_idx = float('inf'), 0, 0
     max_weight_idx = 0

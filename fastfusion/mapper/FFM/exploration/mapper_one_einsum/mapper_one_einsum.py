@@ -388,7 +388,7 @@ def iterate_mappings_constraints(
         einsum_names = [einsum_names]
     if einsum_names is None:
         einsum_names = [e.name for e in spec.workload.einsums]
-        
+
     if rank_variable_bounds is None:
         rank_variable_bounds = get_rank_variable_bounds(spec, einsum_names)
 
@@ -575,7 +575,7 @@ def make_sims(
 
     for tile_shape, mappings in groups:
         tensor2size = {}
-    
+
         dropcols = []
         for tensor in intermediate_tensors: # Sizes are all the same
             tensor2size[tensor] = mappings[tensor2col(tensor)].iloc[0]

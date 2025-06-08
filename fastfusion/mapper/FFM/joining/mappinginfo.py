@@ -274,7 +274,7 @@ class Compatibility(Updatable):
                 null_loop_indices.add(i)
             else:
                 new_loops[i] = l.update(bound=t)
-                
+
         new_loops = [l for i, l in enumerate(new_loops) if i not in null_loop_indices]
 
         storages = []
