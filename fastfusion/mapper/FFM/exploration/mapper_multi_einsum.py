@@ -37,8 +37,8 @@ def get_sims(
     spec: Specification,
     flattened_architecture: Optional[list[architecture.Leaf]] = None,
     tagger: Callable[[Mapping], Tags] | None = None,
-    einsum_names: Optional[list[EinsumName]] = None,
     metrics: Metrics = Metrics.ENERGY | Metrics.LATENCY,
+    einsum_names: Optional[list[EinsumName]] = None,
 ) -> tuple[dict[EinsumName, list[SIM]], DecompressData]:
     
     print(
