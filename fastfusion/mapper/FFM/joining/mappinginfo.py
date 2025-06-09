@@ -101,6 +101,14 @@ class Loop(Updatable):
             self.bound,
             self.is_spatial,
         )
+        
+    @property
+    def rank_variable_name(self):
+        assert len(self.rank_variable_names) == 1, (
+            f"Loop has more than one rank variable name. Access with"
+            f"the rank_variable_names attribute."
+        )
+        return next(iter(self.rank_variable_names))
 
 
 @dataclass(frozen=True, order=True)
@@ -312,6 +320,13 @@ class Compatibility(Updatable):
         all_permutations = list(itertools.product(*per_block_permutations))
         result =  [self._permute(list(itertools.chain(*loop_changes))) for loop_changes in all_permutations]
         return result
+    
+
+    def get_reservation_by_name(self, name: str) -> TensorStorage:
+        for s in self.storage:
+            if s.name == name:
+                return s
+        raise ValueError(f"No reservation found for {name}")
     # loops = mapping.loops
     # null_loops = []
     # for i, t in enumerate(tile_shape):

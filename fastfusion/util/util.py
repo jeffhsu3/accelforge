@@ -9,8 +9,8 @@ import sys
 
 from tqdm import tqdm
 
-PARALLELIZE = True
-N_PARALLEL_THREADS = 16
+PARALLELIZE = False
+N_PARALLEL_THREADS = 32
 
 
 class fzs(frozenset):
@@ -89,7 +89,7 @@ def parallel(
     delete_job_after: bool = False,
 ):
     jobs = list(jobs)
-
+    
     args = {}
     if return_as is not None:
         args["return_as"] = return_as
@@ -110,7 +110,7 @@ def parallel(
         )
         return {k: v for k, v in r}
 
-    if n_jobs == 1:
+    if n_jobs == 1 or len(jobs) == 1:
         if pbar:
             jobs = tqdm(jobs, total=len(jobs), desc=pbar, leave=True)
         return [j[0](*j[1], **j[2]) for j in jobs]
