@@ -11,7 +11,6 @@ class Metrics(Flag):
     OFF_CHIP_ACCESSES = auto()
     OP_INTENSITY = auto()
     DEBUG = auto()
-    VALID = auto()
     PER_COMPONENT_ACCESSES_ENERGY = auto()
     MAPPING = auto()
 

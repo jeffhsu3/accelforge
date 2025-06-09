@@ -11,9 +11,9 @@ from fastfusion.util import parallel
 
 
 class SIM:
-    def __init__(self, compatibility: Compatibility, mapping: PartialMappings):
+    def __init__(self, compatibility: Compatibility, mappings: PartialMappings):
         self.compatibility: Compatibility = compatibility
-        self.mappings: PartialMappings = mapping
+        self.mappings: PartialMappings = mappings
         self.storage: dict[str, TensorStorage] = {
             t.name: t for t in self.compatibility.storage
         }

@@ -82,7 +82,7 @@ def get_sims(
         )
         sims[einsum_name].extend(new_sims)
 
-    intermediate_tensors = spec.workload.intermediate_tensors()
+    intermediate_tensors = spec.workload.intermediate_tensors
     for einsum_name, sims2 in sims.items():
         sims2 = SIM.combine_combineable(sims2, live_tensors=intermediate_tensors, pbar_postfix = f" for {einsum_name}")
 

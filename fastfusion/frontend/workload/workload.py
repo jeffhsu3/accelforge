@@ -220,6 +220,7 @@ class Workload(ParsableModel):
         global_shape = [self.shape[r] for r in einsum.rank_variables if r in self.shape]
         return " and ".join(term for term in einsum_shape + global_shape)
     
+    @property
     def intermediate_tensors(self) -> set[TensorName]:
         return {t for t in self.tensors if self.einsums_that_read_tensor(t) and self.einsums_that_write_tensor(t)}
 

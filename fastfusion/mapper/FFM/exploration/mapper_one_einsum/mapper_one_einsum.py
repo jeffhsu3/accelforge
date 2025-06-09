@@ -648,7 +648,7 @@ def get_single_einsum_jobs(
         rank_variable_bounds = get_rank_variable_bounds(spec.workload, einsum_name)
     
     workload = spec.workload
-    intermediate_tensors = workload.intermediate_tensors() & workload.einsums[einsum_name].tensor_names
+    intermediate_tensors = workload.intermediate_tensors & workload.einsums[einsum_name].tensor_names
 
     if flattened_arch is None:
         flattened_arch = spec.get_flattened_architecture()

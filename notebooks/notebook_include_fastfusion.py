@@ -6,7 +6,7 @@ import time
 logging.basicConfig(level=logging.WARN)
 
 import numpy as np
-from fastfusion.joining.sim import SIM, TensorStorage
+from fastfusion.mapper.FFM.joining.sim import SIM, TensorStorage
 from tests.util import TEST_TMP_DIR
 
 import logging
@@ -16,10 +16,10 @@ from bindings.config import Config
 
 import pickle
 
-from fastfusion.exploration.mapper_snowcat import mapper
-from fastfusion.joining.simexplore import join_sims
+from fastfusion.mapper.simanneal.simanneal import mapper
+from fastfusion.mapper.FFM.joining.simexplore import join_sims
 from fastfusion.visualization.ski_slope import plot_ski_slope
-from fastfusion.exploration.process_results import Metrics
+from fastfusion.mapper.simanneal.process_results import Metrics
 from pytimeloop.frontend.v4fused import Specification
 from pytimeloop.fastfusion.filter_mappings import get_tileflow_tag_mha, get_ffmt_tag_mha, get_layernorm_tag_mha, get_looptree_tag_mha, get_optimus_tag
 
