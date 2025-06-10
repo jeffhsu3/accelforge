@@ -152,7 +152,13 @@ class Einsum(ParsableModel):
     @property
     def tensor2rank_variables(self) -> dict[TensorName, set[RankVariableName]]:
         return {TensorName(t.name): t.rank_variables for t in self.tensor_accesses}
-    
+
+    @property
+    def tensor2fully_relevant_rank_variables(self) -> dict[TensorName,
+                                                           set[RankVariableName]]:
+        return {TensorName(t.name): t.fully_relevant_rank_variables
+                for t in self.tensor_accesses}
+
     def to_formatted_string(self, compress: bool = False) -> str:
         lhs_join = ",\n" if compress else " , "
         rhs_join = "#215;\n" if compress else " #215; "

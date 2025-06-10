@@ -1,10 +1,10 @@
 from dataclasses import dataclass, field
 from functools import reduce
 from operator import mul
-from typing import Any, Iterable
+from typing import Any
 
 import fastfusion.frontend.mapping as mapping_spec
-from fastfusion.frontend.mapping import Mapping, Spatial, Temporal, Storage, Reservation, Fill, Iteration
+from fastfusion.frontend.mapping import Mapping, Spatial, Temporal, Storage, Reservation, Fill, Iteration, Pattern
 from fastfusion.frontend.workload import (
     Workload,
     TensorName,
@@ -656,41 +656,40 @@ def get_stride_and_tile_shape(node: Iteration, full_shape, n: int):
             return make_possibly_different_last(tile_shape, factor, rank_shape)
     
     elif node.tile_pattern is not None:
-        stride = node["tile_pattern"]["stride"]
+        stride = node.tile_pattern.stride
+        initial_tile_shape = node.tile_pattern.initial_tile_shape
+        tile_shape = node.tile_pattern.tile_shape
 
-        if "first_shape" in node["tile_pattern"]:
-            first_shape = node["tile_pattern"]["first_shape"]
-
-            middle_shape_factor = sympy.floor((rank_shape - first_shape)/stride)
-
-            last_shape = rank_shape - first_shape - stride*middle_shape_factor
-
+        if initial_tile_shape is not None:
+            middle_shape_factor = sympy.floor((rank_shape - initial_tile_shape)/stride)
+            last_shape = rank_shape - initial_tile_shape - stride*middle_shape_factor
             return StrideAndShape(
                 stride,
                 SequenceOfRepatedvalues([
-                    RepeatedValue(first_shape, 1),
+                    RepeatedValue(initial_tile_shape, 1),
                     RepeatedValue(stride, middle_shape_factor),
                     RepeatedValue(last_shape, 1)
                 ])
             )
-        elif "shape" in node["tile_pattern"]:
-            shape = node["tile_pattern"]["shape"]
+        elif tile_shape is not None:
+            raise ValueError('Recomputation not yet supported')
+            # shape = node["tile_pattern"]["shape"]
 
-            factor = sympy.ceiling(rank_shape / stride)
+            # factor = sympy.ceiling(rank_shape / stride)
 
-            common_case_factor = sympy.floor((rank_shape - shape)/stride)
+            # common_case_factor = sympy.floor((rank_shape - shape)/stride)
 
-            iterationvar = sympy.symbols(f"iteration{n}")
-            last_shapes = rank_shape - iterationvar*stride
-            last_case_factor = factor - common_case_factor
+            # iterationvar = sympy.symbols(f"iteration{n}")
+            # last_shapes = rank_shape - iterationvar*stride
+            # last_case_factor = factor - common_case_factor
 
-            return StrideAndShape(
-                stride,
-                SequenceOfRepatedvalues([
-                    RepeatedValue(shape, common_case_factor),
-                    RepeatedValue(last_shapes, last_case_factor)
-                ])
-            )
+            # return StrideAndShape(
+            #     stride,
+            #     SequenceOfRepatedvalues([
+            #         RepeatedValue(shape, common_case_factor),
+            #         RepeatedValue(last_shapes, last_case_factor)
+            #     ])
+            # )
     else:
         raise ValueError(f"Neither tile_shape, factor, nor tile_pattern found")
 
@@ -736,5 +735,11 @@ def insert_sympy_symbols(mapping):
             elif node.loop_bound == SYMBOL:
                 node.loop_bound = sympy.symbols(f'loopbound{loop_idx}', positive=True, integer=True)
                 symbols.append(node.loop_bound)
+            elif node.tile_pattern == SYMBOL:
+                node.tile_pattern = Pattern()
+                node.tile_pattern.initial_tile_shape = sympy.symbols(f'initial{loop_idx}')
+                node.tile_pattern.stride = sympy.symbols(f'stride{loop_idx}')
+                symbols.append(node.tile_pattern.initial_tile_shape)
+                symbols.append(node.tile_pattern.stride)
             loop_idx += 1
     return symbols

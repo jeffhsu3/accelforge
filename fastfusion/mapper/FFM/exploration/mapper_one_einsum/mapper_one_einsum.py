@@ -44,7 +44,13 @@ def insert_temporal_loops(
     # - Below the last instance of the first memory
     # - Between any two storage nodes
     # - After the last storage node
-    
+
+    # TODO: fix jank
+    if 'PwiseA' in einsum.name:
+        MAYBE_TILE_PATTERN_RANKS = {'p0', 'q0'}
+    else:
+        MAYBE_TILE_PATTERN_RANKS = set()
+
     split_mapping = [[]]
     for m in mapping:
         split_mapping.append([])
@@ -66,10 +72,10 @@ def insert_temporal_loops(
         rank_variables = {r for r in rank_variables if rank_variable_bounds[r] > 1}
         seen_tensors |= set.union(*(set(t.tensors) for t in prev_storages), set())
 
-        # If we haven't seen a tensor yet, must only iterate over relevant rank
-        # variables.
+        # If we haven't seen a tensor yet, must only iterate over fully-relevant
+        # rank variables.
         for t in einsum.tensors - seen_tensors:
-            rank_variables &= einsum.tensor2rank_variables[t]
+            rank_variables &= einsum.tensor2fully_relevant_rank_variables[t]
 
         # If there is no backing storage in the next block, only include loops
         # that reuse at least one tensor in the previous block.
@@ -77,12 +83,12 @@ def insert_temporal_loops(
         # above that must be even.
         if not any(s._backing for s in next_storages):
             prev_relevant_uneven = [
-                einsum.tensor2rank_variables[t]
+                einsum.tensor2fully_relevant_rank_variables[t]
                 for s in prev_storages for t in s.tensors
                 if not s._even_with_below
             ]
             prev_relevant_even = [
-                einsum.tensor2rank_variables[t]
+                einsum.tensor2fully_relevant_rank_variables[t]
                 for s in prev_storages for t in s.tensors
                 if s._even_with_below
             ]
@@ -110,8 +116,38 @@ def insert_temporal_loops(
         # if i == len(split_mapping) - 1:
         #     rank_variables = set(einsum.rank_variables)
 
-        if rank_variables:
+        if not rank_variables:
+            continue
+
+        if len(prev_storages) > 1 or len(prev_storages[0].tensors) > 1:
             full_mapping.append(Temporal(rank_variable=rank_variables, tile_shape='symbol'))
+        else:
+            print('HERE', prev_storages[0].tensors)
+            for t in prev_storages[0].tensors:
+                print(t)
+            assert len(prev_storages[0].tensors) == 1
+            tensor = next(iter(prev_storages[0].tensors))
+            fully_relevant_rank_vars = \
+                rank_variables & einsum.tensor2fully_relevant_rank_variables[tensor]
+            irrelevant_rank_vars = \
+                rank_variables - einsum.tensor2fully_relevant_rank_variables[tensor]
+            partially_relevant_rank_vars = \
+                rank_variables - irrelevant_rank_vars - fully_relevant_rank_vars
+
+            if einsum.output_tensors() & seen_tensors != einsum.output_tensors:
+                maybe_tile_pattern_rank_vars = MAYBE_TILE_PATTERN_RANKS & rank_variables
+            else:
+                maybe_tile_pattern_rank_vars = set()
+
+            if maybe_tile_pattern_rank_vars:
+                full_mapping.append(Temporal(rank_variable=fully_relevant_rank_vars-maybe_tile_pattern_rank_vars,
+                                             tile_shape='symbol'))
+                full_mapping.append(Temporal(rank_variable=maybe_tile_pattern_rank_vars,
+                                             tile_pattern='symbol'))
+            else:
+                full_mapping.append(Temporal(rank_variable=fully_relevant_rank_vars, tile_shape='symbol'))
+            full_mapping.append(Temporal(rank_variable=partially_relevant_rank_vars, tile_shape='symbol'))
+            full_mapping.append(Temporal(rank_variable=irrelevant_rank_vars, tile_shape='symbol'))
 
     full_mapping = list(full_mapping)
 

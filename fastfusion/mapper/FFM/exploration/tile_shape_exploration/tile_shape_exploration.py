@@ -1,4 +1,5 @@
 from combinatorics.integer import *
+from dataclasses import dataclass, field
 
 import numpy as np
 
@@ -10,7 +11,7 @@ import fastfusion.frontend.architecture as architecture
 from fastfusion.frontend.architecture import Memory
 from fastfusion.frontend.constraints import Comparison, TileShapeConstraintLambda
 from fastfusion.frontend.workload.isl import get_rank_variable_bounds
-from fastfusion.frontend.mapping import Iteration, Temporal, Spatial, Storage
+from fastfusion.frontend.mapping import Temporal, Spatial, Storage, Pattern
 from fastfusion.frontend.specification import Specification
 
 from fastfusion.frontend.workload.workload import RankVariableName
@@ -31,12 +32,10 @@ class GivenShape(int):
         return f'GivenShape({super().__repr__()})'
 
 
-class NumLoops(int):
-    def __str__(self):
-        return f'NumLoops({super().__repr__()})'
-
-    def __repr__(self):
-        return f'NumLoops({super().__repr__()})'
+@dataclass(repr=True)
+class NumLoops:
+    n_loops: int = 0
+    initial_delta_choices: dict[int, set[int]] = field(default_factory=dict)
 
 
 class TilingSegment:
@@ -46,7 +45,15 @@ class TilingSegment:
         self.is_symbol: list[bool] = []
 
     def add_symbol(self, loop_idx: int):
-        self.data[-1] = NumLoops(self.data[-1] + 1)
+        self.data[-1].n_loops += 1
+        self.indices.append(loop_idx)
+        self.is_symbol.append(True)
+
+    def add_pattern(self, loop_idx: int, initial_delta_choices):
+        last_data = self.data[-1]
+        last_data.initial_delta_choices[last_data.n_loops] = \
+            initial_delta_choices
+        last_data.n_loops += 1
         self.indices.append(loop_idx)
         self.is_symbol.append(True)
 
@@ -59,19 +66,20 @@ class TilingSegment:
         self.is_symbol.append(False)
 
     def finish(self):
-        if self.data[-1] == NumLoops(0):
+        if isinstance(self.data[-1], NumLoops) and self.data[-1].n_loops == 0:
             self.data.pop()
         assert self.data[-1] == GivenShape(1)
 
     def iterate_segments(self):
         """Returns iterator over tuples (n_loops, max_shape, min_shape)."""
         for i in range(0, len(self.data)-1, 2):
-            if self.data[i+1] == NumLoops(0):
+            if self.data[i+1].n_loops == 0:
                 continue
             max_shape = self.data[i]
-            n_loops = self.data[i+1]
+            n_loops = self.data[i+1].n_loops
+            initial_delta_choices = self.data[i+1].initial_delta_choices
             min_shape = self.data[i+2]
-            yield (n_loops, max_shape, min_shape)
+            yield (n_loops, initial_delta_choices, max_shape, min_shape)
 
 
 def explore_tile_shapes(pmapping, constraints, specification: Specification, flattened_arch, metrics: metrics.Metrics):
@@ -324,7 +332,7 @@ def generate_tile_shapes(pmapping, constraints, usage_df, utilization_df, specif
         rank_var_and_choices.pop(best_indices[1])
         rank_var_and_choices.pop(best_indices[0])
         rank_var_and_choices.append(best_combined)
-        
+
     # Now pick the smallest choices
     rank_var_and_choices.sort(key=lambda x: x[-1].shape[0], reverse=True)
     while len(rank_var_and_choices) > 1:
@@ -354,7 +362,8 @@ def invert_indices(inverted_indices):
 
 def collect_tiling_segments(
     pmapping,
-    rank_shape: dict
+    rank_shape: dict,
+    initial_delta_choices: dict[str, set[int]]={}
 ) -> dict[str, TilingSegment]:
     rank_var_to_tiling_segments = {}
     loop_idx = 0
@@ -362,6 +371,7 @@ def collect_tiling_segments(
         if isinstance(node, Temporal) or isinstance(node, Spatial):
             rank_var = node.rank_variable
             tile_shape = node.tile_shape
+            tile_pattern = node.tile_pattern
 
             if rank_var not in rank_var_to_tiling_segments:
                 rank_var_to_tiling_segments[rank_var] = \
@@ -372,6 +382,20 @@ def collect_tiling_segments(
                 tiling_segment.add_symbol(loop_idx)
             elif isinstance(tile_shape, int):
                 tiling_segment.add_tile_shape(tile_shape, loop_idx)
+            elif isinstance(tile_pattern, Pattern):
+                stride = tile_pattern.stride
+                initial_tile_shape = tile_pattern.initial_tile_shape
+                pattern_shape = tile_pattern.tile_shape
+                if pattern_shape is not None:
+                    raise ValueError('Recomputation not yet supported')
+                assert stride is not None and initial_tile_shape is not None
+                if isinstance(stride, int):
+                    tiling_segment.add_tile_shape(stride, loop_idx)
+                elif isinstance(stride, sympy.Symbol):
+                    tiling_segment.add_pattern(loop_idx,
+                                               initial_delta_choices[rank_var])
+                else:
+                    raise RuntimeError('BUG')
             else:
                 raise NotImplementedError(f'Unsupported tile shape {tile_shape}')
 
@@ -386,7 +410,7 @@ def collect_tiling_segments(
 def make_shapes_for_one_rank(tiling_segments: TilingSegment):
     all_tile_shapes = None
     total_loops = 0
-    for n_loops, max_shape, min_shape in tiling_segments.iterate_segments():
+    for n_loops, initial_delta_choices, max_shape, min_shape in tiling_segments.iterate_segments():
         total_loops += n_loops
 
         factors = integer_factorizations_to_n_parts(max_shape, n_loops+1)
@@ -394,6 +418,15 @@ def make_shapes_for_one_rank(tiling_segments: TilingSegment):
         tile_shape = max_shape // np.cumprod(factors, axis=1)
         tile_shape = tile_shape.astype(np.int64)
         tile_shape = tile_shape[np.all(tile_shape >= min_shape, axis=1), :]
+
+        for i in sorted(initial_delta_choices, reverse=True):
+            choices = np.array(initial_delta_choices[i]).reshape(-1, 1)
+            tile_shape = np.concatenate((
+                    np.tile(tile_shape[:,:i+1], (choices.shape[0], 1)),
+                    np.repeat(choices, repeats=tile_shape.shape[0], axis=0),
+                    np.tile(tile_shape[:,i+1:], (choices.shape[0], 1))
+                ), axis=1)
+            tile_shape[:,i+1] += tile_shape[:,i]
 
         if all_tile_shapes is None:
             all_tile_shapes = tile_shape

@@ -74,7 +74,7 @@ class Iteration(MappingNode):
     rank_variable: Union[set[RankVariableName], RankVariableName]
     loop_bound: ParsesTo[Union[Literal['symbol'], int, None]] = None
     tile_shape: ParsesTo[Union[Literal['symbol'], int, None]] = None
-    tile_pattern: ParsesTo[Union[Pattern, None]] = None
+    tile_pattern: ParsesTo[Union[Literal['symbol'], Pattern, None]] = None
     assume_perfect_factor: bool = True
     _fused: bool = False
 
