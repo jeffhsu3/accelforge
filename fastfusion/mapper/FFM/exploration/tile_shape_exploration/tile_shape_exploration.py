@@ -96,8 +96,6 @@ def explore_tile_shapes(pmapping, constraints, specification: Specification, fla
     compiled_utilization_df = compile_dict(symbols, utilization_df)
 
     tile_shapes, is_symbol, total_pmappings = generate_tile_shapes(pmapping, constraints, compiled_per_memory_occupancy_df, compiled_utilization_df, specification)
-    # print(symbols)
-    # print(tile_shapes)
 
     df = {}
     for i in range(tile_shapes.shape[1]):
@@ -448,15 +446,24 @@ def make_shapes_for_one_rank(tiling_segments: TilingSegment):
 
         for i in sorted(initial_delta_choices, reverse=True):
             choices = np.array(initial_delta_choices[i]).reshape(-1, 1).astype(np.int64)
-            # print('CHOICES', choices)
-            # print('TILE SHAPE', tile_shape)
             tile_shape = np.concatenate((
                     np.tile(tile_shape[:,:i+1], (choices.shape[0], 1)),
                     np.repeat(choices, repeats=tile_shape.shape[0], axis=0),
                     np.tile(tile_shape[:,i+1:], (choices.shape[0], 1))
                 ), axis=1)
             tile_shape[:,i+1] += tile_shape[:,i]
-            # print('TILE SHAPE', tile_shape)
+
+            if i >= 1:
+                mask_full_tile = tile_shape[:,i] == tile_shape[:,i-1]
+            else:
+                mask_full_tile = tile_shape[:,i] == max_shape
+            tile_shape[mask_full_tile,i+1] = tile_shape[mask_full_tile,i]
+
+            if i >= 1:
+                mask_valid_initial = tile_shape[:,i+1] <= tile_shape[:,i-1]
+            else:
+                mask_valid_initial = tile_shape[:,i+1] <= max_shape
+            tile_shape = tile_shape[mask_valid_initial,:]
 
         if all_tile_shapes is None:
             all_tile_shapes = tile_shape
@@ -607,8 +614,10 @@ def get_initial_delta_choices(producer_name: str, workload: Workload):
                 for rank_var_set_to_one in cons_rank_vars:
                     original_shape = cons_shape[rank_var_set_to_one]
                     cons_shape[rank_var_set_to_one] = 1
-                    choices.append(compute_rank_occupancy(projection[cons_rank],
-                                                          cons_shape))
+                    choices.append(
+                        compute_rank_occupancy(projection[cons_rank], cons_shape)
+                        - 1
+                    )
                     cons_shape[rank_var_set_to_one] = original_shape
 
     return rank_var2choices
