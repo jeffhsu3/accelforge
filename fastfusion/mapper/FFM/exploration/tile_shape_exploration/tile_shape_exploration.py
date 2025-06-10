@@ -21,6 +21,7 @@ from fastfusion.model.looptree.energy import compute_energy_from_actions, gather
 from fastfusion.model.looptree.latency import get_latency
 
 from fastfusion.mapper.FFM.pareto import nameloop2col, tensor2col
+from fastfusion.mapper.FFM.exploration.metrics import Metrics
 
 
 
@@ -528,10 +529,10 @@ def run_model(pmapping, spec, flattened_arch: list[architecture.Leaf], metrics: 
                 running_total += occupancies[n_loop]
                 df[nameloop2col(memory, n_loop)] = running_total
 
-    if metrics.LATENCY:
+    if metrics & Metrics.LATENCY:
         df['metric_Latency'] = overall_latency
 
-    if metrics.ENERGY:
+    if metrics & Metrics.ENERGY:
         df['metric_Energy'] = sum(energy.values())
 
     per_memory_usage_df = {}
