@@ -1,6 +1,4 @@
 from dataclasses import dataclass, field
-from functools import reduce
-from operator import mul
 from typing import Any
 
 import fastfusion.frontend.mapping as mapping_spec
@@ -13,6 +11,7 @@ from fastfusion.frontend.workload import (
 from fastfusion.frontend.workload.symbolic import (
     get_projection_expr,
     get_rank_variable_relevancy,
+    compute_dense_tile_occupancy,
     Irrelevant,
     Relevant,
     PartiallyRelevant
@@ -350,9 +349,10 @@ def analyze_temporal(node_idx,
 
             accumulated_buffet_stats[buffet] = accumulated_stats
 
-        reduce_dicts(child_result.temporal_steps,
-                     result_accumulator.temporal_steps,
-                     Max)
+        for einsum, child_steps in child_result.temporal_steps.items():
+            if einsum not in result_accumulator.temporal_steps:
+                result_accumulator.temporal_steps[einsum] = 0
+            result_accumulator.temporal_steps[einsum] += child_steps*shape_repeats
 
         for key, child_fanout in child_result.fanout.items():
             if key not in result_accumulator.fanout:
@@ -450,9 +450,14 @@ def analyze_spatial(node_idx, current_shape, info: AnalysisInfo):
 
             accumulated_buffet_stats[buffet] = accumulated_stats
 
-        reduce_dicts(child_result.temporal_steps,
-                     result_accumulator.temporal_steps,
-                     Max)
+        for einsum, child_steps in child_result.temporal_steps.items():
+            if einsum not in result_accumulator.temporal_steps:
+                result_accumulator.temporal_steps[einsum] = child_steps
+            else:
+                result_accumulator.temporal_steps[einsum] = Max(
+                    result_accumulator.temporal_steps[einsum],
+                    child_steps
+                )
 
         my_key = (node.across, einsum_name)
 
@@ -710,20 +715,6 @@ def make_possibly_different_last(common_tile_shape, factor, full_shape):
     return StrideAndShape(common_tile_shape, all_shapes)
 
 
-def compute_dense_tile_occupancy(projection_expr, rank_variable_shapes):
-    substitutions = [
-        (rank_variable, rank_variable_shape - 1)
-        for rank_variable, rank_variable_shape in rank_variable_shapes.items()
-    ]
-    return reduce(
-        mul,
-        [
-            index_expr.subs(substitutions) + 1
-            for index_expr in projection_expr.values()
-        ]
-    )
-
-
 def insert_sympy_symbols(mapping):
     loop_idx = 0
     symbols = []
@@ -736,10 +727,10 @@ def insert_sympy_symbols(mapping):
                 node.loop_bound = sympy.symbols(f'loopbound{loop_idx}', positive=True, integer=True)
                 symbols.append(node.loop_bound)
             elif node.tile_pattern == SYMBOL:
-                node.tile_pattern = Pattern()
-                node.tile_pattern.initial_tile_shape = sympy.symbols(f'initial{loop_idx}')
-                node.tile_pattern.stride = sympy.symbols(f'stride{loop_idx}')
-                symbols.append(node.tile_pattern.initial_tile_shape)
+                node.tile_pattern = Pattern(stride=0)
+                node.tile_pattern.stride = sympy.symbols(f'stride{loop_idx}', positive=True, integer=True)
+                node.tile_pattern.initial_tile_shape = sympy.symbols(f'initial{loop_idx}', positive=True, integer=True)
                 symbols.append(node.tile_pattern.stride)
+                symbols.append(node.tile_pattern.initial_tile_shape)
             loop_idx += 1
     return symbols

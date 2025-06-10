@@ -10,7 +10,9 @@ import pandas as pd
 import fastfusion.frontend.architecture as architecture
 from fastfusion.frontend.architecture import Memory
 from fastfusion.frontend.constraints import Comparison, TileShapeConstraintLambda
+from fastfusion.frontend.workload import Workload
 from fastfusion.frontend.workload.isl import get_rank_variable_bounds
+from fastfusion.frontend.workload.symbolic import get_projection_expr, compute_rank_occupancy
 from fastfusion.frontend.mapping import Temporal, Spatial, Storage, Pattern
 from fastfusion.frontend.specification import Specification
 
@@ -56,6 +58,8 @@ class TilingSegment:
             initial_delta_choices
         last_data.n_loops += 1
         self.indices.append(loop_idx)
+        self.indices.append(loop_idx+1)
+        self.is_symbol.append(True)
         self.is_symbol.append(True)
 
     def add_tile_shape(self, shape, loop_idx: int):
@@ -92,6 +96,8 @@ def explore_tile_shapes(pmapping, constraints, specification: Specification, fla
     compiled_utilization_df = compile_dict(symbols, utilization_df)
 
     tile_shapes, is_symbol, total_pmappings = generate_tile_shapes(pmapping, constraints, compiled_per_memory_occupancy_df, compiled_utilization_df, specification)
+    # print(symbols)
+    # print(tile_shapes)
 
     df = {}
     for i in range(tile_shapes.shape[1]):
@@ -120,9 +126,11 @@ def generate_tile_shapes(pmapping, constraints, usage_df, utilization_df, specif
     pmapping = pmapping.nodes
     workload = specification.workload
 
+    initial_delta_choices = get_initial_delta_choices(pmapping[-1].einsum, workload)
+
     shape = get_rank_variable_bounds(workload, pmapping[-1].einsum)
 
-    rank_var_to_tiling_segments = collect_tiling_segments(pmapping, shape)
+    rank_var_to_tiling_segments = collect_tiling_segments(pmapping, shape, initial_delta_choices)
 
     rank_var_and_choices: list[tuple[frozenset[str], list[int], list[bool], np.array]] = []
     for rank_var, tiling_segments in rank_var_to_tiling_segments.items():
@@ -136,11 +144,15 @@ def generate_tile_shapes(pmapping, constraints, usage_df, utilization_df, specif
         for other_rank, other_segments in rank_var_to_tiling_segments.items():
             if rank_var == other_rank:
                 continue
-            other_n_loops = len(other_segments.indices)
             indices.extend(other_segments.indices)
             is_symbols.extend(other_segments.is_symbol)
             choices = np.concatenate(
-                (choices, np.ones((n_rows, other_n_loops), dtype=np.int64)),
+                (
+                    choices,
+                    np.repeat(make_ones_for_one_rank(other_segments),
+                              repeats=choices.shape[0],
+                              axis=0)
+                ),
                 axis=1
             )
 
@@ -178,7 +190,7 @@ def generate_tile_shapes(pmapping, constraints, usage_df, utilization_df, specif
             return good_choices, is_symbols, 0
 
         rank_var_and_choices.append((
-            frozenset(rank_var),
+            frozenset((rank_var,)),
             tiling_segments.indices.copy(),
             tiling_segments.is_symbol.copy(),
             good_choices[:,:n_loops]
@@ -435,13 +447,16 @@ def make_shapes_for_one_rank(tiling_segments: TilingSegment):
         tile_shape = tile_shape[np.all(tile_shape >= min_shape, axis=1), :]
 
         for i in sorted(initial_delta_choices, reverse=True):
-            choices = np.array(initial_delta_choices[i]).reshape(-1, 1)
+            choices = np.array(initial_delta_choices[i]).reshape(-1, 1).astype(np.int64)
+            # print('CHOICES', choices)
+            # print('TILE SHAPE', tile_shape)
             tile_shape = np.concatenate((
                     np.tile(tile_shape[:,:i+1], (choices.shape[0], 1)),
                     np.repeat(choices, repeats=tile_shape.shape[0], axis=0),
                     np.tile(tile_shape[:,i+1:], (choices.shape[0], 1))
                 ), axis=1)
             tile_shape[:,i+1] += tile_shape[:,i]
+            # print('TILE SHAPE', tile_shape)
 
         if all_tile_shapes is None:
             all_tile_shapes = tile_shape
@@ -451,6 +466,14 @@ def make_shapes_for_one_rank(tiling_segments: TilingSegment):
             tile_shape = np.repeat(tile_shape, repeats=all_tile_shapes_n_rows, axis=0)
             all_tile_shapes = np.concatenate((all_tile_shapes, tile_shape), axis=1)
     return all_tile_shapes
+
+
+def make_ones_for_one_rank(tiling_segments: TilingSegment):
+    total_cols = 0
+    for n_loops, initial_delta_choices, max_shape, min_shape in tiling_segments.iterate_segments():
+        total_cols += n_loops + len(initial_delta_choices.keys())
+    return np.ones((1, total_cols))
+
 
 
 def set_last_tile_shape_to_one(pmapping):
@@ -553,3 +576,39 @@ def compile_dict(symbols, dictionary):
         key: sympy.lambdify(symbols, value)
         for key, value in dictionary.items()
     }
+
+
+def get_initial_delta_choices(producer_name: str, workload: Workload):
+    producer = workload.einsums[producer_name]
+    output_tensors = producer.output_tensors()
+    if len(output_tensors) > 1:
+        raise ValueError('Does not support more output tensors than one.')
+
+    rank_var2choices: dict[str, list] = {}
+    for tensor in output_tensors:
+        prod_rank2rank_vars = producer.tensor_accesses[tensor].rank2rank_variables
+        for consumer in workload.einsums_that_read_tensor(tensor):
+            projection = get_projection_expr(consumer, tensor)
+            cons_shape = get_rank_variable_bounds(workload, consumer.name)
+
+            cons_rank2rank_vars = consumer.tensor_accesses[tensor].rank2rank_variables
+            for cons_rank, cons_rank_vars in cons_rank2rank_vars.items():
+                if cons_rank not in prod_rank2rank_vars:
+                    continue
+                if len(cons_rank_vars) == 1:
+                    continue  # Not an affine expr at the consumer
+                prod_rank_vars = prod_rank2rank_vars[cons_rank]
+                if len(prod_rank_vars) != 1:
+                    continue  # Unclear what to do in this case
+
+                prod_rank_var = next(iter(prod_rank_vars))
+
+                choices = rank_var2choices.setdefault(prod_rank_var, [])
+                for rank_var_set_to_one in cons_rank_vars:
+                    original_shape = cons_shape[rank_var_set_to_one]
+                    cons_shape[rank_var_set_to_one] = 1
+                    choices.append(compute_rank_occupancy(projection[cons_rank],
+                                                          cons_shape))
+                    cons_shape[rank_var_set_to_one] = original_shape
+
+    return rank_var2choices

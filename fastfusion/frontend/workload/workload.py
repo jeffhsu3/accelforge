@@ -67,6 +67,14 @@ class TensorAccess(ParsableModel):
         return "".join(string)
 
     @property
+    def rank2rank_variables(self) -> dict[RankName, set[RankVariableName]]:
+        return {
+            RankName(rank): set(RankVariableName(rank_var)
+                                for rank_var in re.findall(ISL_REGEX, projection))
+            for rank, projection in self.projection.items()
+        }
+
+    @property
     def ranks(self) -> tuple[RankName, ...]:
         return tuple(RankName(x) for x in self.projection.keys())
 

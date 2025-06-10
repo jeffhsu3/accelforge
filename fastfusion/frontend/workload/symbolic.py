@@ -1,12 +1,14 @@
 from dataclasses import dataclass
 from typing import Any
+from functools import reduce
+from operator import mul
 
 import sympy
 
 from .workload import TensorName, Einsum
 
 
-def get_projection_expr(einsum: Einsum, tensor: TensorName):
+def get_projection_expr(einsum: Einsum, tensor: TensorName) -> dict[str, sympy.Expr]:
     projection = einsum.tensor_accesses[tensor].projection
     return {
         rank_name: sympy.parsing.sympy_parser.parse_expr(proj_str)
@@ -47,3 +49,31 @@ def get_rank_variable_relevancy(einsum: Einsum,
 
             break
     return relevancy
+
+
+def compute_dense_tile_occupancy(
+    projection_expr: dict[str, sympy.Expr],
+    rank_variable_shapes: dict
+):
+    substitutions = [
+        (rank_variable, rank_variable_shape - 1)
+        for rank_variable, rank_variable_shape in rank_variable_shapes.items()
+    ]
+    return reduce(
+        mul,
+        [
+            index_expr.subs(substitutions) + 1
+            for index_expr in projection_expr.values()
+        ]
+    )
+
+
+def compute_rank_occupancy(
+    projection_expr: sympy.Expr,
+    rank_variable_shapes: dict
+):
+    substitutions = [
+        (rank_variable, rank_variable_shape - 1)
+        for rank_variable, rank_variable_shape in rank_variable_shapes.items()
+    ]
+    return projection_expr.subs(substitutions) + 1

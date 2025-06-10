@@ -2,7 +2,7 @@ import copy
 import itertools
 from collections import defaultdict
 from collections.abc import Sequence
-from typing import Any, Callable, List
+from typing import Callable, List
 
 from joblib import delayed
 from pandas import DataFrame
@@ -14,7 +14,8 @@ from fastfusion.frontend.mapping import Iteration, Mapping, MappingNode, Storage
 from fastfusion.frontend.mapping import Reservation as ReservationNode
 from fastfusion.frontend.specification import Specification
 from fastfusion.frontend.workload.isl import get_rank_variable_bounds
-from fastfusion.frontend.workload.workload import Einsum, EinsumName, RankVariableName, TensorName
+from fastfusion.frontend.workload.workload import Einsum, EinsumName, RankVariableName, TensorName, Workload
+from fastfusion.frontend.workload.symbolic import get_projection_expr
 
 from fastfusion.mapper.FFM.exploration import metrics
 from fastfusion.mapper.FFM.exploration.tile_shape_exploration import explore_tile_shapes
@@ -39,17 +40,12 @@ def insert_temporal_loops(
     einsum: Einsum,
     first_memory: architecture.Memory,
     rank_variable_bounds: dict[RankVariableName, int],
+    ranks_with_tile_pattern: set = set()
 ):
     # First establish insertion points. Insertion points are:
     # - Below the last instance of the first memory
     # - Between any two storage nodes
     # - After the last storage node
-
-    # TODO: fix jank
-    if 'PwiseA' in einsum.name:
-        MAYBE_TILE_PATTERN_RANKS = {'p0', 'q0'}
-    else:
-        MAYBE_TILE_PATTERN_RANKS = set()
 
     split_mapping = [[]]
     for m in mapping:
@@ -119,12 +115,9 @@ def insert_temporal_loops(
         if not rank_variables:
             continue
 
-        if len(prev_storages) > 1 or len(prev_storages[0].tensors) > 1:
+        if len(prev_storages) != 1 or len(prev_storages[0].tensors) > 1:
             full_mapping.append(Temporal(rank_variable=rank_variables, tile_shape='symbol'))
         else:
-            print('HERE', prev_storages[0].tensors)
-            for t in prev_storages[0].tensors:
-                print(t)
             assert len(prev_storages[0].tensors) == 1
             tensor = next(iter(prev_storages[0].tensors))
             fully_relevant_rank_vars = \
@@ -135,7 +128,7 @@ def insert_temporal_loops(
                 rank_variables - irrelevant_rank_vars - fully_relevant_rank_vars
 
             if einsum.output_tensors() & seen_tensors != einsum.output_tensors:
-                maybe_tile_pattern_rank_vars = MAYBE_TILE_PATTERN_RANKS & rank_variables
+                maybe_tile_pattern_rank_vars = ranks_with_tile_pattern & rank_variables
             else:
                 maybe_tile_pattern_rank_vars = set()
 
@@ -363,6 +356,8 @@ def iterate_mappings_no_constraints(
     if first_memory is None:
         raise ValueError("No memory found in architecture")
 
+    ranks_with_tile_pattern = get_ranks_with_tile_pattern(einsum_name, spec.workload)
+
     symbol_table = spec.workload.get_constraint_symbol_table(einsum_name, spec.renames)
     einsum = spec.workload.einsums[einsum_name]
     for mapping, symbol_table in get_storage_choices(arch_flattened, symbol_table, spec):
@@ -371,7 +366,7 @@ def iterate_mappings_no_constraints(
             mapping = timeloop_style_even(mapping)
         label_backing_storages(mapping)
         # print(", ".join(m.compact_string() for m in mapping))
-        mapping = insert_temporal_loops(mapping, einsum, first_memory, rank_variable_bounds)
+        mapping = insert_temporal_loops(mapping, einsum, first_memory, rank_variable_bounds, ranks_with_tile_pattern)
         # print(", ".join(m.compact_string() for m in mapping))
         insert_spatial_loops(mapping, einsum, arch_flattened, rank_variable_bounds)
         # print(", ".join(m.compact_string() for m in mapping))
@@ -779,3 +774,27 @@ def label_backing_storages(mapping: Sequence[MappingNode]):
             s._backing = tensors - seen_tensors
             s._must_keep_tensors.extend(tensors - seen_tensors) # Backed tensors must be kept.
             seen_tensors.update(tensors)
+
+
+def get_ranks_with_tile_pattern(producer_name, workload):
+    producer = workload.einsums[producer_name]
+    output_tensors = producer.output_tensors()
+    if len(output_tensors) > 1:
+        return set()
+
+    ranks_with_tile_pattern = set()
+    for tensor in output_tensors:
+        prod_rank2rank_vars = producer.tensor_accesses[tensor].rank2rank_variables
+        for consumer in workload.einsums_that_read_tensor(tensor):
+            cons_rank2rank_vars = consumer.tensor_accesses[tensor].rank2rank_variables
+            for cons_rank, cons_rank_vars in cons_rank2rank_vars.items():
+                if cons_rank not in prod_rank2rank_vars:
+                    continue
+                if len(cons_rank_vars) == 1:
+                    continue  # Not an affine expr at the consumer
+                prod_rank_vars = prod_rank2rank_vars[cons_rank]
+                if len(prod_rank_vars) != 1:
+                    continue  # Unclear what to do in this case
+                prod_rank_var = next(iter(prod_rank_vars))
+                ranks_with_tile_pattern.add(prod_rank_var)
+    return ranks_with_tile_pattern
