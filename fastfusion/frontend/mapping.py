@@ -272,6 +272,27 @@ class Nested(MappingNodeWithChildren):
                 f"Could not find shared backing storage node between {self} and {other}"
             )
 
+    def clear_null_loops(self):
+        to_remove = []
+        for i, node in enumerate(self.nodes):
+            if not isinstance(node, Iteration):
+                continue
+            if node.loop_bound is not None and node.loop_bound == 1:
+                to_remove.append(i)
+        
+        for i, node in enumerate(self.nodes):
+            for j, node2 in enumerate(self.nodes):
+                if i >= j:
+                    continue
+                if not isinstance(node, Iteration) or not isinstance(node2, Iteration):
+                    continue
+                if node.rank_variable != node2.rank_variable:
+                    continue
+                if node.tile_shape is not None and node.tile_shape == node2.tile_shape:
+                    to_remove.append(j)
+                    
+        self.nodes = [node for i, node in enumerate(self.nodes) if i not in to_remove]
+                        
 
 class Pipeline(Split):
     pass

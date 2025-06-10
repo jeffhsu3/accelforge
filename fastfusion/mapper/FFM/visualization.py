@@ -15,5 +15,6 @@ def make_mapping(row, einsum_names):
             if isinstance(node, Iteration):
                 node.tile_shape = tile_shapes.pop(0)
         pmappings.append(Nested(nodes=nodes))
+        pmappings[-1].clear_null_loops()
     newmapping = Mapping(nodes=[Sequential(nodes=pmappings)])
     return newmapping
