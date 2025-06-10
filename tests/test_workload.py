@@ -22,3 +22,18 @@ class TestWorkload(unittest.TestCase):
         REF_TENSOR_Q_SIZE = 16  # B*H*M*E
         self.assertEqual(REF_TENSOR_Q_SIZE,
                          get_tensor_size(workload, TensorName('Q')))
+
+    def test_conv(self):
+        workload = Workload.from_yaml(Path(__file__).parent / 'mobilenet.workload.yaml')
+        self.assertEqual(
+            workload.get_pairwise_equivalent_rank_variables(),
+            {
+                'pb0': {'pa0', 'pb0'},
+                'qb0': {'qa0', 'qb0'},
+                't0': {'t0'},
+                'pa0': {'r0', 'pb0'},
+                'qa0': {'qb0', 's0'},
+                'r0': {'pa0'},
+                's0': {'qa0'}
+            }
+        )

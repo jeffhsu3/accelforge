@@ -1,4 +1,5 @@
 import re
+from itertools import product
 
 from pydantic_core import CoreSchema
 from fastfusion.util.basetypes import ParsableDict, ParsableList, ParsableModel
@@ -356,8 +357,8 @@ class Workload(ParsableModel):
                 
         return symbol_table
 
-    def get_pairwise_equivalent_rank_variables(self) -> dict[RankVariableName, list[RankVariableName]]:
-        equivalent_rank_variables = {}
+    def get_pairwise_equivalent_rank_variables(self) -> dict[RankVariableName, set[RankVariableName]]:
+        equivalent_rank_variables: dict[RankVariableName, set[RankVariableName]] = {}
         for tensor in self.tensors:
             accesses = self.accesses_for_tensor(tensor)
             if not accesses:
@@ -365,21 +366,19 @@ class Workload(ParsableModel):
             ranks = set(accesses[0].projection.keys())
             assert all(ranks == set(access.projection.keys()) for access in accesses)
 
-            rank2variables = {rank: set() for rank in ranks}
-            for access in accesses:
-                for rank in ranks:
-                    rank_variable = access.projection[rank]
-                    assert re.match(ISL_REGEX, rank_variable), (
-                        f"Rank variable {rank_variable} is not a valid ISL identifier"
-                        f"in access {access}. Pairwise equivalent rank variables must "
-                        f"not be expressions."
-                    )
-                    rank2variables[rank].add(rank_variable)
-                    
-            for rankvars in rank2variables.values():
-                for r0 in rankvars:
-                    for r1 in rankvars:
-                        equivalent_rank_variables.setdefault(r0, set()).add(r1)
+            for i, j in product(range(len(accesses)), repeat=2):
+                if i == j:
+                    continue
+                access_i = accesses[i]
+                access_j = accesses[j]
+                for rank, i_rank_vars in access_i.rank2rank_variables.items():
+                    for i_rank_var in i_rank_vars:
+                        rank2_rank_vars_j = access_j.rank2rank_variables
+                        if rank not in rank2_rank_vars_j:
+                            continue
+                        equiv_js = equivalent_rank_variables.setdefault(i_rank_var,
+                                                                        set())
+                        equiv_js.update(rank2_rank_vars_j[rank])
 
         return equivalent_rank_variables
 
