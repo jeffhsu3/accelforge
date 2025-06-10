@@ -192,6 +192,17 @@ def generate_tile_shapes(pmapping, constraints, usage_df, utilization_df, specif
         rank_a, index_a, is_symbol_a, choices_a = rank_var_and_choices_a
         rank_b, index_b, is_symbol_b, choices_b = rank_var_and_choices_b
 
+        new_rank = rank_a | rank_b
+        new_index = index_a + index_b
+        new_is_symbol = is_symbol_a + is_symbol_b
+        if any(x.shape[0] == 0 for x in [choices_a, choices_b] + [x[-1] for x in other_rank_var_and_choices]):
+            return (
+                new_rank,
+                new_index,
+                new_is_symbol,
+                np.empty((0, len(new_index)), dtype=np.int64)
+            )
+
         all_good_choices = []
         for a_idx in range(0, choices_a.shape[0], tile_shape):
             a_idx_max = min(a_idx+tile_shape, choices_a.shape[0])
@@ -289,9 +300,9 @@ def generate_tile_shapes(pmapping, constraints, usage_df, utilization_df, specif
                 all_good_choices.append(good_choices)
 
         return (
-            rank_a | rank_b,
-            index_a + index_b,
-            is_symbol_a + is_symbol_b,
+            new_rank,
+            new_index,
+            new_is_symbol,
             np.concatenate(all_good_choices, axis=0)
         )
 
@@ -314,7 +325,10 @@ def generate_tile_shapes(pmapping, constraints, usage_df, utilization_df, specif
                 other_rank_var_and_choices = [x for k, x in enumerate(rank_var_and_choices) if k not in (i, j)]
                 combined = get_combined_choices(rank_var_and_choices_a, rank_var_and_choices_b, other_rank_var_and_choices)
                 choices_combined = combined[-1]
-                reduction = choices_combined.shape[0] / choices_a.shape[0] / choices_b.shape[0]
+                if choices_a.shape[0] == 0 or choices_b.shape[0] == 0:
+                    reduction = 0
+                else:
+                    reduction = choices_combined.shape[0] / choices_a.shape[0] / choices_b.shape[0]
 
                 # Encourage combining choices with 1
                 reduction -= choices_a.shape[0] == 1
