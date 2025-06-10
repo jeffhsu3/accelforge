@@ -332,6 +332,22 @@ def iterate_mappings_n_loops_constraint(mapping: Mapping, einsum: Einsum):
         mapping_new = [m for i, m in enumerate(mapping.nodes) if i not in choices]
         yield Mapping(nodes=mapping_new)
 
+def timeloop_style_even(mapping: list[MappingNode]):
+    # Iterate through the mapping. If there are >2 storage nodes for the same
+    # memory, combine all but the innermost one
+    memory2indices = defaultdict(list)
+    i = 0
+    for i, node in enumerate(mapping):
+        if not isinstance(mapping[i], Storage):
+            i += 1
+            continue
+        seen = memory2indices[node.memory]
+        if len(seen) <= 1:
+            seen.append(i)
+        else:
+            mapping[i] = None
+            mapping[seen[-1]].tensors.extend(node.tensors)
+    return [m for m in mapping if m is not None]
 
 def iterate_mappings_no_constraints(
     spec: Specification,
@@ -351,6 +367,8 @@ def iterate_mappings_no_constraints(
     einsum = spec.workload.einsums[einsum_name]
     for mapping, symbol_table in get_storage_choices(arch_flattened, symbol_table, spec):
         mapping = copy.deepcopy(mapping)
+        if spec.mapper_ffm.timeloop_style_even:
+            mapping = timeloop_style_even(mapping)
         label_backing_storages(mapping)
         # print(", ".join(m.compact_string() for m in mapping))
         mapping = insert_temporal_loops(mapping, einsum, first_memory, rank_variable_bounds)
@@ -421,6 +439,7 @@ def get_constraints(
                         add_loop_bounds_constraint(m, c)
 
     constraint_lambdas = []
+    do_not_remove = set()
     for constraint in tile_shape_constraints:
         mapping_nodes = tile_shape_constraint_id_to_mapping_nodes[id(constraint)]
         targets = []
@@ -441,6 +460,8 @@ def get_constraints(
                     )
                     target_loops.append(mapping[idx])
                 targets.append(target_loops)
+                for t in target_loops:
+                    do_not_remove.add(id(t))
                 
         seen = set()
         for t in targets:
@@ -454,7 +475,8 @@ def get_constraints(
         mapping_nodes = loop_bounds_constraint_id_to_mapping_nodes[id(constraint)]
         if constraint.constrained_to_one():
             for m in mapping_nodes:
-                mapping.remove(m)
+                if id(m) not in do_not_remove:
+                    mapping.remove(m)
             continue
         raise NotImplementedError("Loop bounds constraints not implemented")
         constraint_lambdas.append(LoopBoundsConstraintLambda(constraint, mapping_nodes))
@@ -462,6 +484,7 @@ def get_constraints(
     loops = [n for n in mapping if isinstance(n, Iteration)]
     for c in constraint_lambdas:
         c._target_indices = [loops.index(t) for t in c.target_mapping_nodes]
+        assert c._target_indices
     
     return constraint_lambdas
 
