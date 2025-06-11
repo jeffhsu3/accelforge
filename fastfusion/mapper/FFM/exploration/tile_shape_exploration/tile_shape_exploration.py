@@ -9,7 +9,7 @@ import pandas as pd
 
 import fastfusion.frontend.architecture as architecture
 from fastfusion.frontend.architecture import Memory
-from fastfusion.frontend.constraints import Comparison, TileShapeConstraintLambda
+from fastfusion.frontend.constraints import TileShapeConstraintLambda
 from fastfusion.frontend.workload import Workload
 from fastfusion.frontend.workload.isl import get_rank_variable_bounds
 from fastfusion.frontend.workload.symbolic import get_projection_expr, compute_rank_occupancy

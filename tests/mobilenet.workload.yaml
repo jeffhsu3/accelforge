@@ -29,8 +29,8 @@ workload:
     - 0 <= r0 < 3
     - 0 <= s0 < 3
 
-  - name: PwiseB0
-    tensor_accesses:
-    - {name: TB0, projection: [pb0, qb0, t0]}
-    - {name: WB0, projection: [t0, n1]}
-    - {name: T1, projection: [pb0, qb0, n1], output: True}
+  # - name: PwiseB0
+  #   tensor_accesses:
+  #   - {name: TB0, projection: [pb0, qb0, t0]}
+  #   - {name: WB0, projection: [t0, n1]}
+  #   - {name: T1, projection: [pb0, qb0, n1], output: True}

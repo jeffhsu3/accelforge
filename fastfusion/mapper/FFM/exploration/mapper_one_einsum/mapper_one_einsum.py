@@ -19,7 +19,7 @@ from fastfusion.frontend.workload.symbolic import get_projection_expr
 
 from fastfusion.mapper.FFM.exploration import metrics
 from fastfusion.mapper.FFM.exploration.tile_shape_exploration import explore_tile_shapes
-from fastfusion.mapper.FFM.joining.mappinginfo import Compatibility, Loop, Reservation
+from fastfusion.mapper.FFM.joining.mappinginfo import Compatibility, Loop, Reservation, TilePattern
 from fastfusion.mapper.FFM.joining.sim import SIM
 from fastfusion.mapper.FFM.pareto import TAGS_COLUMN, MAPPING_COLUMN, PartialMappings, col2nameloop, is_reservation_col, nameloop2col, tensor2col, DecompressData
 from fastfusion.util.setexpressions import InvertibleSet
@@ -538,9 +538,16 @@ def make_compatibility(
 
     compatibility_loops = []
     for loop in fused_loops:
+        if loop.tile_shape is not None:
+            bound = 0  # populated later, but type is important
+        elif loop.tile_pattern is not None:
+            bound = TilePattern(0, 0)
+        else:
+            raise RuntimeError('BUG')
+
         loop = Loop(
             rank_variable_names=fzs((loop.rank_variable,)),
-            bound=0, # Populated later
+            bound=bound,
             is_spatial=isinstance(loop, Spatial)
         )
         compatibility_loops.append(loop)

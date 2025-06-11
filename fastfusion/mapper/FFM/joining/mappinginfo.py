@@ -1,4 +1,4 @@
-from collections import defaultdict
+from collections import defaultdict, namedtuple
 from dataclasses import dataclass, replace
 import itertools
 from numbers import Number
@@ -55,10 +55,13 @@ class Reservation(Updatable):
         return True
 
 
+TilePattern = namedtuple('TilePattern', ['stride', 'initial'])
+
+
 @dataclass(frozen=True, order=True, eq=True)
 class Loop(Updatable):
     rank_variable_names: fzs[RankVariableName]
-    bound: Union[Number, NamedTuple]
+    bound: Union[Number, TilePattern]
     is_spatial: bool
 
     def __post_init__(self):
@@ -265,6 +268,7 @@ class Compatibility(Updatable):
 
         assert len(tile_shape) == len(self.loops)
 
+        # TODO: pick up here: self.loops may be namedtuple so tile_shape is longer
         for i, (t, l) in enumerate(zip(tile_shape, self.loops)):
             prev_size = rank_variable_bounds[l.rank_variable]
             if i > 0:

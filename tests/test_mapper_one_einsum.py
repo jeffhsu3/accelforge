@@ -3,6 +3,7 @@ import unittest
 
 from fastfusion.frontend import Specification
 
+from fastfusion.mapper.FFM.exploration import metrics
 from fastfusion.mapper.FFM.exploration.mapper_multi_einsum import get_sims
 from fastfusion.mapper.FFM.exploration.mapping_filter_tags import get_one_split_tag
 from fastfusion.mapper.FFM.exploration.mapping_filter_tags.onesplit import ONE_SPLIT
@@ -52,3 +53,14 @@ class TestExploration(unittest.TestCase):
                 TagMatch(sim.compatibility.tags),
                 TagMatch(Tags((ONE_SPLIT,)))
             )
+
+    def test_conv_with_snowcat(self):
+        spec = Specification.from_yaml(
+            PARENT_DIR / "snowcat.arch.yaml",
+            PARENT_DIR / "mobilenet.workload.yaml",
+        )
+        spec.estimate_energy_area()
+
+        sims, decompress_data = get_sims(spec,
+                                         einsum_names=spec.workload.einsum_names,
+                                         metrics=metrics.Metrics.ENERGY)

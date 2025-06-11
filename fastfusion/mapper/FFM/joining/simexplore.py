@@ -1,9 +1,15 @@
-from collections import defaultdict
 import itertools
 import time
+from collections import defaultdict
+from numbers import Number
+
 import pandas as pd
-from fastfusion.frontend import architecture
+
+from fastfusion.frontend import architecture, Workload
 from fastfusion.frontend.specification import Specification
+from fastfusion.frontend.workload.isl import get_rank_variable_bounds
+from fastfusion.frontend.workload.symbolic import get_projection_expr, compute_rank_occupancy
+from fastfusion.mapper.FFM.joining.mappinginfo import TilePattern
 from fastfusion.mapper.FFM.joining.sim import SIM, Loop, Compatibility
 from fastfusion.mapper.FFM.pareto import PartialMappings
 from fastfusion.util import fzs, parallel, debugger_active
@@ -25,6 +31,7 @@ def get_possible_translations(
     pairwise_equivalent_rank_variables: dict[str, set[str]],
     full_equivalent_rank_variables: dict[str, set[str]],
     right_rank_variables: set[str],
+    right_rank_var2initial_delta: dict[str, int]
 ):
     # Fused ranks should be transitive, but if a fused loop indexes into two
     # different ranks in the next Einsum, we can't fuse becuase it will tile in
@@ -40,14 +47,42 @@ def get_possible_translations(
             set.union(*(full_equivalent_rank_variables[n] for n in l.rank_variable_names))
             & right_rank_variables
         )
-        pairwise_compatible_rank_variables = (
-            set.union(*(pairwise_equivalent_rank_variables[n] for n in l.rank_variable_names))
-            & right_rank_variables
-        )
-        if len(pairwise_compatible_rank_variables) > 1:
-            return
+        print('SOURCE', l)
+        print('full_euqivalent_rank_variables', full_equivalent_rank_variables)
+        # TODO: resolve this
+        # pairwise_compatible_rank_variables = (
+        #     set.union(*(pairwise_equivalent_rank_variables[n] for n in l.rank_variable_names))
+        #     & right_rank_variables
+        # )
+        # if len(pairwise_compatible_rank_variables) > 1:
+        #     print('PAIRWISE > 1')
+        #     return
+        print('COMPAT')
         for n in compatible_rank_variables:
-            yield Loop(fzs((n,)), l.bound, l.is_spatial)
+            left_bound = l.bound
+            if isinstance(left_bound, TilePattern):
+                delta = right_rank_var2initial_delta[n]
+                if left_bound.stride == left_bound.initial:
+                    print(Loop(fzs((n,)), left_bound.stride, l.is_spatial))
+                    yield Loop(fzs((n,)), left_bound.stride, l.is_spatial)
+                elif left_bound.stride + delta == left_bound.initial:
+                    yield Loop(fzs((n,)), left_bound.stride, l.is_spatial)
+                    print(Loop(fzs((n,)), left_bound.stride, l.is_spatial))
+                    yield Loop(fzs((n,)),
+                               TilePattern(left_bound.stride, left_bound.stride),
+                               l.is_spatial)
+                else:
+                    print(Loop(fzs((n,)),
+                               TilePattern(left_bound.stride,
+                                           left_bound.initial-left_bound.stride),
+                               l.is_spatial))
+                    yield Loop(fzs((n,)),
+                               TilePattern(left_bound.stride,
+                                           left_bound.initial-left_bound.stride),
+                               l.is_spatial)
+            elif isinstance(left_bound, Number):
+                print(Loop(fzs((n,)), left_bound, l.is_spatial))
+                yield Loop(fzs((n,)), left_bound, l.is_spatial)
 
     for loops in itertools.product(*map(translate_loop, t.loops)):
         yield t.update(loops=loops)
@@ -171,6 +206,8 @@ def join_sims(
     if not sims:
         raise ValueError("No SIMs to join")
 
+    right_rank2initial_delta = get_initial_deltas(workload=spec.workload)
+
     # ======================================================================
     # Initial consolidate and group all SIMs
     # ======================================================================
@@ -287,6 +324,7 @@ def join_sims(
                 pairwise_equivalent_rank_variables,
                 full_equivalent_rank_variables,
                 right_rank_variables,
+                right_rank2initial_delta,
             ):
                 for a, b in itertools.product(left[k], right.get(k_translated, [])):
                     if (
@@ -340,6 +378,7 @@ def join_sims(
                     pairwise_equivalent_rank_variables,
                     full_equivalent_rank_variables,
                     next_right_rank_variables,
+                    right_rank2initial_delta,
                 )
                 if not any(kt in sims[0].sims for kt in translations):
                     list(
@@ -348,6 +387,7 @@ def join_sims(
                             pairwise_equivalent_rank_variables,
                             full_equivalent_rank_variables,
                             next_right_rank_variables,
+                            right_rank2initial_delta,
                         )
                     )
                     if DO_PRINT:
@@ -455,3 +495,41 @@ def join_sims_no_either(*args, **kwargs):
     if len(args[0]) > 16:
         args[0] = {k: v for k, v in list(args[0].items())[:2]}
     return join_sims(*args, skip_invalid=False, combine_reservations=False, **kwargs)
+
+
+def get_initial_deltas(workload: Workload) -> dict[tuple[str, str, str, str], int]:
+    deltas = {}
+    for producer in workload.einsums:
+        output_tensors = producer.output_tensors()
+        if len(output_tensors) > 1:
+            raise ValueError('Does not support more output tensors than one.')
+
+        tensor = next(iter(output_tensors))
+
+        prod_rank2rank_vars = producer.tensor_accesses[tensor].rank2rank_variables
+
+        for consumer in workload.einsums_that_read_tensor(tensor):
+            projection = get_projection_expr(consumer, tensor)
+            cons_shape = get_rank_variable_bounds(workload, consumer.name)
+
+            cons_rank2rank_vars = consumer.tensor_accesses[tensor].rank2rank_variables
+            for cons_rank, cons_rank_vars in cons_rank2rank_vars.items():
+                if cons_rank not in prod_rank2rank_vars:
+                    continue
+                if len(cons_rank_vars) == 1:
+                    continue  # Not an affine expr at the consumer
+                prod_rank_vars = prod_rank2rank_vars[cons_rank]
+                if len(prod_rank_vars) != 1:
+                    continue  # Unclear what to do in this case
+
+                prod_rank_var = next(iter(prod_rank_vars))
+
+                for cons_rank_var in cons_rank_vars:
+                    original_shape = cons_shape[cons_rank_var]
+                    cons_shape[cons_rank_var] = 1
+                    deltas[(producer.name, consumer.name, prod_rank_var, cons_rank_var)] = (
+                        compute_rank_occupancy(projection[cons_rank], cons_shape)
+                        - 1
+                    )
+                    cons_shape[cons_rank_var] = original_shape
+    return deltas
