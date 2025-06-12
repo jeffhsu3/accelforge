@@ -45,6 +45,16 @@ class MappingConstraints:
         if (component_name, dimension) not in self.maximize_utilization_constraints:
             return np.ones(utilization.shape[0], dtype=np.bool)
         return self.maximize_utilization_constraints[(component_name, dimension)](rank_vars, utilization)
+    
+    def set_loop_indices(self, loops: list[Iteration]):
+        for c in self.tile_shape_constraints:
+            c._target_indices = [loops.index(t) for t in c.target_mapping_nodes]
+            
+        for c in self.loop_bounds_constraints:
+            c._target_indices = [loops.index(t) for t in c.target_mapping_nodes]
+            
+        for c in self.maximize_utilization_constraints.values():
+            c._target_indices = [loops.index(t) for t in c.target_mapping_nodes]
 
 
 
@@ -52,8 +62,9 @@ def get_constraints(
     arch_flattened: list[architecture.Leaf],
     mapping: List[MappingNode],
     symbol_table: dict[str, InvertibleSet],
-) -> MappingConstraints:
+) -> tuple[List[MappingNode], MappingConstraints]:
     parsed = {}
+    mapping = list(mapping)
     def get_parsed_storage_constraint(constraint: ConstraintGroup) -> ConstraintGroup:
         key = id(constraint.storage)
         if key not in parsed:
@@ -135,8 +146,7 @@ def get_constraints(
             if seen_key in seen:
                 continue
             seen.add(seen_key)
-            constraint = TileShapeConstraintLambda(constraint, t, expression)
-            constraints.tile_shape_constraints.append(constraint)
+            constraints.tile_shape_constraints.append(TileShapeConstraintLambda(constraint, t, expression))
 
     for constraint in loop_bounds_constraints:
         mapping_nodes = loop_bounds_constraint_id_to_mapping_nodes[id(constraint)]
@@ -165,7 +175,7 @@ def get_constraints(
             for loop in mapping:
                 if isinstance(loop, Spatial) and loop.across == node.name and loop.dimension == dim:
                     target_loops.append(loop)
-            if not loops:
+            if not target_loops:
                 continue        
             
             rank_variables = {t.rank_variable for t in target_loops}
@@ -173,8 +183,6 @@ def get_constraints(
             key = (node.name, dim)
             constraints.maximize_utilization_constraints[key] = constraint
 
-    for c in constraint_lambdas:
-        c._target_indices = [loops.index(t) for t in c.target_mapping_nodes]
-        assert c._target_indices
+    constraints.set_loop_indices(loops)
     
-    return constraints
+    return mapping, constraints

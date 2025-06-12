@@ -257,7 +257,7 @@ class Compatibility(Updatable):
     #     return self.update(tags=Tags(new_tags))
 
     def all_n_loops(self) -> list["Compatibility"]:
-        min_loops = max(t.above_loop_index for t in self.storage)
+        min_loops = max(t.above_loop_index for t in self.storage) if self.storage else 0
         return list(
             Compatibility(self.loops[:i], self.storage, self.tags)
             for i in range(min_loops, len(self.loops) + 1)
