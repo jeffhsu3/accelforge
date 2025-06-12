@@ -442,7 +442,7 @@ def iterate_mappings_constraints(
     for einsum_name in einsum_names:
         for mapping, symbol_table in iterate_mappings_no_constraints(spec, einsum_name, arch_flattened, rank_variable_bounds):
             # MAPPING MUST NOT BE MODIFIED AFTER THIS POINT
-            constraints = get_constraints(arch_flattened, mapping, symbol_table) 
+            mapping, constraints = get_constraints(arch_flattened, mapping, symbol_table) 
             mapping.append(Compute(einsum=einsum_name, compute=compute_name))
             # mapping = copy.copy(mapping)
             mapping = Mapping(nodes=[copy.copy(n) for n in mapping])
