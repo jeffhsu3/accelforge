@@ -7,6 +7,7 @@ import pandas as pd
 
 from fastfusion.frontend import architecture, Workload
 from fastfusion.frontend.specification import Specification
+from fastfusion.frontend.workload import Einsum
 from fastfusion.frontend.workload.isl import get_rank_variable_bounds
 from fastfusion.frontend.workload.symbolic import get_projection_expr, compute_rank_occupancy
 from fastfusion.mapper.FFM.joining.mappinginfo import TilePattern
@@ -28,9 +29,8 @@ def paretofy(k, v):
 
 def get_possible_translations(
     t: Compatibility,
-    pairwise_equivalent_rank_variables: dict[str, set[str]],
     full_equivalent_rank_variables: dict[str, set[str]],
-    right_rank_variables: set[str],
+    right_einsum: Einsum,
     right_rank_var2initial_delta: dict[tuple[str, str], int]
 ):
     # Fused ranks should be transitive, but if a fused loop indexes into two
@@ -42,18 +42,30 @@ def get_possible_translations(
     #
     # Einsum. If we alias into multiple ranks, we can't fuse. Otherwise, try out
     # each possible rank.
+    right_rank_variables = right_einsum.rank_variables
+    tensor2rank_var2ranks = {}
+    for tensor_access in right_einsum.tensor_accesses:
+        tensor2rank_var2ranks[tensor_access.name] = tensor_access.rank_variable2ranks
+
+    def rank_vars_index_only_one_rank_per_tensor(rank_vars):
+        for tensor, rank_var2ranks in tensor2rank_var2ranks.items():
+            all_ranks = set()
+            for rank_var in rank_vars:
+                if rank_var in rank_var2ranks:
+                    all_ranks.update(rank_var2ranks[rank_var])
+            if len(all_ranks) > 1:
+                return False
+        return True
+
     def translate_loop(l: Loop):
         compatible_rank_variables = (
             set.union(*(full_equivalent_rank_variables[n] for n in l.rank_variable_names))
             & right_rank_variables
         )
-        # TODO: resolve this
-        # pairwise_compatible_rank_variables = (
-        #     set.union(*(pairwise_equivalent_rank_variables[n] for n in l.rank_variable_names))
-        #     & right_rank_variables
-        # )
-        # if len(pairwise_compatible_rank_variables) > 1:
-        #     return
+        # TODO: convince that this always works
+        if not rank_vars_index_only_one_rank_per_tensor(l.rank_variable_names):
+            return
+
         for n in compatible_rank_variables:
             left_bound = l.bound
             if isinstance(left_bound, TilePattern):
@@ -263,7 +275,6 @@ def join_sims(
         nbuckets.append(len(left))
         # nmappings.append(sum(len(s.mappings.data) for s in left))
         right, right_einsum, right_tensors = grab_sim_holder()
-        right_rank_variables = spec.workload.einsums[right_einsum].rank_variables
         print(f"\nEinsum {right_einsum} ({n_iterations}/{total_iterations})")
 
         partial_mapping_size += 1
@@ -311,9 +322,8 @@ def join_sims(
             found = False
             for k_translated in get_possible_translations(
                 k,
-                pairwise_equivalent_rank_variables,
                 full_equivalent_rank_variables,
-                right_rank_variables,
+                spec.workload.einsums[right_einsum],
                 right_rank2initial_delta[right_einsum],
             ):
                 for a, b in itertools.product(left[k], right.get(k_translated, [])):
@@ -358,25 +368,20 @@ def join_sims(
         if sims and lookahead_filter:
             prev_len = len(combined)
             next_right_tensors = sims[0].tensor_names
-            next_right_rank_variables = spec.workload.einsums[
-                sims[0].einsum_name
-            ].rank_variables
             combined = SIM.group_left(combined, next_right_tensors, drop_tags=True)
             for k in list(combined):
                 translations = get_possible_translations(
                     k,
-                    pairwise_equivalent_rank_variables,
                     full_equivalent_rank_variables,
-                    next_right_rank_variables,
+                    spec.workload.einsums[sims[0].einsum_name],
                     right_rank2initial_delta[right_einsum],
                 )
                 if not any(kt in sims[0].sims for kt in translations):
                     list(
                         get_possible_translations(
                             k,
-                            pairwise_equivalent_rank_variables,
                             full_equivalent_rank_variables,
-                            next_right_rank_variables,
+                            spec.workload.einsums[sims[0].einsum_name],
                             right_rank2initial_delta[right_einsum],
                         )
                     )
