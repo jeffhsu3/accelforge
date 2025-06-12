@@ -91,9 +91,17 @@ def explore_tile_shapes(pmapping, constraints, specification: Specification, fla
     set_last_tile_shape_to_one(pmapping)
 
     symbols, symbolic_df, per_memory_occupancy_df, utilization_df = run_model(pmapping, specification, flattened_arch, metrics)
-    compiled_df = compile_dict(symbols, symbolic_df)
-    compiled_per_memory_occupancy_df = compile_dict(symbols, per_memory_occupancy_df)
-    compiled_utilization_df = compile_dict(symbols, utilization_df)
+    try:
+        compiled_df = compile_dict(symbols, symbolic_df)
+        compiled_per_memory_occupancy_df = compile_dict(symbols, per_memory_occupancy_df)
+        compiled_utilization_df = compile_dict(symbols, utilization_df)
+    except:
+        print('Compilation failed for this mapping:')
+        for node in pmapping.nodes:
+            if hasattr(node, 'compact_string'):
+                print(node.compact_string())
+        print(symbolic_df)
+        raise RuntimeError('Compilation failed')
 
     tile_shapes, is_symbol, total_pmappings = generate_tile_shapes(pmapping, constraints, compiled_per_memory_occupancy_df, compiled_utilization_df, specification)
 

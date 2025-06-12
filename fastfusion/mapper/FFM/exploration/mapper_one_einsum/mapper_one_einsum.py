@@ -49,7 +49,7 @@ def insert_temporal_loops(
     # - Between any two storage nodes
     # - After the last storage node
 
-    split_mapping = [[]]
+    split_mapping: list[list[Storage]] = [[]]
     for m in mapping:
         split_mapping.append([])
         split_mapping[-1].append(m)
@@ -57,13 +57,17 @@ def insert_temporal_loops(
             while len(split_mapping) > 1:
                 split_mapping[0].extend(split_mapping.pop(1))
 
+    # These Einsum properties are recalculated since Einsum is mutable
+    # We're pre-computing and reusing for efficiency
+    tensor2fully_relevant_rank_vars = einsum.tensor2fully_relevant_rank_variables
+    tensor2partially_relevant_rank_vars = einsum.tensor2partially_relevant_rank_variables
+    tensor2rank_vars = einsum.tensor2rank_variables
 
     intermediate_tensors = einsum.tensors & workload.intermediate_tensors
     is_fused_loops = True
     accumulative_prev_relevant = set()
     seen_tensors = set()
     choices = []
-    auto_lower_choices = []
     for i, prev_storages in enumerate(split_mapping):
         # full_mapping.extend(prev_storages)
         next_storages = split_mapping[i+1] if i < len(split_mapping) - 1 else []
@@ -72,13 +76,13 @@ def insert_temporal_loops(
         rank_variables = einsum.rank_variables
         rank_variables = {r for r in rank_variables if rank_variable_bounds[r] > 1}
         seen_tensors |= set.union(*(set(t.tensors) for t in prev_storages), set())
-        is_fused_loops = is_fused_loops and (intermediate_tensors - seen_tensors)
+        is_fused_loops = is_fused_loops and len(intermediate_tensors - seen_tensors) > 0
 
         # No recomputation:
         # If we haven't seen a tensor yet, must only iterate over fully-relevant
         # rank variables.
-        for t in einsum.tensors - seen_tensors:
-            rank_variables &= einsum.tensor2fully_relevant_rank_variables[t]
+        for t in intermediate_tensors - seen_tensors:
+            rank_variables &= tensor2fully_relevant_rank_vars[t]
 
         # If there is no backing storage in the next block, only include loops
         # that reuse at least one tensor in the previous block.
@@ -86,12 +90,12 @@ def insert_temporal_loops(
         # above that must be even.
         if not any(s._backing for s in next_storages):
             prev_relevant_uneven = [
-                einsum.tensor2fully_relevant_rank_variables[t]
+                tensor2fully_relevant_rank_vars[t]
                 for s in prev_storages for t in s.tensors
                 if not s._even_with_below
             ]
             prev_relevant_even = [
-                einsum.tensor2fully_relevant_rank_variables[t]
+                tensor2fully_relevant_rank_vars[t]
                 for s in prev_storages for t in s.tensors
                 if s._even_with_below
             ]
@@ -113,37 +117,63 @@ def insert_temporal_loops(
 
         # Only include loops that will index into the next block of storage nodes.
         if next_storages:
-            next_relevant = [einsum.tensor2rank_variables[t] for s in next_storages for t in s.tensors]
+            next_relevant = [tensor2rank_vars[t] for s in next_storages for t in s.tensors]
             rank_variables &= set.union(*next_relevant, set())
 
-        # if rank_variables has partially relevant and prev storages has backing:
-        #     auto_lower_choices.append([True, False])
-        # elif prev storages has backing:
-        #     auto_lower_choices.append([False])
-        # else:
-        #     auto_lower_choices.append([True])
-
-        # if i == len(split_mapping) - 1:
-        #     rank_variables = set(einsum.rank_variables)
+        has_partially_relevant_rank_vars = any(
+            rank_var in tensor2partially_relevant_rank_vars[tensor]
+            for rank_var in rank_variables
+            for storage in prev_storages for tensor in storage.tensors
+        )
+        prev_has_backing = any(s._backing for s in prev_storages)
 
         if not rank_variables:
             choices.append([[]])
-        elif not is_fused_loops:
-            choices.append([set(rank_variables)])
-        else:
+        elif prev_has_backing and has_partially_relevant_rank_vars:
             choices.append(list(itertools.permutations(rank_variables)))
+        else:
+            choices.append([set(rank_variables)])
 
     for loop_orders in itertools.product(*choices):
         full_mapping = []
-        storage_nodes_with_partial_rank = []
+        lowering_choices = []
         for prev_storages, loop_order in zip(split_mapping, loop_orders):
             full_mapping.extend(prev_storages)
+            if einsum.output_tensors() & seen_tensors != einsum.output_tensors:
+                maybe_tile_pattern_rank_vars = ranks_with_tile_pattern & set(loop_order)
+            else:
+                maybe_tile_pattern_rank_vars = set()
             if isinstance(loop_order, Sequence):
+                prev_has_backing = any(s._backing for s in prev_storages)
+                first_loop_partially_relevant = None
                 for loop in loop_order:
-                    full_mapping.append(Temporal(rank_variable=loop,
-                                                 tile_shape='symbol'))
+                    if first_loop_partially_relevant is None:
+                        first_loop_partially_relevant = all(
+                            loop in tensor2partially_relevant_rank_vars[tensor]
+                            for storage in prev_storages
+                            for tensor in storage.tensors
+                        )
+                    if loop in maybe_tile_pattern_rank_vars:
+                        full_mapping.append(Temporal(rank_variable=loop,
+                                                     tile_pattern='symbol'))
+                    else:
+                        full_mapping.append(Temporal(rank_variable=loop,
+                                                     tile_shape='symbol'))
+                if prev_has_backing and first_loop_partially_relevant:
+                    assert len(prev_storages) == 1
+                    lowering_choices.append([True, False])
+                elif all(storage.memory == first_memory.name for storage in prev_storages):
+                    lowering_choices.extend([[False]]*len(prev_storages))
+                elif prev_has_backing:
+                    lowering_choices.extend([[False]]*len(prev_storages))
+                else:
+                    lowering_choices.extend([[True]]*len(prev_storages))
+            elif isinstance(loop_order, set) and len(prev_storages) > 1:
+                assert all(storage.memory == first_memory.name for storage in prev_storages)
+                full_mapping.append(Temporal(rank_variable=loop_order, tile_shape='symbol'))
+                lowering_choices.extend([[True]]*len(prev_storages))
             elif isinstance(loop_order, set):
-                assert len(prev_storages[0].tensors) == 1
+                assert len(prev_storages) == 1 and len(prev_storages[0].tensors) == 1
                 tensor = next(iter(prev_storages[0].tensors))
                 fully_relevant_rank_vars = \
                     loop_order & einsum.tensor2fully_relevant_rank_variables[tensor]
@@ -151,11 +181,6 @@ def insert_temporal_loops(
                     loop_order - einsum.tensor2fully_relevant_rank_variables[tensor]
                 partially_relevant_rank_vars = \
                     loop_order - irrelevant_rank_vars - fully_relevant_rank_vars
-
-                if einsum.output_tensors() & seen_tensors != einsum.output_tensors:
-                    maybe_tile_pattern_rank_vars = ranks_with_tile_pattern & loop_order
-                else:
-                    maybe_tile_pattern_rank_vars = set()
 
                 if maybe_tile_pattern_rank_vars:
                     full_mapping.append(Temporal(rank_variable=fully_relevant_rank_vars-maybe_tile_pattern_rank_vars,
@@ -166,9 +191,17 @@ def insert_temporal_loops(
                     full_mapping.append(Temporal(rank_variable=fully_relevant_rank_vars, tile_shape='symbol'))
                 full_mapping.append(Temporal(rank_variable=partially_relevant_rank_vars, tile_shape='symbol'))
                 full_mapping.append(Temporal(rank_variable=irrelevant_rank_vars, tile_shape='symbol'))
+                lowering_choices.extend([[True]]*len(prev_storages))
             else:
                 raise RuntimeError('BUG')
-        yield list(full_mapping)
+
+        for lowering_choice in itertools.product(*lowering_choices):
+            assert len(lowering_choice) == sum(isinstance(node, Storage) for node in full_mapping)
+            for lower, node in zip(lowering_choice,
+                                   (node for node in full_mapping
+                                    if isinstance(node, Storage))):
+                node._lower = lower
+            yield list(full_mapping)
 
 
 def insert_spatial_loops(

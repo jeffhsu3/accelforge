@@ -119,6 +119,7 @@ class Storage(MappingNode):
     _must_keep_tensors: ParsableList[TensorName] = ParsableList() # Must the mapper keep these tensors here?
     _backing: bool = False  # Is this node a backing storage?
     _even_with_below: bool = False
+    _lower: bool = True
 
     def compact_string(self) -> str:
         tname = ",".join(self.tensors)
@@ -312,11 +313,16 @@ class Reservation(MappingNode, ModelOnlyNode):
     tensor: str
     memory: str
 
+    def compact_string(self) -> str:
+        return f'Reservation {self.tensor} in {self.memory}'
+
 
 class Fill(MappingNode, ModelOnlyNode):
     tensor: str
     memory: str
 
+    def compact_string(self) -> str:
+        return f'Fill {self.tensor} in {self.memory}'
 
 # =============================================================================
 # Top-level Mapping

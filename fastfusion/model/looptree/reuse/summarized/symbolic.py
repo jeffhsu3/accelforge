@@ -666,14 +666,17 @@ def get_stride_and_tile_shape(node: Iteration, full_shape, n: int):
         tile_shape = node.tile_pattern.tile_shape
 
         if initial_tile_shape is not None:
-            middle_shape_factor = sympy.floor((rank_shape - initial_tile_shape)/stride)
-            last_shape = rank_shape - initial_tile_shape - stride*middle_shape_factor
+            middle_shape_factor = sympy.ceiling((rank_shape - initial_tile_shape)/stride)
+            # TODO: sometimes last_shape is 0, causing numerical instability
+            # Currently, we are sometimes rounding up last shape.
+            # last_shape = rank_shape - initial_tile_shape - stride*middle_shape_factor
+            # has_last_shape = sympy.ceiling(last_shape/(last_shape+1))
             return StrideAndShape(
                 stride,
                 SequenceOfRepatedvalues([
                     RepeatedValue(initial_tile_shape, 1),
                     RepeatedValue(stride, middle_shape_factor),
-                    RepeatedValue(last_shape, 1)
+                    # RepeatedValue(last_shape+0.01, has_last_shape)
                 ])
             )
         elif tile_shape is not None:
