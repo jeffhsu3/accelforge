@@ -508,7 +508,7 @@ class ParsableList(list[T], Parsable['ParsableList[T]'], Generic[T]):
             no_info_plain_validator_function(lambda x: cls(x))
         ])
 
-    def __getitem__(self, key: Union[str, int]) -> Any:
+    def __getitem__(self, key: Union[str, int]) -> T:
         if isinstance(key, int):
             return super().__getitem__(key)  # type: ignore
 
