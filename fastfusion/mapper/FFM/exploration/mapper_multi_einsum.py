@@ -1,3 +1,4 @@
+from math import prod
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -32,6 +33,15 @@ def get_rank_variable_bounds_for_all_einsums(spec: Specification):
                         f"einsum {e1} and {e2}: {rv1[r]} and {rv2[r]}"
                     )
     return result
+
+def get_num_computes(spec: Specification):
+    rank_variable_bounds = get_rank_variable_bounds_for_all_einsums(spec)
+    return sum(
+        prod(
+            rank_variable_bounds[r] for r in einsum.rank_variables
+        )
+        for einsum in spec.workload.einsums
+    )
 
 def get_sims(
     spec: Specification,
