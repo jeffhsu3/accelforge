@@ -9,7 +9,7 @@ import sys
 
 from tqdm import tqdm
 
-PARALLELIZE = False
+PARALLELIZE = True
 N_PARALLEL_THREADS = 16
 
 
