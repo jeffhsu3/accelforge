@@ -1,12 +1,12 @@
 workload:
   version: "0.5"
   shape:
-    pa0: 0 <= pa0 < 7
-    qa0: 0 <= qa0 < 7
-    pb0: 0 <= pb0 < 7
-    qb0: 0 <= qb0 < 7
+    pa0: 0 <= pa0 < 25
+    qa0: 0 <= qa0 < 25
+    pb0: 0 <= pb0 < 25
+    qb0: 0 <= qb0 < 25
     n0: 0 <= n0 < 2
-    t0: 0 <= t0 < 12
+    t0: 0 <= t0 < 4
     n1: 0 <= n1 < 2
 
   einsums:
@@ -29,8 +29,8 @@ workload:
     - 0 <= r0 < 3
     - 0 <= s0 < 3
 
-  # - name: PwiseB0
-  #   tensor_accesses:
-  #   - {name: TB0, projection: [pb0, qb0, t0]}
-  #   - {name: WB0, projection: [t0, n1]}
-  #   - {name: T1, projection: [pb0, qb0, n1], output: True}
+  - name: PwiseB0
+    tensor_accesses:
+    - {name: TB0, projection: [pb0, qb0, t0]}
+    - {name: WB0, projection: [t0, n1]}
+    - {name: T1, projection: [pb0, qb0, n1], output: True}

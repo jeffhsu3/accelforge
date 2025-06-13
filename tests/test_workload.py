@@ -37,3 +37,9 @@ class TestWorkload(unittest.TestCase):
                 's0': {'qa0'}
             }
         )
+
+    def test_conv_initial_deltas(self):
+        workload = Workload.from_yaml(Path(__file__).parent / 'mobilenet_long.workload.yaml')
+
+        initial_deltas = get_stride_and_halo(workload)
+        print(initial_deltas)

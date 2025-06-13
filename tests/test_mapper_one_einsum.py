@@ -1,9 +1,10 @@
 from pathlib import Path
 import unittest
 
-from fastfusion.frontend import Specification
+from fastfusion.frontend import Specification, Workload
 
 from fastfusion.mapper.FFM.exploration import metrics
+from fastfusion.mapper.FFM.exploration.tile_shape_exploration.tile_shape_exploration import get_initial_delta_choices
 from fastfusion.mapper.FFM.exploration.mapper_multi_einsum import get_sims
 from fastfusion.mapper.FFM.exploration.mapping_filter_tags import get_one_split_tag
 from fastfusion.mapper.FFM.exploration.mapping_filter_tags.onesplit import ONE_SPLIT
@@ -62,5 +63,13 @@ class TestExploration(unittest.TestCase):
         spec.estimate_energy_area()
 
         sims, decompress_data = get_sims(spec,
-                                         einsum_names=spec.workload.einsum_names,
+                                         einsum_names=['PwiseA0'],
                                          metrics=metrics.Metrics.ENERGY)
+        for sim in sims['PwiseA0']:
+            print(sim.compatibility)
+
+
+class TestInitialDeltaGeneration(unittest.TestCase):
+    def test_mobilenet_long(self):
+        workload = Workload.from_yaml(Path(__file__).parent / 'mobilenet_long.workload.yaml')
+        choices = get_initial_delta_choices(workload.einsums['PwiseA0'], workload)
