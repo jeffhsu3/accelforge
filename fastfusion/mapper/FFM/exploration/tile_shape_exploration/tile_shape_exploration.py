@@ -1,3 +1,4 @@
+from collections import defaultdict
 from combinatorics.integer import *
 from dataclasses import dataclass, field
 
@@ -9,10 +10,10 @@ import pandas as pd
 
 import fastfusion.frontend.architecture as architecture
 from fastfusion.frontend.architecture import Memory
-from fastfusion.frontend.workload import Workload
+from fastfusion.frontend.workload import Workload, Einsum
 from fastfusion.frontend.workload.isl import get_rank_variable_bounds
-from fastfusion.frontend.workload.symbolic import get_projection_expr, compute_rank_occupancy
-from fastfusion.frontend.mapping import Temporal, Spatial, Storage, Pattern, Iteration
+from fastfusion.frontend.workload.symbolic import get_stride_and_halo
+from fastfusion.frontend.mapping import Temporal, Spatial, Storage, Pattern
 from fastfusion.frontend.specification import Specification
 
 from fastfusion.mapper.FFM.exploration import metrics
@@ -448,7 +449,7 @@ def make_shapes_for_one_rank(tiling_segments: TilingSegment):
         tile_shape = tile_shape[np.all(tile_shape >= min_shape, axis=1), :]
 
         for i in sorted(initial_delta_choices, reverse=True):
-            choices = np.array(initial_delta_choices[i]).reshape(-1, 1).astype(np.int64)
+            choices = np.array(list(initial_delta_choices[i])).reshape(-1, 1).astype(np.int64)
             tile_shape = np.concatenate((
                     np.tile(tile_shape[:,:i+1], (choices.shape[0], 1)),
                     np.repeat(choices, repeats=tile_shape.shape[0], axis=0),
@@ -589,39 +590,38 @@ def compile_dict(symbols, dictionary):
     }
 
 
-def get_initial_delta_choices(producer_name: str, workload: Workload):
-    producer = workload.einsums[producer_name]
-    output_tensors = producer.output_tensors()
-    if len(output_tensors) > 1:
-        raise ValueError('Does not support more output tensors than one.')
+def get_initial_delta_choices(einsum_name: str, workload: Workload):
+    stride_and_halo = get_stride_and_halo(workload)
+    einsum = workload.einsums[einsum_name]
 
-    rank_var2choices: dict[str, list] = {}
-    for tensor in output_tensors:
-        prod_rank2rank_vars = producer.tensor_accesses[tensor].rank2rank_variables
-        for consumer in workload.einsums_that_read_tensor(tensor):
-            projection = get_projection_expr(consumer, tensor)
-            cons_shape = get_rank_variable_bounds(workload, consumer.name)
+    choices = defaultdict(lambda: set([0]))
+    consumer_chains = []
+    stack = [[(None, einsum)]]
+    while stack:
+        cur_chain = stack.pop()
+        last_tensor, last_einsum = cur_chain[-1]
+        for tensor in last_einsum.output_tensors():
+            einsums_that_read_tensor = workload.einsums_that_read_tensor(tensor)
 
-            cons_rank2rank_vars = consumer.tensor_accesses[tensor].rank2rank_variables
-            for cons_rank, cons_rank_vars in cons_rank2rank_vars.items():
-                if cons_rank not in prod_rank2rank_vars:
-                    continue
-                if len(cons_rank_vars) == 1:
-                    continue  # Not an affine expr at the consumer
-                prod_rank_vars = prod_rank2rank_vars[cons_rank]
-                if len(prod_rank_vars) != 1:
-                    continue  # Unclear what to do in this case
+            if len(einsums_that_read_tensor) == 0:
+                consumer_chains.append(cur_chain)
 
-                prod_rank_var = next(iter(prod_rank_vars))
+            for next_einsum in einsums_that_read_tensor:
+                stack.append(cur_chain + [(tensor, next_einsum)])
 
-                choices = rank_var2choices.setdefault(prod_rank_var, [])
-                for rank_var_set_to_one in cons_rank_vars:
-                    original_shape = cons_shape[rank_var_set_to_one]
-                    cons_shape[rank_var_set_to_one] = 1
-                    choices.append(
-                        compute_rank_occupancy(projection[cons_rank], cons_shape)
-                        - 1
-                    )
-                    cons_shape[rank_var_set_to_one] = original_shape
+    for chain in consumer_chains:
+        for (_, producer), (tensor, consumer) in zip(list(reversed(chain))[1:],
+                                                     reversed(chain)):
+            rank_stride_and_halo = stride_and_halo[(producer.name, consumer.name)]
+            if tensor is None:
+                break  # done
 
-    return rank_var2choices
+            for cons_rank_var in consumer.rank_variables:
+                for prod_rank_var in producer.rank_variables:
+                    for cons_choice in choices[cons_rank_var]:
+                        if (prod_rank_var, cons_rank_var) not in rank_stride_and_halo:
+                            continue
+                        stride, halo = rank_stride_and_halo[(prod_rank_var, cons_rank_var)]
+                        choices[prod_rank_var].add(cons_choice*stride + halo)
+
+    return choices
