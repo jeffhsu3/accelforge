@@ -69,29 +69,29 @@ def get_possible_translations(
 
         for n in compatible_rank_variables:
             left_bound = l.bound
-
-            if (l.rank_variable_name, n) in right_rank_var2initial_delta:
-                delta = right_rank_var2initial_delta[(l.rank_variable_name, n)]
-            else:
-                delta = None
-
-            if delta is not None and isinstance(left_bound, TilePattern):
-                delta = right_rank_var2initial_delta[(l.rank_variable_name, n)]
-                if left_bound.stride == left_bound.initial:
-                    yield Loop(fzs((n,)), left_bound.stride, l.is_spatial)
-                elif left_bound.stride + delta == left_bound.initial:
-                    yield Loop(fzs((n,)), left_bound.stride, l.is_spatial)
-                    # yield Loop(fzs((n,)),
-                    #            TilePattern(left_bound.stride, left_bound.stride),
-                    #            l.is_spatial)
+            for rvn in l.rank_variable_names:
+                if (rvn, n) in right_rank_var2initial_delta:
+                    delta = right_rank_var2initial_delta[(rvn, n)]
                 else:
-                    # yield Loop(fzs((n,)),
-                    #            TilePattern(left_bound.stride,
-                    #                        left_bound.initial-delta),
-                    #            l.is_spatial)
-                    pass
-            elif delta is None and isinstance(left_bound, Number):
-                yield Loop(fzs((n,)), left_bound, l.is_spatial)
+                    delta = None
+
+                if delta is not None and isinstance(left_bound, TilePattern):
+                    delta = right_rank_var2initial_delta[(rvn, n)]
+                    if left_bound.stride == left_bound.initial:
+                        yield Loop(fzs((n,)), left_bound.stride, l.is_spatial)
+                    elif left_bound.stride + delta == left_bound.initial:
+                        yield Loop(fzs((n,)), left_bound.stride, l.is_spatial)
+                        # yield Loop(fzs((n,)),
+                        #            TilePattern(left_bound.stride, left_bound.stride),
+                        #            l.is_spatial)
+                    else:
+                        # yield Loop(fzs((n,)),
+                        #            TilePattern(left_bound.stride,
+                        #                        left_bound.initial-delta),
+                        #            l.is_spatial)
+                        pass
+                elif delta is None and isinstance(left_bound, Number):
+                    yield Loop(fzs((n,)), left_bound, l.is_spatial)
 
     for loops in itertools.product(*map(translate_loop, t.loops)):
         new_compatibility = t.update(loops=loops)
@@ -378,6 +378,7 @@ def join_sims(
         # ======================================================================
         if sims and lookahead_filter:
             prev_len = len(combined)
+            prev_combined = combined
             next_right_tensors = sims[0].tensor_names
             combined = SIM.group_left(combined, next_right_tensors, drop_tags=True)
             for k in list(combined):
@@ -388,14 +389,6 @@ def join_sims(
                     right_rank2initial_delta[right_einsum],
                 )
                 if not any(kt in sims[0].sims for kt in translations):
-                    list(
-                        get_possible_translations(
-                            k,
-                            full_equivalent_rank_variables,
-                            spec.workload.einsums[sims[0].einsum_name],
-                            right_rank2initial_delta[right_einsum],
-                        )
-                    )
                     if DO_PRINT:
                         for b in combined[k]:
                             print(f"\tLOOKAHEAD: No match for {b.compatibility}")
