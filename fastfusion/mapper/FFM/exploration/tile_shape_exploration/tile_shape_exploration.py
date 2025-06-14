@@ -569,6 +569,14 @@ def run_model(pmapping, spec, flattened_arch: list[architecture.Leaf], metrics: 
     if metrics & Metrics.ENERGY:
         df['metric_Energy'] = sum(energy.values())
 
+    if metrics & Metrics.PER_COMPONENT_ENERGY:
+        for component, component_energy in energy.items():
+            df[f'{component}_Energy'] = component_energy
+
+    if metrics & Metrics.RESERVATIONS:
+        for memory, occupancies in total_occupancy.items():
+            df[f'{memory}_Reservations'] = sum(occupancies.values())
+
     per_memory_usage_df = {}
     for memory, occupancies in total_occupancy.items():
         per_memory_usage_df[memory] = sum(occupancies.values()) / memory_to_size[memory]

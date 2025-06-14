@@ -21,7 +21,7 @@ renames:
       source: output.rank_variables() & weight.rank_variables() - head
       injective: True
     - name: reduced_rank
-      source: input.rank_variables() & weight.rank_variables() - head - output.rank_variables()
+      source: input.rank_variables() & weight.rank_variables() - head - output.rank_variables() - parallel_rank
       injective: True
 
   - name: I
@@ -30,10 +30,14 @@ renames:
       source: Nothing
     - name: input
       source: Inputs()
+    {% if FFMT | default(false) %}
+    - name: Intermediates
+      source: Nothing
+    {% endif %}
     rank_variables:
     - {name: head, source: Nothing().rank_variables()}
-    - {name: reduced_rank, source: b}
-    - {name: parallel_rank, source: m}
+    - {name: reduced_rank, source: b, injective: True}
+    - {name: parallel_rank, source: m, injective: True}
 
   - name: QK
     tensor_accesses:
@@ -41,7 +45,7 @@ renames:
       source: Q
       injective: True
     rank_variables:
-    - {name: parallel_rank, source: m}
+    - {name: parallel_rank, source: m, injective: True}
 
   - name: AV
     tensor_accesses:
@@ -49,7 +53,8 @@ renames:
       source: QK
       injective: True
     rank_variables:
-    - {name: parallel_rank, source: p}
+    - {name: parallel_rank, source: f, injective: True}
+    # - {name: reduced_rank, source: p, injective: True}
 
   - name: FFA
     rank_variables:

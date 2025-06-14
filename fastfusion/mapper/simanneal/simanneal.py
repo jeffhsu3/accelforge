@@ -228,6 +228,8 @@ class Mapping:
                 )
         self.history.append(f"Moving tensor {tensor} to storage {storage}")
         for einsum, tiling in self.einsum2tiling.items():
+            if not any(r.name == tensor for r in tiling.storage):
+                continue
             new_storages = [storage] + [r for r in tiling.storage if r.name != tensor]
             self.set_einsum2tiling(einsum, tiling.update(storage=fzs(new_storages)))
         self.fix_loops(mapspace_globals)
@@ -249,7 +251,7 @@ class Mapping:
         
         chosen_sims = []
         chosen_mappings = {}
-        n_evaluations = 1
+        n_evaluations = mapspace_globals.size_scale * mapspace_globals.find_pmapping_scale
         
         if self.n_changes == self.prev_eval_at_n_changes and not return_df:
             return self.prev_eval_result, 1

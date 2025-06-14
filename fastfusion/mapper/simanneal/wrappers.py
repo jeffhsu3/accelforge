@@ -186,7 +186,7 @@ def join_sims(
                 n_threads=n_threads,
                 evaluations_tracker=copy.deepcopy(evaluations_tracker),
                 algorithm=algorithm,
-            ) for _ in range(n_threads)], n_jobs=n_threads)
+            ) for _ in range(n_threads)], n_jobs=n_threads if util.PARALLELIZE else 1)
             results = pd.concat([r[0] for r in results_and_trackers])
             break
         except OSError as e:

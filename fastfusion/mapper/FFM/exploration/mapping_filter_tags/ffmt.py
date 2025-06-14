@@ -5,23 +5,64 @@ from .util import get_fused_loops_per_tensor
 
 
 FFMT_VALID = "FFMT_VALID"
-FFMT_INVALID = "FFMT_INVALID"
 FFMT_WEIGHT_UNTILED = "FFMT_WEIGHT_UNTILED"
 FFMT_WEIGHT_TILED = "FFMT_WEIGHT_TILED"
 
 
-def get_ffmt_tag(compatibility, pmapping, non_fused_memory):
-    einsum_name = pmapping[-1].einsum_name
+def get_ffmt_tag(compatibility):
+    return get_ffmt_matmul_tag(compatibility)
     if "Matmul" in einsum_name:
-        return get_ffmt_matmul_tag(compatibility, pmapping, non_fused_memory)
+        return get_ffmt_matmul_tag(compatibility)
     else:
-        return get_ffmt_mha_tag(compatibility, pmapping, non_fused_memory)
+        return get_ffmt_mha_tag(compatibility)
 
 
-def get_ffmt_matmul_tag(compatibility, pmapping, non_fused_memory):
-    unique_loops = set()
-    for storage in compatibility.storage:
-        if storage.resource_name == non_fused_memory:
+def get_ffmt_matmul_tag(compatibility):
+    # FFMT is:
+    # - [input | output, weight]
+    # If there's >1 fused loop, they must be above the same number of loops
+    storages = [s for s in compatibility.storage if s.resource_name != "MainMemory"]
+    if len(storages) <= 1 :
+        return Tags((FFMT_VALID,))
+
+    allowed_n_loops = [
+        (0, 0),
+        (1, 1),
+        (1, 2),
+    ]
+
+    # If there's a B or H fused loop, add one to the allowed n_loops
+    for rank_var in "b", "h":
+        if any(rank_var in l.rank_variable for l in compatibility.loops):
+            allowed_n_loops = [
+                (x + 1, y + 1)
+                for x, y in allowed_n_loops
+            ]
+    
+    if tuple(sorted(s.above_loop_index for s in storages)) in [
+        (0, 0),
+        (1, 1),
+        (1, 2),
+    ]:
+        return Tags((FFMT_VALID,))
+    raise ValueError()
+    
+def get_ffmt_mha_tag(compatibility):
+    storages = [s for s in compatibility.storage if s.resource_name != "MainMemory"]
+    if len(compatibility.loops) == 0:
+        return Tags((FFMT_VALID,))
+    
+    
+    # Loops have to be in the order (b, h)
+    if len(compatibility.loops) == 1:
+        return Tags((FFMT_INVALID,))
+    
+    if len(set(s.above_loop_index for s in storages)) > 1:
+        raise ValueError()
+    return Tags((FFMT_VALID,))
+
+    for storages in compatibility.storage:
+        if storage.resource_name == "MainMemory":
             continue
         unique_loops.add(storage.above_loop_index)
 
@@ -47,10 +88,10 @@ def get_ffmt_matmul_tag(compatibility, pmapping, non_fused_memory):
         return Tags((FFMT_VALID, FFMT_WEIGHT_UNTILED))
     elif min_weight_idx >= max_non_weight_idx:
         return Tags((FFMT_VALID, FFMT_WEIGHT_TILED))
-    return Tags((FFMT_INVALID,))
+    raise ValueError()
 
 
-def get_ffmt_mha_tag(pmapping, intermediate_tensors, non_fused_memory):
+def get_ffmt_mha_tag(pmapping):
     einsum_name = pmapping[-1].einsum_name
     B, H, M, F, P, G, E, D, C, J = 'bhmfpgedcj'
     EINSUM_NAME_TO_REDUCED_RANK_OUTPUT_RANK = {
@@ -74,14 +115,14 @@ def get_ffmt_mha_tag(pmapping, intermediate_tensors, non_fused_memory):
 
     tensor_to_n_fused_loops = get_fused_loops_per_tensor(pmapping,
                                                          intermediate_tensors,
-                                                         non_fused_memory)
+                                                         "MainMemory")
     unfused = all(n is None
                   for t, n in tensor_to_n_fused_loops.items()
                   if t in intermediate_tensors)
     if einsum_name not in EINSUM_NAME_TO_REDUCED_RANK_OUTPUT_RANK:
         if unfused:
             return Tags((FFMT_VALID,))
-        return Tags((FFMT_INVALID,))
+        raise ValueError()
 
     reduced_rank, output_rank = EINSUM_NAME_TO_REDUCED_RANK_OUTPUT_RANK[einsum_name]
 
@@ -115,14 +156,6 @@ def get_ffmt_mha_tag(pmapping, intermediate_tensors, non_fused_memory):
             max_weight_idx = max(max_weight_idx, n_loops)
         else:
             max_non_weight_idx = max(max_non_weight_idx, n_loops)
-
-    unfused = first and last
-    if unfused:
-        return Tags((FFMT_VALID,))
-
-    FFMT_CANNOT_FUSE = {"K", "V"}
-    if einsum_name in FFMT_CANNOT_FUSE:
-        return Tags((FFMT_INVALID,))
 
     # Rank variable order and the n_loops for (input, output)
     prefix_choices = [
@@ -191,4 +224,4 @@ def get_ffmt_mha_tag(pmapping, intermediate_tensors, non_fused_memory):
             elif min_weight_idx >= max_non_weight_idx:
                 return Tags((FFMT_VALID, FFMT_WEIGHT_TILED))
 
-    return Tags((FFMT_INVALID,))
+    raise ValueError()

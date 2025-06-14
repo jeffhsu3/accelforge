@@ -12,7 +12,6 @@ workload:
     j: 0 <= j < 4096
     g: 0 <= g < 4096
 
-
   einsums:
   - name: I
     is_copy_operation: True

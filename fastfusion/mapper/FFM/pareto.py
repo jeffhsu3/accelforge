@@ -879,6 +879,18 @@ class PartialMappings:
         rename = lambda col: f"{prefix}_{col}" if not col_used_in_pareto(col) else col
         self.data.rename(columns=rename, inplace=True)
         
+    # def _compress_data(self, prefix: EinsumName = None, job_id: int = None) -> pd.DataFrame:
+    #     compressed_index_col = pd.Series(self.data.index)
+    #     keep_cols = [c for c in self.data.columns if col_used_in_pareto(c)]
+    #     recovery = self.data[[c for c in self.data.columns if c not in keep_cols]].copy()
+    #     self._data = self.data[keep_cols].copy()
+    #     self.data[COMPRESSED_INDEX] = compressed_index_col.apply(lambda x: (job_id, x))
+    #     recovery[COMPRESSED_INDEX] = compressed_index_col
+    #     if prefix is not None:
+    #         recovery.rename(columns={c: f"{prefix}{c}" for c in recovery.columns}, inplace=True)
+    #         self.data.rename(columns={COMPRESSED_INDEX: f"{prefix}{COMPRESSED_INDEX}"}, inplace=True)
+    #     assert len(recovery.columns) == len(set(recovery.columns)), f"Duplicate columns in {recovery.columns}"
+    #     return recovery
     def _compress_data(self, prefix: EinsumName = None, job_id: int = None) -> pd.DataFrame:
         self.data[COMPRESSED_INDEX] = self.data.index
         keep_cols = [COMPRESSED_INDEX] + [c for c in self.data.columns if col_used_in_pareto(c)]

@@ -379,7 +379,7 @@ class Mapping(Nested):
         to_add = []
         for node in self.nodes:
             new_node = copy.deepcopy(node)
-            if isinstance(new_node, Reservation):
+            if isinstance(new_node, Storage):
                 tensor = new_node.tensor
                 if tensor not in relevant_intermediate_tensors:
                     continue
@@ -388,7 +388,7 @@ class Mapping(Nested):
                 relevant_intermediate_tensors.remove(tensor)
                 if len(relevant_intermediate_tensors) == 0:
                     break
-            else:
+            elif isinstance(new_node, Iteration):
                 to_add.append(new_node)
         return fused_slice
 
