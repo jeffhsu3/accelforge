@@ -12,6 +12,9 @@ from fastfusion.model.looptree.latency import get_latency
 from fastfusion.model.looptree.reuse.summarized.symbolic import analyze_reuse, Compute, Buffet
 
 
+PARENT_DIR = Path(__file__).parent
+
+
 class TestSymbolicModel(unittest.TestCase):
     def test_q_mapping(self):
         mapping = Mapping.from_yaml(Path(__file__).parent / 'Q_mapping.yaml')
@@ -49,6 +52,16 @@ class TestSymbolicModel(unittest.TestCase):
                 result.buffet_stats[Buffet(tensor, 'Matmul1', 'LocalBuffer')].occupancy,
                 ref_occupancy
             )
+
+    def test_matmul_spatial(self):
+        mapping = Mapping.from_yaml(PARENT_DIR / 'matmul_spatial.mapping.yaml')
+        workload = Workload.from_yaml(PARENT_DIR / 'matmul.workload.yaml')
+
+        result = analyze_reuse(mapping, workload)
+        self.assertEqual(
+            result.fanout,
+            {('LocalBuffer', 'Matmul1'): {0: 128.0, 1: 4.0}, ('MainMemory', 'Matmul1'): {}}
+        )
 
 
 class TestSymbolicAccesses(unittest.TestCase):

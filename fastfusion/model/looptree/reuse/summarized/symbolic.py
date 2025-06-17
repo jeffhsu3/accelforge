@@ -485,7 +485,16 @@ def analyze_spatial(node_idx, current_shape, info: AnalysisInfo):
             child_fanout = child_result.fanout[key]
 
             if key not in result_accumulator.fanout:
-                result_accumulator.fanout[key] = child_fanout
+                if key == my_key:
+                    fanout = {}
+                    for dim in child_fanout:
+                        if dim == node_dim:
+                            fanout[dim] = child_fanout[dim]*shape_repeats
+                        else:
+                            fanout[dim] = child_fanout[dim]
+                    result_accumulator.fanout[key] = fanout
+                else:
+                    result_accumulator.fanout[key] = child_fanout
                 continue
             fanout = result_accumulator.fanout[key]
 
