@@ -126,6 +126,7 @@ def eval_set_expression(
     expression: str,
     symbol_table: dict[str, InvertibleSet],
     expected_space_name: str,
+    location: str,
     injective: bool = False
 ) -> InvertibleSet:
     try:
@@ -144,7 +145,10 @@ def eval_set_expression(
                 f"expected \"{expected_space_name}\""
             )
     except Exception as e:
-        raise ParseError(
+        err = ParseError(
             f"{e}. Set expression: \"{expression}\". Symbol table:\n\t" + "\n\t".join(f"{k}: {v}" for k, v in symbol_table.items())
-        ) from e
+        )
+        if location is not None:
+            err.add_field(location)
+        raise err from e
     return result

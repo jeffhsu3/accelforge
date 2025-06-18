@@ -126,7 +126,7 @@ class Storage(MappingNode):
     memory: str
     memory_object: Optional[architecture.Memory] = None # Reference to memory node for convenience
     _must_keep_tensors: ParsableList[TensorName] = ParsableList() # Must the mapper keep these tensors here?
-    _backing: bool = False  # Is this node a backing storage?
+    _backing: set[TensorName] = set()  # Is this node a backing storage?
     _even_with_below: bool = False
     _lower: bool = True
 

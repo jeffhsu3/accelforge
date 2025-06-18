@@ -84,7 +84,7 @@ class Leaf(ArchNode, ABC):
     
     def _parse_constraints(self, outer_scope: dict[str, Any]):
         self.constraints.name = self.name
-        return self.constraints._parse(outer_scope)
+        return self.constraints._parse(outer_scope, location=f"{self.name} constraints")
 
 
 class Component(Leaf, ABC):
