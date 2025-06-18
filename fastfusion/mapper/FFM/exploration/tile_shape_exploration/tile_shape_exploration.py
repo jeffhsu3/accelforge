@@ -519,7 +519,7 @@ def run_model(pmapping, spec, flattened_arch: list[architecture.Leaf], metrics: 
     actions = gather_actions(reuse, pmapping, workload, None, is_path=True, use_name=True)
     energy = compute_energy_from_actions(actions, ert)
 
-    intermediate_tensors = workload.intermediate_tensors
+    intermediate_tensors = workload.intermediate_tensor_names
     tensor_to_backing = {}
     for node in pmapping.nodes:
         if isinstance(node, Storage):

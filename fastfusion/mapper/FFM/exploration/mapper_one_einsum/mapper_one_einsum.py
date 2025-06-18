@@ -63,7 +63,7 @@ def insert_temporal_loops(
     tensor2partially_relevant_rank_vars = einsum.tensor2partially_relevant_rank_variables
     tensor2rank_vars = einsum.tensor2rank_variables
 
-    intermediate_tensors = einsum.tensors & workload.intermediate_tensors
+    intermediate_tensors = einsum.tensor_names & workload.intermediate_tensor_names
     is_fused_loops = True
     seen_tensors = set()
     choices = []

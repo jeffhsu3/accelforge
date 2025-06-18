@@ -92,7 +92,7 @@ def get_stride_and_halo(
     stride_and_halo = {}
     for einsum in workload.einsums:
         shape = get_rank_variable_bounds(workload, einsum.name)
-        for tensor in einsum.tensors:
+        for tensor in einsum.tensor_names:
             stride_and_halo[(einsum.name, tensor)] = {}
             tensor_stride_and_halo = stride_and_halo[(einsum.name, tensor)]
 

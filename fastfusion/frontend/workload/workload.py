@@ -255,11 +255,11 @@ class Workload(ParsableModel):
         return " and ".join(term for term in einsum_shape + global_shape)
     
     @property
-    def intermediate_tensors(self) -> set[TensorName]:
-        return {t for t in self.tensors if self.einsums_that_read_tensor(t) and self.einsums_that_write_tensor(t)}
+    def intermediate_tensor_names(self) -> set[TensorName]:
+        return {t for t in self.tensor_names if self.einsums_that_read_tensor(t) and self.einsums_that_write_tensor(t)}
 
     @property
-    def tensors(self) -> set[TensorName]:
+    def tensor_names(self) -> set[TensorName]:
         return {TensorName(t.name) for e in self.einsums for t in e.tensor_accesses}
 
     def render(self) -> str:
@@ -378,7 +378,7 @@ class Workload(ParsableModel):
 
     def get_pairwise_equivalent_rank_variables(self) -> dict[RankVariableName, set[RankVariableName]]:
         equivalent_rank_variables: dict[RankVariableName, set[RankVariableName]] = {}
-        for tensor in self.tensors:
+        for tensor in self.tensor_names:
             accesses = self.accesses_for_tensor(tensor)
             if not accesses:
                 raise ValueError(f"Tensor {tensor} has no accesses")

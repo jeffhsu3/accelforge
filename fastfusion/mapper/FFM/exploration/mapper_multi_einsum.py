@@ -8,7 +8,7 @@ from fastfusion.frontend import architecture
 from fastfusion.frontend.specification import Specification
 from fastfusion.frontend.mapping import Mapping
 from fastfusion.frontend.workload.isl import get_rank_variable_bounds
-from fastfusion.frontend.workload.workload import EinsumName
+from fastfusion.frontend.workload.workload import EinsumName, TensorName
 
 from fastfusion.mapper.FFM.exploration.metrics import Metrics
 from fastfusion.mapper.FFM.exploration.mapper_one_einsum import get_single_einsum_jobs
@@ -34,7 +34,7 @@ def get_rank_variable_bounds_for_all_einsums(spec: Specification):
                     )
     return result
 
-def get_num_computes(spec: Specification):
+def get_num_computes(spec: Specification) -> int:
     rank_variable_bounds = get_rank_variable_bounds_for_all_einsums(spec)
     return sum(
         prod(
@@ -42,6 +42,23 @@ def get_num_computes(spec: Specification):
         )
         for einsum in spec.workload.einsums
     )
+    
+def get_per_tensor_size(spec: Specification) -> dict[TensorName, int]:
+    rank_variable_bounds = get_rank_variable_bounds_for_all_einsums(spec)
+    sizes = {}
+    for t in spec.workload.tensor_names:
+        einsum = next(iter(spec.workload.einsums_that_read_tensor(t)))
+        size = 1
+        access = einsum.tensor_accesses[t]
+        for r in access.fully_relevant_rank_variables:
+            size *= rank_variable_bounds[r]
+        if access.partially_relevant_rank_variables:
+            raise ValueError(
+                f"Tensor {t} has partially relevant rank variables."
+                f"This function only works for fully-relevant rank variables."
+            )
+        sizes[t] = size
+    return sizes
 
 def get_sims(
     spec: Specification,
@@ -88,7 +105,7 @@ def get_sims(
         )
         sims[einsum_name].extend(new_sims)
 
-    intermediate_tensors = spec.workload.intermediate_tensors
+    intermediate_tensors = spec.workload.intermediate_tensor_names
     for einsum_name, sims2 in sims.items():
         sims[einsum_name] = SIM.combine_combineable(sims2, live_tensors=intermediate_tensors, pbar_postfix = f" for {einsum_name}")
 
