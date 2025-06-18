@@ -120,7 +120,7 @@ def get_constraints(
         if (index := first_storage_node_index(mapping, m.name)) is None:
             continue
 
-        storage_constraints = m.constraints.storage._parse_non_keep_bypass(symbol_table)
+        storage_constraints = m.constraints.storage._parse_non_keep_bypass(symbol_table, f"{m.name}.constraints.storage")
 
         # Tile shape constraints
         for c in storage_constraints.tile_shape:
@@ -142,7 +142,7 @@ def get_constraints(
             if dim not in m.constraints.spatial:
                 continue
             loops = [n for n in mapping if isinstance(n, Spatial) and (n.across, n.dimension) == (m.name, dim)]
-            spatial_constraint = m.constraints.spatial[dim]._parse(symbol_table)
+            spatial_constraint = m.constraints.spatial[dim]._parse(symbol_table, f"{m.name}.constraints.spatial")
 
             # Loop bounds constraints
             if spatial_constraint.loop_bounds:

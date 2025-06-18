@@ -15,10 +15,10 @@ class LoopOrder(ParsableList[RankVariableName]):
     A loop_order of ranks.
     """
 
-    def _parse(self, symbol_table: dict[str, Any]):
+    def _parse(self, symbol_table: dict[str, Any], location: str):
         # return [x._parse(symbol_table) for x in self]
         return type(self)(
-            [eval_set_expression(x, symbol_table, "rank_variables") for x in self],
+            [eval_set_expression(x, symbol_table, "rank_variables", location) for x in self],
         )
 
 class Comparison(ParsableModel):
@@ -26,11 +26,11 @@ class Comparison(ParsableModel):
     operator: str
     value: ParsesTo[int]
     
-    def _parse(self, symbol_table: dict[str, Any]):
+    def _parse(self, symbol_table: dict[str, Any], location: str):
         # if len(self) != 3:
         #     raise ValueError(f"Comparison can only have 3 elements. got {len(self)}")
         new = type(self)(
-            expression=eval_set_expression(self.expression, symbol_table, "rank_variables"),
+            expression=eval_set_expression(self.expression, symbol_table, "rank_variables", location),
             operator=self.operator,
             value=self.value,
         )
@@ -113,16 +113,16 @@ class Storage(ParsableModel):
     coalesce: Union[str, InvertibleSet[TensorName], set[TensorName]] = "All"
     tile_shape: ParsableList[Comparison] = []
 
-    def _parse_keep_bypass(self, symbol_table: dict[str, Any]):
+    def _parse_keep_bypass(self, symbol_table: dict[str, Any], location: str):
         return type(self)(
-            bypass=eval_set_expression(self.bypass, symbol_table, "tensors"),
-            keep=eval_set_expression(self.keep, symbol_table, "tensors"),
+            bypass=eval_set_expression(self.bypass, symbol_table, "tensors", location),
+            keep=eval_set_expression(self.keep, symbol_table, "tensors", location),
         )
 
-    def _parse_non_keep_bypass(self, symbol_table: dict[str, Any]):
+    def _parse_non_keep_bypass(self, symbol_table: dict[str, Any], location: str):
         return type(self)(
-            coalesce=eval_set_expression(self.coalesce, symbol_table, "tensors"),
-            tile_shape=[x._parse(symbol_table) for x in self.tile_shape],
+            coalesce=eval_set_expression(self.coalesce, symbol_table, "tensors", location),
+            tile_shape=[x._parse(symbol_table, location) for x in self.tile_shape],
         )
 
 class Iteration(ParsableModel):
@@ -133,10 +133,10 @@ class Iteration(ParsableModel):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         
-    def _parse(self, symbol_table: dict[str, Any]):
+    def _parse(self, symbol_table: dict[str, Any], location: str):
         return type(self)(
-            loop_bounds=[x._parse(symbol_table) for x in self.loop_bounds],
-            reuse=eval_set_expression(self.reuse, symbol_table, "tensors"),
+            loop_bounds=[x._parse(symbol_table, location) for x in self.loop_bounds],
+            reuse=eval_set_expression(self.reuse, symbol_table, "tensors", location),
         )
         
 class Spatial(Iteration):
@@ -154,20 +154,20 @@ class Spatial(Iteration):
     def name(self):
         return self.dimension
     
-    def _parse(self, symbol_table: dict[str, Any]):
+    def _parse(self, symbol_table: dict[str, Any], location: str):
         return type(self)(
             dimension=self.dimension,
-            loop_bounds=[x._parse(symbol_table) for x in self.loop_bounds],
-            reuse=eval_set_expression(self.reuse, symbol_table, "tensors"),
+            loop_bounds=[x._parse(symbol_table, location) for x in self.loop_bounds],
+            reuse=eval_set_expression(self.reuse, symbol_table, "tensors", location),
             min_utilization=self.min_utilization,
         )
 
 class Temporal(Iteration):
     rmw_first_update: List[str] = []
 
-    def _parse(self, symbol_table: dict[str, Any]):
-        new_temporal = super()._parse(symbol_table)
-        new_temporal.rmw_first_update = eval_set_expression(self.rmw_first_update, symbol_table, "tensors")
+    def _parse(self, symbol_table: dict[str, Any], location: str):
+        new_temporal = super()._parse(symbol_table, location)
+        new_temporal.rmw_first_update = eval_set_expression(self.rmw_first_update, symbol_table, "tensors", location)
         return new_temporal
 
     def combine(self, other: "Temporal"):
@@ -182,10 +182,10 @@ class Temporal(Iteration):
 class Dataflow(ParsableModel):
     storage_orders: ParsableList[ParsableList[Union[str, InvertibleSet[TensorName], set[TensorName]]]] = ParsableList()
 
-    def _parse(self, symbol_table: dict[str, Any]):
+    def _parse(self, symbol_table: dict[str, Any], location: str):
         result = type(self)(
             storage_orders=[
-                [eval_set_expression(x, symbol_table, "tensors") for x in order_choice]
+                [eval_set_expression(x, symbol_table, "tensors", location) for x in order_choice]
                 for order_choice in self.storage_orders
             ],
         )
