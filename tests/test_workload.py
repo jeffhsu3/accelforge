@@ -11,7 +11,7 @@ class TestWorkload(unittest.TestCase):
 
         TENSOR_NAMES_REF = {'I', 'WV', 'V', 'WK', 'K', 'WQ', 'Q', 'QK', 'AV',
                             'WZ', 'Z', 'WFFA', 'FFA', 'WFFB', 'FFB' }
-        self.assertEqual(TENSOR_NAMES_REF, {t for t in workload.tensors})
+        self.assertEqual(TENSOR_NAMES_REF, {t for t in workload.tensor_names})
 
         rank_variable_bounds = get_rank_variable_bounds(workload, 'Q')
         REF_RANK_VARIABLE_BOUNDS = {

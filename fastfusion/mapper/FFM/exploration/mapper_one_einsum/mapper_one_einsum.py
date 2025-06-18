@@ -62,7 +62,7 @@ def insert_temporal_loops(
     tensor2partially_relevant_rank_vars = einsum.tensor2partially_relevant_rank_variables
     tensor2rank_vars = einsum.tensor2rank_variables
 
-    intermediate_tensors = einsum.tensors & workload.intermediate_tensors
+    intermediate_tensors = einsum.tensor_names & workload.intermediate_tensor_names
     is_fused_loops = True
     seen_tensors = set()
     choices = []
@@ -633,7 +633,7 @@ def _per_proc_compatibility2sim(
     job_id: int,
     tagger=None,
 ) -> tuple[str, dict[Compatibility, SIM], str, Mapping]:
-    print(f', '.join(m.compact_string() for m in mapping.nodes))
+    # print(f', '.join(m.compact_string() for m in mapping.nodes))
     result, total_pmappings = explore_tile_shapes(mapping, constraints, spec, flattened_arch, metrics)
     sims = make_sims(mapping, result, rank_variable_bounds, intermediate_tensors, tagger=tagger, total_pmappings=total_pmappings)
     decompress_data = PartialMappings.compress_paretos(
@@ -662,7 +662,7 @@ def get_single_einsum_jobs(
         rank_variable_bounds = get_rank_variable_bounds(spec.workload, einsum_name)
     
     workload = spec.workload
-    intermediate_tensors = workload.intermediate_tensors & workload.einsums[einsum_name].tensor_names
+    intermediate_tensors = workload.intermediate_tensor_names & workload.einsums[einsum_name].tensor_names
 
     if flattened_arch is None:
         flattened_arch = spec.get_flattened_architecture()
