@@ -646,20 +646,21 @@ def _per_proc_compatibility2sim(
     tensor2boundless_compatibilities: dict[TensorName, set[Compatibility]] | None = None,
 ) -> tuple[str, dict[Compatibility, SIM], str, Mapping]:
        
-    # print(f', '.join(m.compact_string() for m in mapping.nodes))
-    # mapping_copy = copy.deepcopy(mapping)
-    # explore_tile_shapes(mapping_copy, constraints, spec, flattened_arch, metrics, _fix_me=True)
-    # compatibility = make_compatibility(mapping_copy, intermediate_tensors)
-    # if tensor2boundless_compatibilities is not None:
-    #     for t, c in compatibility.per_tensor_compatibility().items():
-    #         if t not in tensor2boundless_compatibilities:
-    #             continue
-    #         for c2 in c.subsets_of_loops(clear_bounds=True):
-    #             if c2 in tensor2boundless_compatibilities[t]:
-    #                 break
-    #         else:
-    #             print(f'Skipping {c} because it is not in any tensor2boundless_compatibilities')
-    #             return einsum_name, [], None, job_id
+    print(f', '.join(m.compact_string() for m in mapping.nodes))
+    mapping_copy = copy.deepcopy(mapping)
+    explore_tile_shapes(mapping_copy, constraints, spec, flattened_arch, metrics, _fix_me=True)
+    compatibility = make_compatibility(mapping_copy, intermediate_tensors)
+
+    if tensor2boundless_compatibilities is not None:
+        for t, c in compatibility.per_tensor_compatibility().items():
+            if t not in tensor2boundless_compatibilities:
+                continue
+            for c2 in c.subsets_of_loops(clear_bounds=True):
+                if c2 in tensor2boundless_compatibilities[t]:
+                    break
+            else:
+                print(f'Skipping {c} due to incompatibility.')
+                return einsum_name, [], None, job_id
     
     
     result, total_pmappings = explore_tile_shapes(mapping, constraints, spec, flattened_arch, metrics, _fix_me=False)
@@ -672,6 +673,7 @@ def _per_proc_compatibility2sim(
         extra_data={MAPPING_COLUMN: mapping}
     )
     gc.collect()
+    # print(f"FINISHED: " + ', '.join(m.compact_string() for m in mapping.nodes))
     return einsum_name, sims, decompress_data, job_id
 
 

@@ -291,15 +291,15 @@ def generate_tile_shapes(pmapping, constraints, usage_df, utilization_df, specif
                 corrected_choices = combined_choices_with_largest[:,corrected_indices]
                 corrected_choices = corrected_choices[:,is_symbols]
 
-                for (component, dim), utilization_model in utilization_df.items():
-                    utilization[(component, dim)] = np.minimum(
-                        utilization[(component, dim)],
-                        utilization_model(*[
-                            corrected_choices[:,i]
-                            for i in range(corrected_choices.shape[1])
-                        ])
-                    )
-                    mask &= (utilization[(component, dim)] <= 1.0)
+                # for (component, dim), utilization_model in utilization_df.items():
+                #     utilization[(component, dim)] = np.minimum(
+                #         utilization[(component, dim)],
+                #         utilization_model(*[
+                #             corrected_choices[:,i]
+                #             for i in range(corrected_choices.shape[1])
+                #         ])
+                #     )
+                #     mask &= (utilization[(component, dim)] <= 1.0)
 
                 good_choices = combined_choices[mask,:]
                 all_good_choices.append(good_choices)
