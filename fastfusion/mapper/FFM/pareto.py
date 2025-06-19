@@ -901,8 +901,10 @@ class PartialMappings:
     def _compress_data(self, prefix: EinsumName = None, job_id: int = None) -> pd.DataFrame:
         self.data[COMPRESSED_INDEX] = self.data.index
         keep_cols = [COMPRESSED_INDEX] + [c for c in self.data.columns if col_used_in_pareto(c)]
-        recovery = self.data[[c for c in self.data.columns if c not in keep_cols] + [COMPRESSED_INDEX]]
-        self._data = self.data[keep_cols]
+        # recovery = self.data[[c for c in self.data.columns if c not in keep_cols] + [COMPRESSED_INDEX]]
+        # self._data = self.data[keep_cols]
+        recovery = self.data # TODO: We may want to use the above if compressing uses too much memory
+        self._data = self.data[keep_cols].copy()
         self._data[COMPRESSED_INDEX] = self._data[COMPRESSED_INDEX].apply(lambda x: (job_id, x))
         if prefix is not None:
             recovery.rename(columns={c: f"{prefix}{c}" for c in recovery.columns}, inplace=True)
