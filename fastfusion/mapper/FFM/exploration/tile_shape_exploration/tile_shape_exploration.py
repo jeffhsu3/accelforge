@@ -86,10 +86,12 @@ class TilingSegment:
             yield (n_loops, initial_delta_choices, max_shape, min_shape)
 
 
-def explore_tile_shapes(pmapping, constraints: "MappingConstraints", specification: Specification, flattened_arch, metrics: metrics.Metrics):
+def explore_tile_shapes(pmapping, constraints: "MappingConstraints", specification: Specification, flattened_arch, metrics: metrics.Metrics, _fix_me=False):
     set_last_tile_shape_to_one(pmapping)
 
     symbols, symbolic_df, per_memory_occupancy_df, utilization_df = run_model(pmapping, specification, flattened_arch, metrics)
+    if _fix_me:
+        return
     try:
         compiled_df = compile_dict(symbols, symbolic_df)
         compiled_per_memory_occupancy_df = compile_dict(symbols, per_memory_occupancy_df)
@@ -309,67 +311,67 @@ def generate_tile_shapes(pmapping, constraints, usage_df, utilization_df, specif
             np.concatenate(all_good_choices, axis=0)
         )
 
-    # while len(rank_var_and_choices) > 1:
-    #     best_reduction = 2
-    #     best_indices = None
-    #     best_combined = None
-    #     for i, rank_var_and_choices_a in enumerate(rank_var_and_choices):
-    #         for j, rank_var_and_choices_b in enumerate(rank_var_and_choices):
-    #             if i >= j:
-    #                 continue
+    while len(rank_var_and_choices) > 1:
+        best_reduction = 2
+        best_indices = None
+        best_combined = None
+        for i, rank_var_and_choices_a in enumerate(rank_var_and_choices):
+            for j, rank_var_and_choices_b in enumerate(rank_var_and_choices):
+                if i >= j:
+                    continue
 
-    #             choices_a = rank_var_and_choices_a[-1]
-    #             choices_b = rank_var_and_choices_b[-1]
+                choices_a = rank_var_and_choices_a[-1]
+                choices_b = rank_var_and_choices_b[-1]
 
-    #             # If we're going to have too many choices, skip
-    #             if choices_a.shape[0] * choices_b.shape[0] > 10000:
-    #                 continue
+                # If we're going to have too many choices, skip
+                if choices_a.shape[0] * choices_b.shape[0] > 10000:
+                    continue
 
-    #             other_rank_var_and_choices = [x for k, x in enumerate(rank_var_and_choices) if k not in (i, j)]
-    #             combined = get_combined_choices(rank_var_and_choices_a, rank_var_and_choices_b, other_rank_var_and_choices)
-    #             choices_combined = combined[-1]
-    #             if choices_a.shape[0] == 0 or choices_b.shape[0] == 0:
-    #                 reduction = 0
-    #             else:
-    #                 reduction = choices_combined.shape[0] / choices_a.shape[0] / choices_b.shape[0]
+                other_rank_var_and_choices = [x for k, x in enumerate(rank_var_and_choices) if k not in (i, j)]
+                combined = get_combined_choices(rank_var_and_choices_a, rank_var_and_choices_b, other_rank_var_and_choices)
+                choices_combined = combined[-1]
+                if choices_a.shape[0] == 0 or choices_b.shape[0] == 0:
+                    reduction = 0
+                else:
+                    reduction = choices_combined.shape[0] / choices_a.shape[0] / choices_b.shape[0]
 
-    #             # Encourage combining choices with 1
-    #             reduction -= choices_a.shape[0] == 1
-    #             reduction -= choices_b.shape[0] == 1
+                # Encourage combining choices with 1
+                reduction -= choices_a.shape[0] == 1
+                reduction -= choices_b.shape[0] == 1
 
-    #             # Combine the two choices that lead to the most reduction in the number of choices
-    #             if reduction < best_reduction:
-    #                 best_reduction = reduction
-    #                 best_indices = (i, j)
-    #                 best_combined = combined
+                # Combine the two choices that lead to the most reduction in the number of choices
+                if reduction < best_reduction:
+                    best_reduction = reduction
+                    best_indices = (i, j)
+                    best_combined = combined
 
-    #     if best_indices is None:
-    #         break
+        if best_indices is None:
+            break
     
-    #     rank_var_and_choices.pop(best_indices[1])
-    #     rank_var_and_choices.pop(best_indices[0])
-    #     rank_var_and_choices.append(best_combined)
+        rank_var_and_choices.pop(best_indices[1])
+        rank_var_and_choices.pop(best_indices[0])
+        rank_var_and_choices.append(best_combined)
 
-    # # Now pick the smallest choices
-    # rank_var_and_choices.sort(key=lambda x: x[-1].shape[0], reverse=True)
-    # while len(rank_var_and_choices) > 1:
-    #     def get_smallest():
-    #         smallest, smallest_idx = None, None
-    #         for i, rv in enumerate(rank_var_and_choices):
-    #             if smallest is None or rv[-1].shape[0] < smallest[-1].shape[0]:
-    #                 smallest_idx, smallest = i, rv
-    #         rank_var_and_choices.pop(smallest_idx)
-    #         return smallest
-    #     smallest = get_smallest()
-    #     smallest2 = get_smallest()
-    #     rank_var_and_choices.append(get_combined_choices(smallest, smallest2, rank_var_and_choices))
+    # Now pick the smallest choices
+    rank_var_and_choices.sort(key=lambda x: x[-1].shape[0], reverse=True)
+    while len(rank_var_and_choices) > 1:
+        def get_smallest():
+            smallest, smallest_idx = None, None
+            for i, rv in enumerate(rank_var_and_choices):
+                if smallest is None or rv[-1].shape[0] < smallest[-1].shape[0]:
+                    smallest_idx, smallest = i, rv
+            rank_var_and_choices.pop(smallest_idx)
+            return smallest
+        smallest = get_smallest()
+        smallest2 = get_smallest()
+        rank_var_and_choices.append(get_combined_choices(smallest, smallest2, rank_var_and_choices))
 
     # Sort rank var and choices by the rank variable name
-    rank_var_and_choices.sort(key=lambda x: x[0])
-    while len(rank_var_and_choices) > 1:
-        a = rank_var_and_choices.pop(0)
-        b = rank_var_and_choices.pop(0)
-        rank_var_and_choices.insert(0, get_combined_choices(a, b, rank_var_and_choices))
+    # rank_var_and_choices.sort(key=lambda x: x[0])
+    # while len(rank_var_and_choices) > 1:
+    #     a = rank_var_and_choices.pop(0)
+    #     b = rank_var_and_choices.pop(0)
+    #     rank_var_and_choices.insert(0, get_combined_choices(a, b, rank_var_and_choices))
 
     _, inverted_indices, is_symbol, choices = rank_var_and_choices[0]
     is_symbol = np.asarray(is_symbol)
@@ -515,7 +517,7 @@ def run_model(pmapping, spec, flattened_arch: list[architecture.Leaf], metrics: 
     df = {}
 
     reuse = analyze_reuse(pmapping, workload)
-    overall_latency, _, _ = get_latency(reuse, pmapping, workload, flattened_arch)
+    overall_latency, comp_latency, mem_latency = get_latency(reuse, pmapping, workload, flattened_arch)
     actions = gather_actions(reuse, pmapping, workload, None, is_path=True, use_name=True)
     energy = compute_energy_from_actions(actions, ert)
 
@@ -565,6 +567,9 @@ def run_model(pmapping, spec, flattened_arch: list[architecture.Leaf], metrics: 
 
     if metrics & Metrics.LATENCY:
         df['metric_Latency'] = overall_latency
+        df['compute_Latency'] = comp_latency
+        for mem, latency in mem_latency.items():
+            df[f'{mem}_Latency'] = latency
 
     if metrics & Metrics.ENERGY:
         df['metric_Energy'] = sum(energy.values())

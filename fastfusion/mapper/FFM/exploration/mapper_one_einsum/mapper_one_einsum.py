@@ -557,17 +557,17 @@ def shift_reservations_by_null_loop_indices(mappings: DataFrame, null_loop_indic
 
 
 def make_sims(
-        mapping: Mapping,
+        compatibility: Compatibility,
         explored_results: DataFrame,
         rank_variable_bounds: dict[RankVariableName, int],
         intermediate_tensors: set[TensorName],
         tagger: Callable[[Mapping], Tags] =  None,
-        total_pmappings: int = None
+        total_pmappings: int = None,
+        tensor2compatibilties: dict[TensorName, set[Compatibility]] | None = None,
     ):
     if explored_results.empty:
         return {}
 
-    compatibility = make_compatibility(mapping, intermediate_tensors)
 
     n_tile_shapes = sum(1 if isinstance(l.bound, Number) else 2 for l in compatibility.loops)
     fused_loop_columns = [f"__tile_shape{i}" for i in range(n_tile_shapes)]
@@ -581,6 +581,9 @@ def make_sims(
 
     sims = []
     
+    n_skipped = 0
+    total = 0
+    
     for tile_shape, mappings in groups:
         tensor2size = {}
 
@@ -593,12 +596,23 @@ def make_sims(
         # print(tile_shape)
         # print(', '.join(m.compact_string() for m in mapping.nodes if not isinstance(m, Fill)))
         new_compatibility, null_loop_indices = compatibility.populate_tile_shape(tile_shape, rank_variable_bounds, tensor2size)
+
         try:
             tags = Tags() if tagger is None else tagger(new_compatibility)
         except ValueError as e:
             continue
 
         new_compatibility = new_compatibility.update(tags=tags)
+
+        total += len(mappings)
+        fail = False
+        for t, c in new_compatibility.per_tensor_compatibility().items():
+            if t in tensor2compatibilties and c not in tensor2compatibilties[t]:
+                fail = True
+                break
+        if fail:
+            n_skipped += len(mappings)
+            continue
 
         shift_reservations_by_null_loop_indices(mappings, null_loop_indices)
         partial_mappings = PartialMappings(mappings, free_to_loop_index=len(new_compatibility.loops) - 1, n_pmappings=pmappings_per_group, skip_pareto=len(mappings) < 1000)
@@ -609,6 +623,8 @@ def make_sims(
             
         for equivalent_sim in get_equivalent_sims(sim, tagger, reservation_levels):
             sims.append(equivalent_sim)
+            
+    print(f'{n_skipped} / {total} skipped ({n_skipped / total * 100:.2f}%)')
 
     return sims
 
@@ -626,10 +642,29 @@ def _per_proc_compatibility2sim(
     metrics: metrics.Metrics,
     job_id: int,
     tagger=None,
+    tensor2compatibilties: dict[TensorName, set[Compatibility]] | None = None,
+    tensor2boundless_compatibilities: dict[TensorName, set[Compatibility]] | None = None,
 ) -> tuple[str, dict[Compatibility, SIM], str, Mapping]:
+       
     # print(f', '.join(m.compact_string() for m in mapping.nodes))
-    result, total_pmappings = explore_tile_shapes(mapping, constraints, spec, flattened_arch, metrics)
-    sims = make_sims(mapping, result, rank_variable_bounds, intermediate_tensors, tagger=tagger, total_pmappings=total_pmappings)
+    # mapping_copy = copy.deepcopy(mapping)
+    # explore_tile_shapes(mapping_copy, constraints, spec, flattened_arch, metrics, _fix_me=True)
+    # compatibility = make_compatibility(mapping_copy, intermediate_tensors)
+    # if tensor2boundless_compatibilities is not None:
+    #     for t, c in compatibility.per_tensor_compatibility().items():
+    #         if t not in tensor2boundless_compatibilities:
+    #             continue
+    #         for c2 in c.subsets_of_loops(clear_bounds=True):
+    #             if c2 in tensor2boundless_compatibilities[t]:
+    #                 break
+    #         else:
+    #             print(f'Skipping {c} because it is not in any tensor2boundless_compatibilities')
+    #             return einsum_name, [], None, job_id
+    
+    
+    result, total_pmappings = explore_tile_shapes(mapping, constraints, spec, flattened_arch, metrics, _fix_me=False)
+    compatibility = make_compatibility(mapping, intermediate_tensors)
+    sims = make_sims(compatibility, result, rank_variable_bounds, intermediate_tensors, tagger=tagger, total_pmappings=total_pmappings, tensor2compatibilties=tensor2compatibilties)
     decompress_data = PartialMappings.compress_paretos(
         einsum_name, 
         [s.mappings for s in sims],
@@ -646,6 +681,8 @@ def get_single_einsum_jobs(
     metrics: metrics.Metrics,
     rank_variable_bounds: dict[RankVariableName, int] | None = None,
     flattened_arch: list[architecture.Leaf] | None = None,
+    tensor2compatibilties: dict[TensorName, set[Compatibility]] | None = None,
+    tensor2boundless_compatibilities: dict[TensorName, set[Compatibility]] | None = None,
     tagger: Callable[[Mapping], Tags] | None = None,
     start_index: int = 0,
     except_from_imperfect: set = set(),
@@ -681,7 +718,9 @@ def get_single_einsum_jobs(
             tagger=tagger,
             metrics=metrics,
             job_id=start_index + i,
-       )
+            tensor2compatibilties=tensor2compatibilties,
+            tensor2boundless_compatibilities=tensor2boundless_compatibilities,
+        )
         for i, (mapping, constraints) in enumerate(mappings_constraints)
     ]
 

@@ -62,7 +62,7 @@ def get_per_tensor_size(spec: Specification) -> dict[TensorName, int]:
 
 def get_sims(
     spec: Specification,
-    flattened_architecture: Optional[list[architecture.Leaf]] = None,
+    flattened_arch: Optional[list[architecture.Leaf]] = None,
     tagger: Callable[[Mapping], Tags] | None = None,
     metrics: Metrics = Metrics.ENERGY | Metrics.LATENCY,
     einsum_names: Optional[list[EinsumName]] = None,
@@ -77,40 +77,110 @@ def get_sims(
     
     rank_variable_bounds = get_rank_variable_bounds_for_all_einsums(spec)
 
-    if flattened_architecture is None:
-        flattened_architecture = spec.get_flattened_architecture()
-
-    single_einsum_jobs = []
-    einsum_names = einsum_names or spec.workload.einsum_names
-    for einsum_name in einsum_names:
-        single_einsum_jobs.extend(get_single_einsum_jobs(
-            spec,
-            einsum_name,
-            metrics,
-            rank_variable_bounds,
-            flattened_architecture,
-            start_index=len(single_einsum_jobs),
-            tagger=tagger,
-            except_from_imperfect=except_from_imperfect,
-        ))
-
-    sims = {einsum_name: [] for einsum_name in spec.workload.einsum_names}
+    if flattened_arch is None:
+        flattened_arch = spec.get_flattened_arch()
+        
+    sims = {}
     grouped_decompress_data: GroupedDecompressData = GroupedDecompressData(prefix2datalist={})
-    for einsum_name, new_sims, decompress_data, job_id in parallel(
-        single_einsum_jobs,
-        pbar="Generating Partial Mappings",
-        return_as="generator_unordered",
-    ):
-        grouped_decompress_data.register_decompress_data(
-            einsum_name,
-            job_id,
-            decompress_data,
+    tensor2compatibilties = {}
+    for einsum_name in spec.workload.einsum_names:
+        cur_sims: list[SIM] = []
+        relevant_tensor2compatibilties = {
+            t: s
+            for t, s in tensor2compatibilties.items()
+            if t in spec.workload.einsums[einsum_name].tensor_names
+        }
+        relevant_tensor2boundless_compatibilities = {
+            t: set(
+                c.clear_loop_bounds()
+                for c in relevant_tensor2compatibilties[t]
+            )
+            for t in relevant_tensor2compatibilties
+        }
+        
+        jobs = get_single_einsum_jobs(
+            spec=spec,
+            einsum_name=einsum_name,
+            metrics=metrics,
+            rank_variable_bounds=rank_variable_bounds,
+            flattened_arch=flattened_arch,
+            tensor2compatibilties=relevant_tensor2compatibilties,
+            tensor2boundless_compatibilities=relevant_tensor2boundless_compatibilities,
         )
-        sims[einsum_name].extend(new_sims)
-
+        for einsum_name, new_sims, decompress_data, job_id in parallel(
+            jobs,
+            pbar=f"Generating Pmappings for {einsum_name}",
+            return_as="generator_unordered",
+        ):
+            cur_sims.extend(new_sims)
+            grouped_decompress_data.register_decompress_data(
+                einsum_name,
+                job_id,
+                decompress_data,
+            )
+            
+        cur_tensor2compatibilties = {}
+        for s in cur_sims:
+            for t, c in s.compatibility.per_tensor_compatibility().items():
+                cur_tensor2compatibilties.setdefault(t, set()).add(c.clear_tags())
+                
+        for t in cur_tensor2compatibilties:
+            if t in tensor2compatibilties:
+                tensor2compatibilties[t] &= cur_tensor2compatibilties[t]
+            else:
+                tensor2compatibilties[t] = cur_tensor2compatibilties[t]
+            
+        sims[einsum_name] = cur_sims
+        
     intermediate_tensors = spec.workload.intermediate_tensor_names
     for einsum_name, sims2 in sims.items():
         sims[einsum_name] = SIM.combine_combineable(sims2, live_tensors=intermediate_tensors, pbar_postfix = f" for {einsum_name}")
 
     return sims, grouped_decompress_data
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+
+    # single_einsum_jobs = []
+    # einsum_names = einsum_names or spec.workload.einsum_names
+    # for einsum_name in einsum_names:
+    #     single_einsum_jobs.extend(get_single_einsum_jobs(
+    #         spec,
+    #         einsum_name,
+    #         metrics,
+    #         rank_variable_bounds,
+    #         flattened_arch,
+    #         start_index=len(single_einsum_jobs),
+    #         tagger=tagger,
+    #         except_from_imperfect=except_from_imperfect,
+    #     ))
+
+    # sims = {einsum_name: [] for einsum_name in spec.workload.einsum_names}
+    # grouped_decompress_data: GroupedDecompressData = GroupedDecompressData(prefix2datalist={})
+    # for einsum_name, new_sims, decompress_data, job_id in parallel(
+    #     single_einsum_jobs,
+    #     pbar="Generating Partial Mappings",
+    #     return_as="generator_unordered",
+    # ):
+    #     grouped_decompress_data.register_decompress_data(
+    #         einsum_name,
+    #         job_id,
+    #         decompress_data,
+    #     )
+    #     sims[einsum_name].extend(new_sims)
+
+    # intermediate_tensors = spec.workload.intermediate_tensor_names
+    # for einsum_name, sims2 in sims.items():
+    #     sims[einsum_name] = SIM.combine_combineable(sims2, live_tensors=intermediate_tensors, pbar_postfix = f" for {einsum_name}")
+
+    # return sims, grouped_decompress_data
 
