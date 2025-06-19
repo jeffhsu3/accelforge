@@ -84,40 +84,41 @@ def insert_temporal_loops(
         seen_tensors |= set.union(*(set(t.tensors) for t in prev_storages), set())
         is_fused_loops = is_fused_loops and len(intermediate_tensors - seen_tensors) > 0
         prev_tensors = set.union(set(), *(set(t.tensors) for t in prev_storages))
-        prev_non_backing_tensors = set.union(set(), *(set(t.tensors) - t._backing for t in prev_storages))
-        next_tensors = set.union(set(), *(set(t.tensors) for t in next_storages))
-        
 
         # Generally we want to only use rank variables that are irrelevant to the
         # previous tensors, else we'd just lower those tensors. However, we can't lower
         # backing storage nodes because this will add loops to compatibility.
-        partially_relevant_to_previous = set.union(set(), *(tensor2partially_relevant_rank_vars[t] for t in prev_non_backing_tensors))
 
         # No recomputation: If we haven't seen a tensor yet, must only iterate over
         # fully-relevant rank variables.
         for t in intermediate_tensors - seen_tensors:
             rank_variables &= tensor2fully_relevant_rank_vars[t]
 
-        # We can trivially lower non-backing storage nodes through fully-relevant
-        # loops. Can't do this if the loops are fused because that'd add loops to
-        # the compatibility.
+        # Optimality-preserving optimizations: We can trivially lower non-backing
+        # storage nodes through fully-relevant loops. Can't do this if the loops are
+        # fused because that'd add loops to the compatibility.
         for s in prev_storages:
             for t in s.tensors:
                 if t not in s._backing and not s._must_be_here:
                     rank_variables -= tensor2fully_relevant_rank_vars[t]
                     
-        # We can trivially raise storage nodes through irrelevant unfused loops. Can't
-        # do this if the loops are fused because that'd increase the lifetime of the
-        # storage node.
+        # Optimality-preserving optimization: We can trivially raise storage nodes
+        # through irrelevant unfused loops. Can't do this if the loops are fused because
+        # that'd increase the lifetime of the storage node.
         if not is_fused_loops:
             for s in next_storages:
                 if not s._must_be_here:
                     for t in s.tensors:
                         rank_variables -= tensor2irrelevant_rank_vars[t]
 
+        
+        # Test permutations of partially-relevant rank variables because we'll be
+        # lowering through them. Don't permute fully-relevant rank variables because
+        # we won't lower through them.
+        partially_relevant_to_previous = set.union(set(), *(tensor2partially_relevant_rank_vars[t] for t in prev_tensors))
         partially_relevant_choices = list(itertools.permutations(rank_variables & partially_relevant_to_previous))
-        fully_relevant_choices = tuple(sorted(rank_variables - partially_relevant_to_previous))
-        choices.append([x + fully_relevant_choices for x in partially_relevant_choices])
+        irrelevant_choices = tuple(sorted(rank_variables - partially_relevant_to_previous))
+        choices.append([x + irrelevant_choices for x in partially_relevant_choices])
 
         # =============================================================================
         # Choose whether to lower storage nodes through partially-relevant loops.
