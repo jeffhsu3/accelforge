@@ -186,6 +186,15 @@ class Einsum(ParsableModel):
             for t in self.tensor_accesses
         }
 
+    @property
+    def tensor2irrelevant_rank_variables(self) -> dict[TensorName,
+                                                        set[RankVariableName]]:
+        partially_relevant = self.tensor2partially_relevant_rank_variables
+        fully_relevant = self.tensor2fully_relevant_rank_variables
+        rank_variables = self.rank_variables
+        return {TensorName(t.name): rank_variables - fully_relevant[t.name] - partially_relevant[t.name]
+                for t in self.tensor_accesses}
+
     def to_formatted_string(self, compress: bool = False) -> str:
         lhs_join = ",\n" if compress else " , "
         rhs_join = "#215;\n" if compress else " #215; "
