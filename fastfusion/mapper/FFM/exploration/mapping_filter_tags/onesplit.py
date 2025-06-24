@@ -19,6 +19,6 @@ def get_one_split_tag(compatibility: Compatibility) -> Tags:
 
     # Fused with both sides. Make sure that the number of loops is the same.
     if len(unique_loops) > 1:
-        raise ValueError
+        return Tags(("INVALID",))
 
     return Tags((ONE_SPLIT, f"FUSED_LOOPS={next(iter(unique_loops))}"))

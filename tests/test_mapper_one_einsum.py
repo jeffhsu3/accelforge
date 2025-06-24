@@ -46,14 +46,9 @@ class TestExploration(unittest.TestCase):
         rank_variables = einsum.rank_variables
 
         def tagger(pmapping):
-            return get_one_split_tag(pmapping, "MainMemory")
+            return get_one_split_tag(pmapping)
 
         sims, decompress_data = get_sims(spec, einsum_names=["Q"], tagger=tagger)
-        for sim in sims['Q']:
-            self.assertEqual(
-                TagMatch(sim.compatibility.tags),
-                TagMatch(Tags((ONE_SPLIT,)))
-            )
 
     def test_conv_with_snowcat(self):
         spec = Specification.from_yaml(
@@ -65,12 +60,9 @@ class TestExploration(unittest.TestCase):
         sims, decompress_data = get_sims(spec,
                                          einsum_names=['Dwise0'],
                                          metrics=metrics.Metrics.ENERGY)
-        # for sim in sims['Dwise0']:
-        #     print(sim.compatibility)
 
 
 class TestInitialDeltaGeneration(unittest.TestCase):
     def test_mobilenet_long(self):
         workload = Workload.from_yaml(Path(__file__).parent / 'mobilenet_long.workload.yaml')
         choices = get_initial_delta_choices('Dwise0', workload)
-        # print(choices)

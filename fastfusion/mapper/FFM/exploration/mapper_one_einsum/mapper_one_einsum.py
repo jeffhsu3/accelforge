@@ -366,6 +366,7 @@ def iterate_mappings_no_constraints(
     einsum_name: str,
     arch_flattened: list[architecture.Leaf],
     rank_variable_bounds: dict[RankVariableName, int],
+    except_from_imperfect: set,
 ):
     first_memory = None
     for node in arch_flattened:
@@ -431,7 +432,11 @@ def iterate_mappings_constraints(
         rank_variable_bounds = get_rank_variable_bounds(spec, einsum_names)
 
     for einsum_name in einsum_names:
-        for mapping, symbol_table in iterate_mappings_no_constraints(spec, einsum_name, arch_flattened, rank_variable_bounds, except_from_imperfect):
+        for mapping, symbol_table in iterate_mappings_no_constraints(spec,
+                                                                     einsum_name,
+                                                                     arch_flattened,
+                                                                     rank_variable_bounds,
+                                                                     except_from_imperfect):
             # MAPPING MUST NOT BE MODIFIED AFTER THIS POINT
             mapping, constraints = get_constraints(arch_flattened, mapping, symbol_table) 
             mapping.append(Compute(einsum=einsum_name, compute=compute_name))
@@ -501,7 +506,7 @@ def make_sims(
         return {}
 
     einsum = workload.einsums[einsum_name]
-    intermediate_tensors = workload.intermediate_tensors & einsum.tensor_names
+    intermediate_tensors = workload.intermediate_tensor_names & einsum.tensor_names
 
     fused_slice = mapping.get_fused_slice(intermediate_tensors)
     fused_loops = []
