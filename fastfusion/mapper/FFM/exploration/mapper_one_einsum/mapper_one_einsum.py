@@ -609,7 +609,8 @@ def make_sims(
                     reservation.memory,
                     size=tensor2size[reservation.tensor]
                 ))
-        compat = Compatibility(fzs(storages))
+        compat = Compatibility(n_loops=max(len(s.loops) for s in storages),
+                               storage=fzs(storages))
         if tagger is not None:
             return compat.update(tags=tagger(compat)), null_loop_indices
         else:

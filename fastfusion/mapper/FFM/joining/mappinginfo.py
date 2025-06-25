@@ -133,10 +133,12 @@ class TensorStorage(Reservation):
 
 @dataclass(frozen=True)
 class Compatibility(Updatable):
+    n_loops: int
     storage: fzs[TensorStorage]
     tags: Tags = Tags(fzs())
 
     def __post_init__(self):
+        assert isinstance(self.n_loops, int)
         assert isinstance(self.storage, fzs)
         assert isinstance(self.tags, Tags)
 
@@ -179,11 +181,13 @@ class Compatibility(Updatable):
         - If `keep_loops` is `True`, then all loops are kept.
         - If `keep_tensors` is a set, tensors in the set are kept.
         """
+        remaining_storages = fzs(s for s in self.storage if s.name in live_tensors)
+        if keep_loops:
+            new_n_loops = self.n_loops
+        else:
+            new_n_loops = max((len(s.loops) for s in remaining_storages), default=0)
         tags = self.tags if not drop_tags else Tags(fzs())
-        return Compatibility(
-            fzs(s for s in self.storage if s.name in live_tensors),
-            tags
-        )
+        return Compatibility(new_n_loops, remaining_storages, tags)
 
     def __lt__(self, other):
         return (self.loops, self.storage) < (other.loops, other.storage)
@@ -192,12 +196,13 @@ class Compatibility(Updatable):
         return self.__repr__()
 
     def __repr__(self):
-        return f"Compatibility(storage={repr(self.storage)}), tags={repr(self.tags)}"
+        return f"Compatibility(n_loops={self.n_loops}, storage={repr(self.storage)}), tags={repr(self.tags)}"
 
     def merge_next(
         self, right: "Compatibility", live_tensors: set[str]
     ) -> "Compatibility":
         return Compatibility(
+            right.n_loops,
             fzs(s for s in (self.storage | right.storage) if s.name in live_tensors),
             right.tags,
         )
@@ -217,8 +222,9 @@ class Compatibility(Updatable):
         return all(any(s == t for s in self.storage) for t in tensors)
 
     def all_n_loops(self) -> list["Compatibility"]:
-        # TODO
-        return [Compatibility(self.storage, self.tags)]
+        min_n_loops = max(len(s.loops) for s in self.storage)
+        return [Compatibility(n_loops, self.storage, self.tags)
+                for n_loops in range(min_n_loops, self.n_loops+1)]
 
     def _permute(
         self,

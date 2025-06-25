@@ -357,6 +357,7 @@ def join_sims(
                         if not DELAY:
                             cur_nmappings += len(a.mappings.data) * len(b.mappings.data)
                         if DO_PRINT:
+                            print(f'Using key {k}')
                             s = f"\t{a.compatibility} <--> {b.compatibility}"
                             s += f" --> {combined[-1].compatibility}"
                             s += f"({len(a.mappings.data)})x({len(b.mappings.data)})"
@@ -369,7 +370,7 @@ def join_sims(
             for k in right:
                 if k not in left:
                     for b in right[k]:
-                        print(f"\tREVERSE: No match for {b.compatibility}")
+                        print(f"\tREVERSE: No match for {b.compatibility} using {k}")
 
         print_time("Bucket merging")
 
