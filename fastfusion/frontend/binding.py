@@ -1,6 +1,6 @@
 from typing import Tuple
 
-from pydantic import StrictFloat
+from pydantic import StrictFloat, model_validator
 
 from fastfusion.util.basetypes import ParsableDict, ParsableList, ParsableModel
 
@@ -17,13 +17,13 @@ class LogicalDomain(Domain):
     ranks: Tuple[str] = (
         'C', 'H', 'W', 'P', 'Q', 'R', 'S'
     )
-    dims: Tuple[str]
+    dims: Tuple[str, ...]
 
 class PhysicalDomain(Domain):
     """
     Represents the logical architecture domain space of physical dims.
     """
-    p_dims: Tuple[str]
+    p_dims: Tuple[str, ...]
 
 class BindingRelation(ParsableModel):
     """
@@ -42,6 +42,14 @@ class BindingNode(ParsableModel):
     physical: PhysicalDomain
     nodes: ParsableList[BindingRelation]
 
+    @model_validator(mode='before')
+    def wrap_relation_into_nodes(cls, values):
+        # if the YAML used `relation:` (a mapping), wrap it as a
+        # single-item list under `nodes`
+        if "relation" in values:
+            values["nodes"] = [{"relation": values.pop("relation")}]
+        return values
+
 class Binding(ParsableModel):
     """
     A collection of binding nodes that fully specifies a relation between the
@@ -58,18 +66,14 @@ binding:
   nodes:
   - logical:
       name: PE
-      p_dims: [i]
+      dims: [i]
     physical: 
       name: PE
-      dims: [x, y]
+      p_dims: [x, y]
     relation:
       tensorA: i = x + y * 2 # This is a dimension-major compression into the logical. It is bijective.
       tensorB: i = x + y * 2 # This is a dimension-major compression into the logical. It is bijective.
-  # Bindings for a hypothetical scratchpad.
-  - logical: scratchpad
-    physical: scratchpad
-    relation:
-        tensorA: LogicalScratchpad[i] -> PhysicalScratchpad[x, y] : i = x # This is a dimension-based compression into the logical. It is not surjective.
 """
 
-binding = Binding.model_validate(yaml.safe_load(yaml_str))
+binding = Binding.model_validate(yaml.safe_load(yaml_str)['binding'])
+print(binding)
