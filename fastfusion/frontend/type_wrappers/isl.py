@@ -22,18 +22,4 @@ class ISLStr:
 
 ISLMap = ISLStr(isl.Map)
 ISLSet = ISLStr(isl.Set)
-
-class MyModel(BaseModel):
-    region: ISLSet
-    mapping: ISLMap
-
-# Example
-try:
-    m = MyModel(
-        region="[n] -> { S[i] : 0 <= i < n }",
-        mapping="{ S[i] -> T[j] : i = j }"
-    )
-    print("region:", m.region)
-    print("mapping:", m.mapping)
-except ValidationError as e:
-    print(e)
+ISLSpace = ISLStr(isl.Space)
