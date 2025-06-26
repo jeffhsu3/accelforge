@@ -594,7 +594,8 @@ def make_sims(
         [explored_results],
         job_id=job_id,
         extra_data={MAPPING_COLUMN: mapping},
-        skip_columns=fused_loop_columns + tensor2size_cols,
+        skip_columns=tensor2size_cols,
+        keep_columns=fused_loop_columns,
     )
     explored_results = explored_results.data
 
@@ -673,7 +674,7 @@ def _per_proc_compatibility2sim(
     tensor2boundless_compatibilities: dict[TensorName, set[Compatibility]] | None = None,
 ) -> tuple[str, dict[Compatibility, SIM], str, Mapping]:
        
-    print(f', '.join(m.compact_string() for m in mapping.nodes))
+    # print(f', '.join(m.compact_string() for m in mapping.nodes))
     mapping_copy = copy.deepcopy(mapping)
     explore_tile_shapes(mapping_copy, constraints, spec, flattened_arch, metrics, _fix_me=True)
     compatibility = make_compatibility(mapping_copy, intermediate_tensors)

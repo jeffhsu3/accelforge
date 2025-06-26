@@ -745,6 +745,7 @@ class PartialMappings:
         next_shared_loop_index: int=None,
         drop_valid_reservations: bool = True,
     ) -> bool:
+        drop_valid_reservations = False
         resource2capacity = resource2capacity or {}
         dropcols = []
         for resource in sorted(set(self.right_reservations) | set(self.left_reservations)):
@@ -900,9 +901,9 @@ class PartialMappings:
     #         self.data.rename(columns={COMPRESSED_INDEX: f"{prefix}{COMPRESSED_INDEX}"}, inplace=True)
     #     assert len(recovery.columns) == len(set(recovery.columns)), f"Duplicate columns in {recovery.columns}"
     #     return recovery
-    def _compress_data(self, prefix: EinsumName = None, job_id: int = None, skip_columns: list[str] = None) -> pd.DataFrame:
+    def _compress_data(self, prefix: EinsumName = None, job_id: int = None, skip_columns: list[str] = None, keep_columns: list[str] = None) -> pd.DataFrame:
         self.data[COMPRESSED_INDEX] = self.data.index
-        keep_cols = [COMPRESSED_INDEX] + [c for c in self.data.columns if col_used_in_pareto(c) or c in skip_columns]
+        keep_cols = [COMPRESSED_INDEX] + [c for c in self.data.columns if col_used_in_pareto(c) or c in skip_columns or c in keep_columns]
         # recovery = self.data[[c for c in self.data.columns if c not in keep_cols] + [COMPRESSED_INDEX]]
         # self._data = self.data[keep_cols]
         recovery = self.data[[c for c in self.data.columns if c not in skip_columns]] # TODO: We may want to use the above if compressing uses too much memory
@@ -948,14 +949,14 @@ class PartialMappings:
         
 
     @classmethod
-    def compress_paretos(cls, prefix: EinsumName, paretos: list["PartialMappings"], job_id: int, extra_data: dict[str, Any], skip_columns: list[str] = None) -> DecompressData:
+    def compress_paretos(cls, prefix: EinsumName, paretos: list["PartialMappings"], job_id: int, extra_data: dict[str, Any], skip_columns: list[str] = None, keep_columns: list[str] = None) -> DecompressData:
         index = 0
         decompress_data = []
         for p in paretos:
             p.data.reset_index(drop=True, inplace=True)
             p.data.index += index
             index += len(p.data)
-            decompress_data.append(p._compress_data(prefix, job_id, skip_columns))
+            decompress_data.append(p._compress_data(prefix, job_id, skip_columns, keep_columns))
             
         decompress_data = pd.concat(decompress_data) if decompress_data else pd.DataFrame()
         decompress_data.reset_index(drop=True, inplace=True)
