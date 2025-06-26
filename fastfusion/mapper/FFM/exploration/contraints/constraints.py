@@ -26,10 +26,7 @@ class MappingConstraints:
         ):
         mask = np.ones(tile_shapes.shape[0], dtype=np.bool)
         for c in self.tile_shape_constraints:
-            try:
-                mask = mask & c(rank_vars, tile_shapes[:, c._target_indices])
-            except:
-                pass
+            mask = mask & c(rank_vars, tile_shapes[:, c._target_indices])
         return mask
     
     def check_min_utilization_constraints(
