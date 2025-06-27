@@ -1,12 +1,13 @@
 from abc import abstractmethod
-from typing import Tuple
+from typing import Dict, List, Tuple
 
 from pydantic import BaseModel, StrictFloat, model_validator
 import islpy as isl
 
 from fastfusion.util.basetypes import ParsableDict, ParsableList, ParsableModel
+from fastfusion.util.isl import ISLMap
 
-class Domain(BaseModel):
+class Domain(ParsableModel):
     """
     Represents an architecture dangling reference of the binding.
     """
@@ -21,9 +22,9 @@ class LogicalDomain(Domain):
     Represents the logical architecture domain space of logical dims × ranks.
     """
     ranks: Tuple[str] = (
-        'C', 'H', 'W', 'P', 'Q', 'R', 'S'
+        'c', 'h', 'w', 'p', 'q', 'r', 's'
     )
-    dims: Tuple[str, ...]
+    dims: ParsableList[str]
 
     def get_isl_space(self):
         return isl.Space.create_from_names(
@@ -36,7 +37,7 @@ class PhysicalDomain(Domain):
     """
     Represents the logical architecture domain space of physical dims.
     """
-    p_dims: Tuple[str, ...]
+    p_dims: ParsableList[str]
 
     def get_isl_space(self):
         return isl.Space.create_from_names(
@@ -44,7 +45,7 @@ class PhysicalDomain(Domain):
             set=self.p_dims
         )
 
-class BindingNode(BaseModel):
+class BindingNode(ParsableModel):
     """
     How a logical architecture is implemented on a particular physical architecture
     for a particular hardware level. Represents a injection relation between points 
@@ -56,8 +57,9 @@ class BindingNode(BaseModel):
     logical: LogicalDomain
     physical: PhysicalDomain
     relations: ParsableDict[str, str]
+    # nodes: Dict[str, isl.Map] = {}
 
-class Binding(BaseModel):
+class Binding(ParsableModel):
     """
     A collection of binding nodes that fully specifies a relation between the
     logical and physical space.
