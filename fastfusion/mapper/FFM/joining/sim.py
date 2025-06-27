@@ -119,9 +119,13 @@ class SIM:
         live_tensors: set[str],
         shared_tensors: set[str] = None,
         pbar: str = None,
+        parallelize: bool = True,
     ) -> list["SIM"]:
         def job(s):
             return s._right_consolidate(live_tensors, shared_tensors)
+
+        if not parallelize:
+            return [s._right_consolidate(live_tensors, shared_tensors) for s in sims]
 
         return parallel([delayed(job)(s) for s in sims], pbar=pbar)
 
@@ -130,9 +134,13 @@ class SIM:
         sims: list["SIM"],
         live_tensors: set[str],
         pbar: str = None,
+        parallelize: bool = True,
     ) -> list["SIM"]:
         def job(s):
             return s._left_consolidate(live_tensors)
+
+        if not parallelize:
+            return [s._left_consolidate(live_tensors) for s in sims]
 
         return parallel([delayed(job)(s) for s in sims], pbar=pbar)
 

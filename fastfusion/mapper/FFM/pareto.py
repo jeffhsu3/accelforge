@@ -12,12 +12,11 @@ from joblib import delayed
 import numpy as np
 
 from fastfusion.frontend.workload.workload import EinsumName
+from fastfusion.mapper.FFM.compress_pmappings import decompress_joined_df
 from fastfusion.mapper.FFM.joining.mappinginfo import TensorStorage
 from fastfusion.util import fzs
 from fastfusion.util.util import parallel
-
-sys.modules["numba"] = None
-
+from fastfusion.mapper.FFM.compress_pmappings import GroupedDecompressData
 
 from paretoset import paretoset
 
@@ -281,22 +280,6 @@ def makepareto(mappings: pd.DataFrame, columns: list[str] = None, parallelize: b
     sense += ["diff"] * len(extra_columns)
     return mappings[paretoset(mappings[columns], sense=sense)]
     
-class DecompressData(NamedTuple):
-    prefix: EinsumName
-    decompress_data: pd.DataFrame
-    extra_data: dict[str, Any]
-    
-    def compressed_index_column(self):
-        return f"{self.prefix}{COMPRESSED_INDEX}"
-    
-    
-class GroupedDecompressData(NamedTuple):
-    prefix2datalist: dict[EinsumName, dict[int, DecompressData]]
-    
-    def register_decompress_data(self, einsum_name: EinsumName, job_id: int, decompress_data: DecompressData, ):
-        target = self.prefix2datalist.setdefault(einsum_name, {})
-        assert job_id not in target
-        target[job_id] = decompress_data
 
 class PartialMappings:
     def __init__(
@@ -745,7 +728,7 @@ class PartialMappings:
         next_shared_loop_index: int=None,
         drop_valid_reservations: bool = True,
     ) -> bool:
-        drop_valid_reservations = False
+        drop_valid_reservations = False # TODO: Remove this. It's only for Orojenesis ski slopes.
         resource2capacity = resource2capacity or {}
         dropcols = []
         for resource in sorted(set(self.right_reservations) | set(self.left_reservations)):
@@ -885,87 +868,5 @@ class PartialMappings:
         with open(to_file, "wb") as f:
             f.write(graph.create_png())
             
-    def prefix_data(self, prefix: str):
-        rename = lambda col: f"{prefix}_{col}" if not col_used_in_pareto(col) else col
-        self.data.rename(columns=rename, inplace=True)
-        
-    # def _compress_data(self, prefix: EinsumName = None, job_id: int = None) -> pd.DataFrame:
-    #     compressed_index_col = pd.Series(self.data.index)
-    #     keep_cols = [c for c in self.data.columns if col_used_in_pareto(c)]
-    #     recovery = self.data[[c for c in self.data.columns if c not in keep_cols]].copy()
-    #     self._data = self.data[keep_cols].copy()
-    #     self.data[COMPRESSED_INDEX] = compressed_index_col.apply(lambda x: (job_id, x))
-    #     recovery[COMPRESSED_INDEX] = compressed_index_col
-    #     if prefix is not None:
-    #         recovery.rename(columns={c: f"{prefix}{c}" for c in recovery.columns}, inplace=True)
-    #         self.data.rename(columns={COMPRESSED_INDEX: f"{prefix}{COMPRESSED_INDEX}"}, inplace=True)
-    #     assert len(recovery.columns) == len(set(recovery.columns)), f"Duplicate columns in {recovery.columns}"
-    #     return recovery
-    def _compress_data(self, prefix: EinsumName = None, job_id: int = None, skip_columns: list[str] = None, keep_columns: list[str] = None) -> pd.DataFrame:
-        self.data[COMPRESSED_INDEX] = self.data.index
-        keep_cols = [COMPRESSED_INDEX] + [c for c in self.data.columns if col_used_in_pareto(c) or c in skip_columns or c in keep_columns]
-        # recovery = self.data[[c for c in self.data.columns if c not in keep_cols] + [COMPRESSED_INDEX]]
-        # self._data = self.data[keep_cols]
-        recovery = self.data[[c for c in self.data.columns if c not in skip_columns]] # TODO: We may want to use the above if compressing uses too much memory
-        self._data = self.data[keep_cols].copy()
-        self._data[COMPRESSED_INDEX] = self._data[COMPRESSED_INDEX].apply(lambda x: (job_id, x))
-        if prefix is not None:
-            recovery.rename(columns={c: f"{prefix}{c}" for c in recovery.columns}, inplace=True)
-            self.data.rename(columns={COMPRESSED_INDEX: f"{prefix}{COMPRESSED_INDEX}"}, inplace=True)
-        return recovery
-
-    def _decompress_data(self, prefix: EinsumName, decompress_data: list[DecompressData]):
-        src_idx_col = f"{prefix}{COMPRESSED_INDEX}"
-        rows = []
-        extra_data = []
-        for r in self.data[src_idx_col]:
-            assert isinstance(r, tuple), \
-                f"Expected tuple, got {type(r)}. Was register_decompress_data called with this Pareto?"
-            assert len(r) == 2, f"Expected tuple of length 2, got {r}"
-            data_index, row_index = r
-            data = decompress_data[data_index]
-            # Find the row in the data with src_idx_col == row_index
-            row = data.decompress_data[data.decompress_data[src_idx_col] == row_index]
-            assert len(row) == 1, f"Expected 1 row, got {len(row)}"
-            rows.append(row)
-            extra_data.append(data.extra_data)
-            
-        new_df = pd.concat(rows)
-        extra_data_df = pd.DataFrame(extra_data)
-
-        # Drop the src_idx_col
-        self.data.drop(columns=[src_idx_col], inplace=True)
-        # Reset index to avoid duplicate index values that cause InvalidIndexError
-        a = new_df.reset_index(drop=True)
-        b = extra_data_df.reset_index(drop=True)
-        c = self.data.reset_index(drop=True)
-        self._data = pd.concat([a, b, c], axis=1)
-        self._data.drop(columns=[src_idx_col], inplace=True)
-                
     def decompress(self, decompress_data: GroupedDecompressData):
-        for einsum_name, decompress_data_list in decompress_data.prefix2datalist.items():
-            assert decompress_data_list, f"No decompress data found for {einsum_name}"
-            self._decompress_data(einsum_name, decompress_data_list)
-        
-
-    @classmethod
-    def compress_paretos(cls, prefix: EinsumName, paretos: list["PartialMappings"], job_id: int, extra_data: dict[str, Any], skip_columns: list[str] = None, keep_columns: list[str] = None) -> DecompressData:
-        index = 0
-        decompress_data = []
-        for p in paretos:
-            p.data.reset_index(drop=True, inplace=True)
-            p.data.index += index
-            index += len(p.data)
-            decompress_data.append(p._compress_data(prefix, job_id, skip_columns, keep_columns))
-            
-        decompress_data = pd.concat(decompress_data) if decompress_data else pd.DataFrame()
-        decompress_data.reset_index(drop=True, inplace=True)
-        return DecompressData(
-            prefix=prefix,
-            decompress_data=decompress_data,
-            extra_data={f"{prefix}{k}": v for k, v in extra_data.items()},
-        )
-        
-    def _tuplefy_compress_data(self, index: int, decompress_data: DecompressData):
-        col = decompress_data.compressed_index_column()
-        self.data[col] = self.data[col].apply(lambda x: (index, x))
+        self._data = decompress_joined_df(self.data, decompress_data)

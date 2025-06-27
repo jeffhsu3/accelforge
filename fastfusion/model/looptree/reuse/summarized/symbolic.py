@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import fastfusion.frontend.mapping as mapping_spec
-from fastfusion.frontend.mapping import Mapping, Spatial, Temporal, Storage, Reservation, Fill, Iteration, Pattern
+from fastfusion.frontend.mapping import Mapping, MappingNode, Spatial, Temporal, Storage, Reservation, Fill, Iteration, Pattern
 from fastfusion.frontend.workload import (
     Workload,
     TensorName,
@@ -110,7 +110,36 @@ class AnalysisInfo:
 
     tensor_to_backing_storage_id: dict[TensorName, int]
 
+def quick_insert_reservation_nodes(    mapping: Mapping,
+    workload: Workload
+) -> list[MappingNode]:
+    mapping = list(mapping.nodes)
+    einsum_name = mapping[-1].einsum
 
+    einsum_tensor_to_projection = {}
+    einsum = workload.einsums[einsum_name]
+    all_tensors = einsum.input_tensors() | einsum.output_tensors()
+    for tensor in all_tensors:
+        einsum_tensor_to_projection[(einsum_name, tensor)] = \
+            get_projection_expr(einsum, tensor)
+
+    tensor_to_relevancy = {
+        tensor: get_rank_variable_relevancy(einsum, tensor)
+        for tensor in all_tensors
+    }
+
+    info = AnalysisInfo(
+        mapping=None,
+        workload=workload,
+        full_rank_variable_shapes=None,
+        all_tensors=None,
+        einsum_tensor_to_projection=None,
+        tensor_to_relevancy=tensor_to_relevancy,
+        tensor_to_backing_storage_id=None,
+    )
+    insert_reservation_nodes(mapping, info)
+    return Mapping(nodes=mapping)
+    
 def analyze_reuse(
     mapping: Mapping,
     workload: Workload
