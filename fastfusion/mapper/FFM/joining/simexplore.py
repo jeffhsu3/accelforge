@@ -302,11 +302,17 @@ def join_sims(
         # ======================================================================
         print_time(f"Consolidating")
 
+        print('BEFORE COMBINING')
+        for left_sim in left:
+            print(f"\t{left_sim.compatibility}")
         left = SIM.combine_combineable(
             left,
             live_tensors | right_tensors,
             combine_reservations=combine_reservations,
         )
+        print('AFTER COMBINING')
+        for left_sim in left:
+            print(f"\t{left_sim.compatibility}")
 
         print_time(f"Combining")
         # Group left and right into buckets
@@ -333,6 +339,8 @@ def join_sims(
         cur_nmappings = 0
         for k in left:
             found = False
+            if DO_PRINT:
+                print(f'Left key {k}')
             for k_translated in get_possible_translations(
                 k,
                 full_equivalent_rank_variables,
@@ -343,6 +351,8 @@ def join_sims(
                         a.compatibility.tags.are_compatible_with(b.compatibility.tags)
                     ):
                         found = True
+                        if DO_PRINT:
+                            print(f"\t{a.compatibility}\n\t<-->\n\t{b.compatibility}")
                         combined.append(
                             a.merge_next(
                                 b,
@@ -357,9 +367,7 @@ def join_sims(
                         if not DELAY:
                             cur_nmappings += len(a.mappings.data) * len(b.mappings.data)
                         if DO_PRINT:
-                            print(f'Using key {k}')
-                            s = f"\t{a.compatibility} <--> {b.compatibility}"
-                            s += f" --> {combined[-1].compatibility}"
+                            s = f"\t-->\n\t{combined[-1].compatibility}"
                             s += f"({len(a.mappings.data)})x({len(b.mappings.data)})"
                             print(s)
             if DO_PRINT and not found:

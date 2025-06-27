@@ -26,6 +26,7 @@ from fastfusion.mapper.FFM.pareto import TAGS_COLUMN, MAPPING_COLUMN, PartialMap
 from fastfusion.mapper.FFM.exploration.contraints.constraints import MappingConstraints, get_constraints
 from fastfusion.mapper.FFM.tags import Tags
 from fastfusion.util.util import defaultintersection, fzs
+from fastfusion.util.itertools import first
 from fastfusion.frontend.mapping import Reservation as ReservationNode
 
 
@@ -536,13 +537,13 @@ def make_sims(
 
             prev_size = rank_variable_bounds[rank_variable]
             if loop_idx > 0:
-                prev_loop = next(
-                    iter(l for l in loops[loop_idx-1::-1]
-                         if l[0] == loop.rank_variable),
-                    None,
+                prev_loop = first(
+                    (l for l in loops[loop_idx-1::-1] if l[0] == rank_variable),
+                    None
                 )
                 if prev_loop is not None:
                     prev_rank_var, prev_bound = prev_loop
+                    assert prev_rank_var == rank_variable
                     if isinstance(prev_bound, TilePattern):
                         prev_size = prev_bound.stride
                     elif isinstance(prev_bound, Number):
@@ -560,6 +561,8 @@ def make_sims(
                     rank_variable,
                     TilePattern(cur_tile_shape, tile_shape[tile_shape_idx+1])
                 ))
+
+            tile_shape_idx += 1
 
         storages = []
         for n_loops, reservations_at_level in loop_idx2reservations.items():
@@ -579,17 +582,17 @@ def make_sims(
                     if len(ranks) == 0:
                         raise NotImplementedError('recomputation')
                     
-                    rank = next(iter(ranks))
+                    rank = first(ranks)
 
                     stride, halo = tensor_stride_and_halo[(rank, rank_variable)]
 
                     if isinstance(rank_var_bound, Number):
                         if halo == 0:
-                            rank_bound = rank_var_bound*stride
+                            rank_bound = int(rank_var_bound*stride)
                         else:
                             rank_bound = TilePattern(
-                                rank_var_bound*stride,
-                                (rank_var_bound-1)*stride + halo
+                                int(rank_var_bound*stride),
+                                int((rank_var_bound-1)*stride + halo)
                             )
                     elif isinstance(rank_var_bound, TilePattern):
                         rank_var_stride = rank_var_bound.stride
@@ -597,9 +600,10 @@ def make_sims(
                         rank_stride = rank_var_stride*stride
                         rank_initial = (rank_var_initial-1)*stride + halo
                         if rank_stride == rank_initial:
-                            rank_bound = rank_stride  # regular tile
+                            rank_bound = int(rank_stride)  # regular tile
                         else:
-                            rank_bound = TilePattern(rank_stride, rank_initial)
+                            rank_bound = TilePattern(int(rank_stride),
+                                                     int(rank_initial))
 
                     tensor_loops.append(Loop(rank, rank_bound, isinstance(loop, Spatial)))
 
@@ -641,12 +645,16 @@ def make_sims(
         if compatibility.tags == Tags(("INVALID",)):
             continue
 
+        # print(compatibility)
+        # print('BEFORE SHIFTING', mappings.columns)
+        shift_reservations_by_null_loop_indices(mappings, null_loop_indices)
+        # print('AFTER SHIFTING', mappings.columns)
+
         partial_mappings = PartialMappings(mappings,
                                            free_to_loop_index=compatibility.max_above_loop_index - 1,
                                            n_pmappings=pmappings_per_group,
                                            skip_pareto=len(mappings) < 1000)
 
-        shift_reservations_by_null_loop_indices(mappings, null_loop_indices)
         reservation_levels = partial_mappings.all_reservation_levels()
 
         sim = SIM(compatibility, partial_mappings)

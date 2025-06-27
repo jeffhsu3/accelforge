@@ -1,6 +1,6 @@
 from collections import defaultdict
 from functools import cached_property
-from typing import Any, Iterable, Optional
+from typing import Any, Iterable
 
 from joblib import delayed
 
@@ -160,7 +160,15 @@ class SIM:
         keep_loops: bool = False,
         every_possible_n_loops: bool = False,
         drop_tags: bool = False,
-    ) -> dict[tuple[Compatibility, ...], list["SIM"]]:
+    ) -> dict[Compatibility, list["SIM"]]:
+        """
+        Clears dead tensors (may keep loops), then group SIMs based on
+        compatibility.
+
+        If `every_possible_n_loops`, every possible loops of a compatibility
+        is generated and the SIM is included. Thus, a SIM may be in several
+        groups at once (by reference).
+        """
         grouped = defaultdict(list)
         for s in sims:
             compatibility = s.compatibility.clear_dead_tensors(
