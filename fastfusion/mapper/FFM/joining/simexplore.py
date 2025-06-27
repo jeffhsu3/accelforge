@@ -302,17 +302,11 @@ def join_sims(
         # ======================================================================
         print_time(f"Consolidating")
 
-        print('BEFORE COMBINING')
-        for left_sim in left:
-            print(f"\t{left_sim.compatibility}")
         left = SIM.combine_combineable(
             left,
             live_tensors | right_tensors,
             combine_reservations=combine_reservations,
         )
-        print('AFTER COMBINING')
-        for left_sim in left:
-            print(f"\t{left_sim.compatibility}")
 
         print_time(f"Combining")
         # Group left and right into buckets
