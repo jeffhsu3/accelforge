@@ -127,7 +127,7 @@ def get_sims(
     )
 
     if flattened_arch is None:
-        flattened_arch = spec.get_flattened_arch()
+        flattened_arch = spec.get_flattened_architecture()
         
     einsum2jobs = {}
     tensor2compatibilties = {}

@@ -94,6 +94,21 @@ class Job:
     job_id: int
     mapping: Mapping | None = None
     constraints: MappingConstraints | None = None
+
+    # Common attributes
+    tagger: Callable[[Mapping], Tags]
+    spec: Specification
+    metrics: metrics.Metrics
+    rank_variable_bounds: dict[RankVariableName, int]
+    flattened_arch: list[architecture.Leaf] | None = None
+
+    # Per-Einsum attributes
+    intermediate_tensors: set[TensorName] | None = None
+    einsum_name: EinsumName | None = None
+
+    # Per-compatibility attributes
+    compatibility: Compatibility
+
     tensor2compatibilties: dict[TensorName, set[Compatibility]] | None = None
     tensor2boundless_compatibilities: dict[TensorName, set[Compatibility]] | None = None
     except_from_imperfect: set = frozenset()
@@ -113,34 +128,43 @@ class Job:
         return self._compatibility
 
 
-@dataclass
-class ListOfJobs:
-    """
-    Contains a list of jobs in `self.jobs_list`.
+class SameSpecJobs(list):
+    @property
+    def spec(self) -> Specification:
+        return first(self).spec
     
-    Other attributes are common to all jobs.
-    """
-    jobs_list: list[Job]
+    @property
+    def rank_variable_bounds(self) -> dict[RankVariableName, int]:
+        return first(self).rank_variable_bounds
 
-    tagger: Callable[[Mapping], Tags]
-    spec: Specification
-    metrics: metrics.Metrics
-    rank_variable_bounds: dict[RankVariableName, int]
-    flattened_arch: list[architecture.Leaf] | None = None
+    @property
+    def tagger(self) -> Callable[[Mapping], Tags]:
+        return first(self).tagger
 
 
-@dataclass
-class JobsOfSingleEinsum(ListOfJobs):
-    """Jobs of a single Einsum."""
-    intermediate_tensors: set[TensorName] | None = None
-    einsum_name: EinsumName | None = None
+class SameEinsumJobs(SameSpecJobs):
+    def check_invariance(self):
+        all_einsums = set(job.einsum_name for job in self)
+        if len(all_einsums) > 1:
+            raise RuntimeError('broken invariance: not all Einsums are equal.')
+
+    @property
+    def intermediate_tensors(self) -> set[TensorName]:
+        return first(self).intermediate_tensors
+
+    @property
+    def einsum_name(self) -> set[EinsumName]:
+        return first(self).einsum_name
 
 
-@dataclass
-class JobsWithSimilarCompatibility(JobsOfSingleEinsum):
-    """
-    Jobs with compatibilities that are identical before
-    populating tile shape.
-    """
-    compatibility: Compatibility
-    intermediate_tensors: set[TensorName]
+class SameCompatibilityJobs(SameEinsumJobs):
+    """Jobs with the same compatibility before tile shape exploration."""
+    def check_invariance(self):
+        all_compatibilities = set(job.compatibility for job in self)
+        if len(all_compatibilities) > 1:
+            raise RuntimeError('broken invariance: '
+                               'not all compatibilities are equal.')
+
+    @property
+    def compatibility(self) -> Compatibility:
+        return first(self).compatibility
