@@ -261,7 +261,7 @@ class Compatibility(Updatable):
         for s in self.storage:
             if s.name == tensor:
                 return s
-        raise ValueError(f"No reservation found for {name}")
+        raise ValueError(f"No reservation found for {tensor}")
 
     def per_tensor_compatibility(self) -> dict[str, "Compatibility"]:
         result = {}
@@ -271,15 +271,17 @@ class Compatibility(Updatable):
 
     def clear_tags(self) -> "Compatibility":
         return self.update(tags=Tags(fzs()))
-
+    
     def clear_loop_bounds(self) -> "Compatibility":
         return self.update(loops=tuple(l.update(bound=0) for l in self.loops))
-
+    
     def subsets_of_loops(self, clear_bounds: bool = False) -> Generator["Compatibility", None, None]:
         assert len(self.tensor_names) == 1, "Only works for single tensor"
-
+        storage = next(iter(self.storage))
+        assert storage.above_loop_index == len(self.loops), "Only works for last loop"
+        
         indices = list(range(len(self.loops)))
-        for i in range(1, len(indices)):
+        for i in range(len(indices) + 1):
             for subset in itertools.combinations(indices, i):
                 loops = tuple(self.loops[i] for i in subset)
                 if clear_bounds:

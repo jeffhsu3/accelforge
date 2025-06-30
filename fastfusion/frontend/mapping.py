@@ -26,6 +26,8 @@ node_list: TypeAlias = ParsableList[Annotated[
             Annotated["Sequential", Tag("Sequential")],
             Annotated["Pipeline", Tag("Pipeline")],
             Annotated["Nested", Tag("Nested")],
+            Annotated["Reservation", Tag("Reservation")],
+            Annotated["Fill", Tag("Fill")],
         ], 
     Discriminator(get_tag)
 ]]

@@ -1,30 +1,71 @@
 import copy
+from dataclasses import dataclass
 import gc
 import itertools
 from collections import defaultdict
 from collections.abc import Sequence
+import math
 from numbers import Number
 from typing import Callable, Iterator, List
 
-from joblib import delayed
 from pandas import DataFrame
 from tqdm import tqdm
 
 import fastfusion.frontend.architecture as architecture
-from fastfusion.frontend.mapping import Compute, Iteration, Mapping, MappingNode, ModelOnlyNode, Storage, Temporal, Spatial, Fill
+from fastfusion.frontend.mapping import (
+    Compute,
+    Iteration,
+    Mapping,
+    MappingNode,
+    Storage,
+    Temporal,
+)
 from fastfusion.frontend.specification import Specification
 from fastfusion.frontend.workload import Einsum, EinsumName, RankVariableName, TensorName, Workload
 from fastfusion.frontend.workload.isl import get_rank_variable_bounds
+<<<<<<< HEAD
 from fastfusion.frontend.workload.symbolic import get_stride_and_halo
 
 from fastfusion.mapper.FFM.exploration import metrics
 from fastfusion.mapper.FFM.exploration.mapper_one_einsum.dataflow_generator import get_storage_choices
 from fastfusion.mapper.FFM.exploration.tile_shape_exploration import explore_tile_shapes, get_initial_delta_choices
 from fastfusion.mapper.FFM.joining.mappinginfo import Compatibility, Loop, TensorStorage, TilePattern
+=======
+from fastfusion.frontend.workload.workload import (
+    Einsum,
+    EinsumName,
+    RankVariableName,
+    Workload,
+)
+
+from fastfusion.mapper.FFM.compress_pmappings import (
+    COMPRESSED_INDEX_COLUMN,
+    compress_df,
+)
+from fastfusion.mapper.FFM.exploration.mapper_one_einsum.dataflow_generator import (
+    get_storage_choices,
+)
+from fastfusion.mapper.FFM.exploration.tile_shape_exploration import (
+    explore_tile_shapes,
+    get_initial_delta_choices,
+)
+>>>>>>> origin
 from fastfusion.mapper.FFM.joining.sim import SIM
-from fastfusion.mapper.FFM.pareto import TAGS_COLUMN, MAPPING_COLUMN, PartialMappings, col2nameloop, is_reservation_col, nameloop2col, tensor2col, DecompressData
-from fastfusion.mapper.FFM.exploration.contraints.constraints import MappingConstraints, get_constraints
+from fastfusion.mapper.FFM.pareto import (
+    MAPPING_COLUMN,
+    PartialMappings,
+    col2nameloop,
+    col_used_in_pareto,
+    is_reservation_col,
+    nameloop2col,
+    tensor2col,
+)
+from fastfusion.mapper.FFM.exploration.contraints.constraints import (
+    MappingConstraints,
+    get_constraints,
+)
 from fastfusion.mapper.FFM.tags import Tags
+<<<<<<< HEAD
 from fastfusion.util.util import defaultintersection, fzs
 from fastfusion.util.itertools import first
 from fastfusion.frontend.mapping import Reservation as ReservationNode
@@ -190,6 +231,14 @@ def insert_spatial_loops(
             mapping.insert(
                 insertion_point, 
                 Spatial(rank_variable=rv, dimension=fanout_dim, across_object=fanout, across=fanout.name, tile_shape='symbol'))
+=======
+from fastfusion.frontend.mapping import Reservation as ReservationNode
+from fastfusion.mapper.FFM.exploration.mapper_one_einsum.loop_generator import (
+    insert_temporal_loops,
+    insert_spatial_loops,
+)
+from fastfusion.mapper.FFM.exploration.mapper_one_einsum.mapper_job import Job
+>>>>>>> origin
 
 
 def unpack_loops_to_rank_variables(mapping: List[MappingNode]):
@@ -215,17 +264,24 @@ def label_fused_loops(mapping: List[MappingNode]):
         if isinstance(node, Storage) and node._backing:
             last_backing_storage = i
     if last_backing_storage is None:
-        raise ValueError(f"No backing storage found in mapping {", ".join(m.compact_string() for m in mapping)}")
+        raise ValueError(
+            f"No backing storage found in mapping {", ".join(m.compact_string() for m in mapping)}"
+        )
 
     for i, node in enumerate(mapping):
         if isinstance(node, Iteration):
             node._fused = i < last_backing_storage
     return mapping
 
+
 # =================================================================================================
 # Iterate over mappings
 # =================================================================================================
-def temporal_fused_constraint_thing_fix_me(mapping: List[MappingNode], rank_variables: list[RankVariableName], rank_variable_bounds: dict[RankVariableName, int]):
+def temporal_fused_constraint_thing_fix_me(
+    mapping: List[MappingNode],
+    rank_variables: list[RankVariableName],
+    rank_variable_bounds: dict[RankVariableName, int],
+):
     # Only one fused loop is allowed per rank variable
     rank_variables = list(rank_variables)
     if not rank_variables:
@@ -235,15 +291,21 @@ def temporal_fused_constraint_thing_fix_me(mapping: List[MappingNode], rank_vari
     my_rank_variable = RankVariableName(rank_variables.pop())
     # indent = " " * (10 - len(rank_variables))
     fused_loops = [
-        i for i, node in enumerate(mapping) if isinstance(node, Iteration) 
-        and node._fused and my_rank_variable == node.rank_variable
-        and rank_variable_bounds[my_rank_variable] > 1 # Don't worry about loops with size 1
+        i
+        for i, node in enumerate(mapping)
+        if isinstance(node, Iteration)
+        and node._fused
+        and my_rank_variable == node.rank_variable
+        and rank_variable_bounds[my_rank_variable]
+        > 1  # Don't worry about loops with size 1
     ]
-    
+
     if not fused_loops or len(fused_loops) == 1:
         # print(indent + f"Yielding for rank variable {my_rank_variable}. Length: {len(mapping)}")
         # print(indent + ", ".join(m.compact_string() for m in mapping))
-        yield from temporal_fused_constraint_thing_fix_me(mapping, rank_variables, rank_variable_bounds)
+        yield from temporal_fused_constraint_thing_fix_me(
+            mapping, rank_variables, rank_variable_bounds
+        )
         return
 
     for choice in fused_loops:
@@ -253,7 +315,9 @@ def temporal_fused_constraint_thing_fix_me(mapping: List[MappingNode], rank_vari
                 mapping_new.pop(f)
         # print(indent + f"Yielding for rank variable {my_rank_variable}. Length: {len(mapping_new)}")
         # print(indent + ", ".join(m.compact_string() for m in mapping_new))
-        yield from temporal_fused_constraint_thing_fix_me(mapping_new, rank_variables, rank_variable_bounds)
+        yield from temporal_fused_constraint_thing_fix_me(
+            mapping_new, rank_variables, rank_variable_bounds
+        )
 
 
 def temporal_constraint_2_fix_me(mapping: List[MappingNode], einsum: Einsum):
@@ -275,8 +339,11 @@ def temporal_constraint_2_fix_me(mapping: List[MappingNode], einsum: Einsum):
             to_drop = rv1 & rv2
             if not to_drop:
                 continue
-            for k in range(i+1, j):
-                if isinstance(mapping[k], Temporal) and mapping[k].rank_variable in to_drop:
+            for k in range(i + 1, j):
+                if (
+                    isinstance(mapping[k], Temporal)
+                    and mapping[k].rank_variable in to_drop
+                ):
                     to_pop.add(k)
     return [node for i, node in enumerate(mapping) if i not in to_pop]
 
@@ -287,19 +354,18 @@ def place_missing_temporal_loops(mapping: List[MappingNode], einsum: Einsum):
     for m in mapping:
         if isinstance(m, Temporal) and not m._fused:
             rank_variables.discard(m.rank_variable)
-            
+
     # insert_point = 0
     # while insert_point < len(mapping) and not isinstance(mapping[insert_point], Temporal):
     #     insert_point += 1
     # Insert point: Right under the last backing storage
-    for i in range(len(mapping)-1, -1, -1):
+    for i in range(len(mapping) - 1, -1, -1):
         if isinstance(mapping[i], Storage) and mapping[i]._backing:
             insert_point = i + 1
             break
 
     temporals = [
-        Temporal(rank_variable=r, tile_shape='symbol')
-        for r in sorted(rank_variables)
+        Temporal(rank_variable=r, tile_shape="symbol") for r in sorted(rank_variables)
     ]
 
     if insert_point == len(mapping):
@@ -318,32 +384,8 @@ def pad_with_bottom_loops(mapping: list[MappingNode], einsum: Einsum):
 
     for rank_var in rank_variables:
         if rank_var_to_count[rank_var] < 2:
-            mapping.append(Temporal(rank_variable=rank_var, tile_shape='symbol'))
-    
+            mapping.append(Temporal(rank_variable=rank_var, tile_shape="symbol"))
 
-def iterate_mappings_n_loops_constraint(mapping: Mapping, einsum: Einsum):
-    n_loops = sum(isinstance(m, Iteration) for m in mapping.nodes)
-    n_to_drop = n_loops - MAX_N_LOOPS
-    if n_to_drop <= 0:
-        yield mapping
-        return
-    
-    rank_variables = einsum.rank_variables
-
-    index2iteration = [i for i, node in enumerate(mapping.nodes) if isinstance(node, Iteration)]
-
-    # Don't drop the innermost loop of any rank variable
-    need_rank_variables = set(rank_variables)
-    for i, node in list(enumerate(mapping.nodes))[::-1]:
-        if isinstance(node, Iteration) and node.rank_variable in need_rank_variables:
-            need_rank_variables.discard(node.rank_variable)
-            index2iteration.remove(i)
-        
-    assert not need_rank_variables
-    
-    for choices in itertools.combinations(index2iteration, n_to_drop):
-        mapping_new = [m for i, m in enumerate(mapping.nodes) if i not in choices]
-        yield Mapping(nodes=mapping_new)
 
 def timeloop_style_even(mapping: list[MappingNode]):
     # Iterate through the mapping. If there are >2 storage nodes for the same
@@ -361,6 +403,16 @@ def timeloop_style_even(mapping: list[MappingNode]):
             mapping[i] = None
             mapping[seen[-1]].tensors.extend(node.tensors)
     return [m for m in mapping if m is not None]
+
+
+def get_ranks_with_tile_pattern(producer_name: EinsumName, workload: Workload):
+    initial_choices = get_initial_delta_choices(producer_name, workload)
+    return {
+        rank_var
+        for rank_var in workload.einsums[producer_name].rank_variables
+        if len(initial_choices[rank_var]) > 1
+    }
+
 
 def iterate_mappings_no_constraints(
     spec: Specification,
@@ -381,16 +433,30 @@ def iterate_mappings_no_constraints(
 
     symbol_table = spec.workload.get_constraint_symbol_table(einsum_name, spec.renames)
     einsum = spec.workload.einsums[einsum_name]
-    for mapping, symbol_table in get_storage_choices(arch_flattened, symbol_table, spec):
+    for mapping, symbol_table in get_storage_choices(
+        arch_flattened, symbol_table, spec
+    ):
         mapping = copy.deepcopy(mapping)
         if spec.mapper_ffm.timeloop_style_even:
             mapping = timeloop_style_even(mapping)
         # print(", ".join(m.compact_string() for m in mapping))
+<<<<<<< HEAD
         for mapping in insert_temporal_loops(mapping,
                                              einsum,
                                              first_memory,
                                              ranks_with_tile_pattern,
                                              spec.workload):
+=======
+        for mapping in insert_temporal_loops(
+            mapping,
+            einsum,
+            first_memory,
+            rank_variable_bounds,
+            ranks_with_tile_pattern,
+            spec.workload,
+            except_from_imperfect,
+        ):
+>>>>>>> origin
             mapping = copy.deepcopy(mapping)
             # print(", ".join(m.compact_string() for m in mapping))
             insert_spatial_loops(mapping, einsum, arch_flattened)
@@ -400,7 +466,15 @@ def iterate_mappings_no_constraints(
             # print('POST-LABEL')
             # print(", ".join(m.compact_string() for m in mapping))
             # print(f'{einsum_name}: {", ".join(m.compact_string() for m in mapping)}')
+<<<<<<< HEAD
             for mapping2 in temporal_fused_constraint_thing_fix_me(mapping, list(spec.workload.einsums[einsum_name].rank_variables), rank_variable_bounds): # TODO
+=======
+            for mapping2 in temporal_fused_constraint_thing_fix_me(
+                mapping,
+                list(spec.workload.einsums[einsum_name].rank_variables),
+                rank_variable_bounds,
+            ):  # TODO
+>>>>>>> origin
                 # mapping2 = temporal_constraint_2_fix_me(mapping2, einsum)
                 # print('PRE-PADDING')
                 # print(", ".join(m.compact_string() for m in mapping2))
@@ -412,6 +486,7 @@ def iterate_mappings_no_constraints(
                 # print(", ".join(m.compact_string() for m in mapping))
 
                 yield mapping2, symbol_table
+
 
 def iterate_mappings_constraints(
     spec: Specification,
@@ -433,38 +508,81 @@ def iterate_mappings_constraints(
         rank_variable_bounds = get_rank_variable_bounds(spec, einsum_names)
 
     for einsum_name in einsum_names:
+<<<<<<< HEAD
         for mapping, symbol_table in iterate_mappings_no_constraints(spec,
                                                                      einsum_name,
                                                                      arch_flattened,
                                                                      rank_variable_bounds,
                                                                      except_from_imperfect):
+=======
+        for mapping, symbol_table in iterate_mappings_no_constraints(
+            spec,
+            einsum_name,
+            arch_flattened,
+            rank_variable_bounds,
+            except_from_imperfect,
+        ):
+>>>>>>> origin
             # MAPPING MUST NOT BE MODIFIED AFTER THIS POINT
-            mapping, constraints = get_constraints(arch_flattened, mapping, symbol_table) 
+            mapping, constraints = get_constraints(
+                arch_flattened, mapping, symbol_table, einsum_name
+            )
             mapping.append(Compute(einsum=einsum_name, compute=compute_name))
-            # mapping = copy.copy(mapping)
             mapping = Mapping(nodes=[copy.copy(n) for n in mapping])
             yield mapping, constraints
-            # yield mapping, constraints
-            # for mapping2 in iterate_mappings_n_loops_constraint(mapping, spec.workload.einsums[einsum_name]):
-            #     yield Mapping(nodes=[copy.copy(n) for n in mapping2.nodes]), constraints
+
 
 # =================================================================================================
 # Make sims
 # =================================================================================================
+<<<<<<< HEAD
 def get_equivalent_sims(sim: SIM, tagger: Callable[[Mapping], Tags], reservation_levels: set[int]) -> list[SIM]:
     equivalent_permutations = sim.compatibility.make_equivalent_permutations(reservation_levels)
+=======
+
+
+def get_equivalent_sims(
+    sim: SIM, tagger: Callable[[Mapping], Tags], reservation_levels: set[int]
+) -> list[SIM]:
+    equivalent_permutations = sim.compatibility.make_equivalent_permutations(
+        reservation_levels
+    )
+>>>>>>> origin
     result = []
     for c in equivalent_permutations:
         try:
             tags = Tags() if tagger is None else tagger(c)
+            result.append(SIM(c.update(tags=tags), None))
         except ValueError:
-            continue
-        result.append(SIM(c.update(tags=tags), sim.mappings.copy()))
+            pass
     return result
 
 
+<<<<<<< HEAD
 def shift_reservations_by_null_loop_indices(mappings: DataFrame, null_loop_indices: set[int]):
     prev = copy.deepcopy(mappings) # TODO: Is this needed?
+=======
+def get_compatibility_loops(mapping: Mapping, tile_shapes: list[int]) -> "Mapping":
+    compatibility = Mapping(nodes=[])
+    i = 0
+    for node in mapping.nodes:
+        while i < len(tile_shapes) and tile_shapes[i] is None:
+            i += 1
+        if i >= len(tile_shapes):
+            break
+        new_node = copy.deepcopy(node)
+        if isinstance(node, Iteration):
+            new_node.tile_shape = tile_shapes[i]
+            i += 1
+        compatibility.nodes.append(new_node)
+    return compatibility
+
+
+def shift_reservations_by_null_loop_indices(
+    mappings: DataFrame, null_loop_indices: set[int]
+):
+    prev = copy.deepcopy(mappings)  # TODO: Is this needed?
+>>>>>>> origin
     target2newabovename = {}
     dropcols = []
     for c in mappings.columns:
@@ -494,6 +612,7 @@ def shift_reservations_by_null_loop_indices(mappings: DataFrame, null_loop_indic
     return mappings
 
 
+<<<<<<< HEAD
 def make_sims(
         mapping: Mapping,
         explored_results: DataFrame,
@@ -622,25 +741,145 @@ def make_sims(
 
     n_tile_shapes = sum(1 if l.tile_shape is not None else 2 for l in fused_loops)
     fused_loop_columns = [f"__tile_shape{i}" for i in range(n_tile_shapes)]
+=======
+# =================================================================================================
+# Top level
+# =================================================================================================
+def get_single_einsum_jobs(job: Job) -> list[Job]:
+    workload = job.spec.workload
+    mappings_constraints = tqdm(
+        iterate_mappings_constraints(
+            job.spec,
+            job.einsum_name,
+            job.flattened_arch,
+            job.rank_variable_bounds,
+            job.except_from_imperfect,
+        ),
+        desc=f"Generating storage and loop choices for Einsum {job.einsum_name}",
+    )
 
-    if fused_loop_columns:
-        groups = list(explored_results.groupby(fused_loop_columns))
+    jobs = []
+    for i, (mapping, constraints) in enumerate(mappings_constraints):
+        new_job = copy.deepcopy(job)
+        new_job.mapping = mapping
+        new_job.constraints = constraints
+        new_job.job_id = job.job_id + i
+        new_job.flattened_arch = job.flattened_arch
+        new_job.rank_variable_bounds = get_rank_variable_bounds(
+            job.spec.workload, job.einsum_name
+        )
+        jobs.append(new_job)
+
+    return jobs
+>>>>>>> origin
+
+
+def generate_pmappings(job_list: list[Job]):
+    total_pmappings = 0
+    results = []
+
+    job_ids = [job.job_id for job in job_list]
+    for job in job_list:
+        result, n_pmappings = explore_tile_shapes(
+            job.mapping,
+            job.constraints,
+            job.spec,
+            job.flattened_arch,
+            job.metrics,
+            _fix_me=False,
+        )
+        # This changes the pmapping count to include permutations
+        # n_loops = []
+        # cur_n_loops = 0
+        # for node in job.mapping.nodes:
+        #     if isinstance(node, Iteration):
+        #         cur_n_loops += 1
+        #     elif isinstance(node, ReservationNode):
+        #         if cur_n_loops >= 1:
+        #             n_loops.append(cur_n_loops)
+        #         cur_n_loops = 0
+        # if cur_n_loops >= 1:
+        #     n_loops.append(cur_n_loops)
+        # Uncomment below to include permutations
+        # n_pmappings *= math.prod(math.factorial(len(job.rank_variable_bounds)) for n in n_loops)
+
+        # Uncomment below to not include permutations AND assume that the permutation
+        # engine has no knowledge of relevant/irrelevant rank variables. Note that the
+        # space will still be much bigger than reported since the extra loops would also
+        # increase the index factorization space size.
+
+        # n_pmappings *= math.prod(math.factorial(n) for n in n_loops)
+        # result[MAPPING_COLUMN] = [job.mapping] * len(result)
+        result[COMPRESSED_INDEX_COLUMN] = job.job_id
+        total_pmappings += n_pmappings
+        results.append(result)
+
+    # Creating a PartialMappings fills in reservation columns since different partial
+    # mappings have different ones.
+    next_shared_loop_index = len(job.compatibility.loops) - 1
+    results = PartialMappings.concat(
+        [
+            PartialMappings(
+                r,
+                skip_pareto=True,
+                next_shared_loop_index=next_shared_loop_index,
+            )
+            for r in results
+        ]
+    ).data
+
+    if results.empty:
+        return job.einsum_name, [], None, job_ids
+
+    n_tile_shapes = sum(
+        1 if isinstance(l.bound, Number) else 2 for l in job.compatibility.loops
+    )
+    fused_loop_cols = [f"__tile_shape{i}" for i in range(n_tile_shapes)]
+    tensor2size_cols = [tensor2col(t) for t in job.intermediate_tensors]
+    pareto_cols = [c for c in results.columns if col_used_in_pareto(c)]
+    compress_cols = [
+        c for c in results.columns if c not in tensor2size_cols and c not in pareto_cols
+    ]
+
+    jobs_passed_pareto = sorted(results[COMPRESSED_INDEX_COLUMN].unique())
+
+    extra_data = {
+        job.job_id: {f"{job.einsum_name}{MAPPING_COLUMN}": job.mapping}
+        for job in job_list
+        if job.job_id in jobs_passed_pareto
+    }
+
+    results, decompress_data = compress_df(
+        df=results,
+        einsum_name=job.einsum_name,
+        keep_columns=pareto_cols + tensor2size_cols + fused_loop_cols,
+        compress_columns=compress_cols,
+        extra_data=extra_data,
+    )
+
+    if fused_loop_cols:
+        groups = list(results.groupby(fused_loop_cols))
     else:
-        groups = [((), explored_results)]
-        
-    pmappings_per_group = None if total_pmappings is None else total_pmappings / len(groups)
+        groups = [((), results)]
+
+    pmappings_per_group = (
+        None if total_pmappings is None else total_pmappings / len(groups)
+    )
 
     sims = []
-    
+
+    seen_compatibilities = set()
+
     for tile_shape, mappings in groups:
         tensor2size = {}
 
-        dropcols = []
-        for tensor in intermediate_tensors: # Sizes are all the same
+        dropcols = list(fused_loop_cols)
+        for tensor in job.intermediate_tensors:  # Sizes are all the same
             tensor2size[tensor] = mappings[tensor2col(tensor)].iloc[0]
             dropcols.append(tensor2col(tensor))
         mappings.drop(columns=dropcols, inplace=True)
 
+<<<<<<< HEAD
         compatibility, null_loop_indices = make_compatibility(tile_shape, tensor2size)
         if compatibility.tags == Tags(("INVALID",)):
             continue
@@ -664,9 +903,38 @@ def make_sims(
         # for equivalent_sim in get_equivalent_sims(sim, tagger, reservation_levels):
         #     sims.append(equivalent_sim)
         sims.append(sim)
+=======
+        new_compatibility, null_loop_indices = job.compatibility.populate_tile_shape(
+            tile_shape, job.rank_variable_bounds, tensor2size
+        )
 
-    return sims
+        shift_reservations_by_null_loop_indices(mappings, null_loop_indices)
 
+        # TODO: Redundant capacity checks because limit_capacity is called. We want it
+        # so we can drop dead reservations though.fcompress_dfz
+        # Skip pareto because we already did it above
+        # prev_len = len(mappings)
+        next_shared_loop_index_this_group = len(new_compatibility.loops) - 1
+        partial_mappings = PartialMappings(
+            mappings,
+            next_shared_loop_index=next_shared_loop_index_this_group,
+            n_pmappings=pmappings_per_group,
+            skip_pareto=next_shared_loop_index_this_group == next_shared_loop_index,
+        )
+        reservation_levels = partial_mappings.all_reservation_levels()
+        sim = SIM(new_compatibility, partial_mappings)
+>>>>>>> origin
+
+        sim._equivalent_sims = get_equivalent_sims(sim, job.tagger, reservation_levels)
+        sim._equivalent_sims = [
+            e
+            for e in sim._equivalent_sims
+            if e.compatibility not in seen_compatibilities
+        ]
+        seen_compatibilities.update(e.compatibility for e in sim._equivalent_sims)
+        sims.append(sim)
+
+<<<<<<< HEAD
 # =================================================================================================
 # Top level
 # =================================================================================================
@@ -739,3 +1007,6 @@ def get_ranks_with_tile_pattern(producer_name: EinsumName, workload: Workload):
         for rank_var in workload.einsums[producer_name].rank_variables
         if len(initial_choices[rank_var]) > 1
     }
+=======
+    return job.einsum_name, sims, decompress_data, jobs_passed_pareto
+>>>>>>> origin
