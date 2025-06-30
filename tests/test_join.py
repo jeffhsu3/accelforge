@@ -43,6 +43,8 @@ class TestJoin(unittest.TestCase):
         mappings = join_sims(sims, spec, flattened_arch, drop_valid_reservations=False)
         mappings.decompress(decompress_data)
 
+        print(mappings.data.sort_values('metric_Energy'))
+
     def test_mobilenet(self):
         spec = Specification.from_yaml(
             PARENT_DIR / "snowcat.arch.yaml",
