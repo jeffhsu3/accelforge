@@ -161,6 +161,7 @@ def get_sims(
     metrics: Metrics = Metrics.ENERGY | Metrics.LATENCY,
     einsum_names: Optional[list[EinsumName]] = None,
     except_from_imperfect: set = set(),
+    fail_if_no_pmappings_for_einsum: bool = True,
 ) -> tuple[dict[EinsumName, list[SIM]], DecompressData]:
     
     print(
@@ -229,6 +230,13 @@ def get_sims(
     for einsum_name, jobs in einsum2jobs.items():
         calls.extend(delayed(generate_pmappings)(job_list) for job_list in jobs.values())
         
+    if fail_if_no_pmappings_for_einsum:
+        for einsum_name, jobs in einsum2jobs.items():
+            if len(jobs) == 0:
+                raise ValueError(
+                    f"No pmappings for {einsum_name}. Was the mapspace overconstrained?"
+                )
+        
     jobs_flattened = [
         j for compatibility2joblist in einsum2jobs.values() 
         for job_list in compatibility2joblist.values()
@@ -269,6 +277,11 @@ def get_sims(
         #         #     print(f'\tDuplicate compatibility {sim.compatibility}')
         #         #     raise ValueError(f"Duplicate compatibility {sim.compatibility} for {einsum_name}")
         #         seen_compatibilities[einsum_name][sim.compatibility] = job
+    
+    if fail_if_no_pmappings_for_einsum:
+        for einsum_name, sims2 in sims.items():
+            if len(sims2) == 0:
+                raise ValueError(f"No pmappings for {einsum_name}. Was the mapspace overconstrained?")
     
     return sims, grouped_decompress_data
     
