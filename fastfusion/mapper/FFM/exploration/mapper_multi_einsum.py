@@ -1,3 +1,4 @@
+import logging
 from math import prod
 from pathlib import Path
 from typing import Callable, Optional
@@ -132,6 +133,10 @@ def get_memories_to_track(
         memory = memory[0]
         if memory.attributes.size >= total_tensor_sizes * memory.attributes.datawidth: # max(m.attributes.datawidth.values()):
             memories_track_all.remove(m)
+            logging.info(
+                f"Not tracking memory {m}. It is big enough to hold "
+                f"every tensor in the workload."
+            )
 
     # If the memory is below every backing storage node, then we need it for the
     # pmapping exploration but can drop it immediately
@@ -148,10 +153,11 @@ def get_memories_to_track(
         if not must_track:
             memories_track_all.remove(m)
             memories_track_pmappings_only.append(m)
+            logging.info(
+                f"Not tracking memory {m} across joining stage. It is never "
+                f"reserved across fused loop iterations."
+            )
             
-    print(f'Memories to track: \n\t' + '\n\t'.join(memories_track_all))
-    print(f'Memories to track pmappings only: \n\t' + '\n\t'.join(memories_track_pmappings_only))
-
     return memories_track_all, memories_track_pmappings_only
 
 def get_sims(
