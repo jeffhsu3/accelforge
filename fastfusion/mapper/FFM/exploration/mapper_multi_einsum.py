@@ -20,6 +20,7 @@ from fastfusion.mapper.FFM.joining.sim import SIM
 from fastfusion.mapper.FFM.compress_pmappings import DecompressData, GroupedDecompressData
 from fastfusion.mapper.FFM.tags import Tags
 from fastfusion.util.util import parallel
+from fastfusion.util import util
 from fastfusion.mapper.FFM.exploration.mapper_one_einsum.mapper_job import Job, SameCompatibilityJobs
 
 def get_rank_variable_bounds_for_all_einsums(spec: Specification):
@@ -141,20 +142,20 @@ def get_memories_to_track(
     # If the memory is below every backing storage node, then we need it for the
     # pmapping exploration but can drop it immediately
     for m in list(memories_track_all):
-        seen = False
         must_track = False
         for job in jobs:
+            seen = False
             for node in job.mapping.nodes:
                 if isinstance(node, Storage) and node.memory == m:
                     seen = True
                 if isinstance(node, Iteration) and node._fused and seen:
-                    must_track = True                    
+                    must_track = True
 
         if not must_track:
             memories_track_all.remove(m)
             memories_track_pmappings_only.append(m)
             logging.info(
-                f"Not tracking memory {m} across joining stage. It is never "
+                f"Not tracking memory {m} across joining stages. It is never "
                 f"reserved across fused loop iterations."
             )
             
@@ -229,25 +230,33 @@ def get_sims(
     #             del jobs[compatibility]
     # einsum_names = ["V"]
     einsum2jobs = get_jobs(spec, flattened_arch, tagger, metrics, einsum_names, except_from_imperfect)
-            
-    # Allocate jobs
-    calls = []
-    grouped_decompress_data = GroupedDecompressData(prefix2datalist={})
-    for einsum_name, jobs in einsum2jobs.items():
-        calls.extend(delayed(generate_pmappings)(job_list) for job_list in jobs.values())
-        
     if fail_if_no_pmappings_for_einsum:
         for einsum_name, jobs in einsum2jobs.items():
             if len(jobs) == 0:
                 raise ValueError(
                     f"No pmappings for {einsum_name}. Was the mapspace overconstrained?"
                 )
-        
     jobs_flattened = [
         j for compatibility2joblist in einsum2jobs.values() 
         for job_list in compatibility2joblist.values()
         for j in job_list
     ]
+
+    # Allocate jobs
+    calls = []
+    grouped_decompress_data = GroupedDecompressData(prefix2datalist={})
+    for einsum_name, jobs in einsum2jobs.items():
+        calls.extend(delayed(generate_pmappings)(job_list) for job_list in jobs.values())
+        
+    if util.PARALLELIZE and len(calls) < util.N_PARALLEL_THREADS * 4:
+        logging.WARNING(
+            f"Insufficient jobs available to utilize available threads. Splitting jobs "
+            f"into smaller chunks."
+        )
+        calls = []
+        for einsum_name, jobs in einsum2jobs.items():
+            for job_list in jobs.values():
+                calls.extend(delayed(generate_pmappings)(job) for job in job_list.split())
         
     memories_track_all, memories_track_pmappings_only = get_memories_to_track(
         spec,
