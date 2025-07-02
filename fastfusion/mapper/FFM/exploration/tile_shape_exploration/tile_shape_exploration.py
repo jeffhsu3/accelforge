@@ -10,14 +10,12 @@ from fastfusion.accelerated_imports import pd
 
 import fastfusion.frontend.architecture as architecture
 from fastfusion.frontend.architecture import Memory
-from fastfusion.frontend.workload import Workload, Einsum
+from fastfusion.frontend.workload import Workload
 from fastfusion.frontend.workload.isl import get_rank_variable_bounds
 from fastfusion.frontend.workload.symbolic import get_stride_and_halo
 from fastfusion.frontend.mapping import Temporal, Spatial, Storage, Pattern
-from fastfusion.frontend.specification import Specification
 
 from fastfusion.mapper.FFM.exploration import metrics
-from fastfusion.mapper.FFM.exploration.mapper_one_einsum.mapper_job import Job
 from fastfusion.model.looptree.reuse.summarized.symbolic import analyze_reuse
 from fastfusion.model.looptree.energy import compute_energy_from_actions, gather_actions
 from fastfusion.model.looptree.latency import get_latency
@@ -87,7 +85,7 @@ class TilingSegment:
             yield (n_loops, initial_delta_choices, max_shape, min_shape)
 
 
-def explore_tile_shapes(job: Job):
+def explore_tile_shapes(job: "Job"):
     pmapping = job.mapping
     constraints = job.constraints
     specification = job.spec

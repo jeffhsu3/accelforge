@@ -40,10 +40,8 @@ class TestJoin(unittest.TestCase):
         sim_cache = make_sim_pickle_cache(config_names)
         sims, decompress_data = sim_cache.get(lambda: get_sims(spec, flattened_arch))
 
-        mappings = join_sims(sims, spec, flattened_arch, drop_valid_reservations=False)
+        mappings = join_sims(sims, spec, flattened_arch)
         mappings.decompress(decompress_data)
-
-        print(mappings.data.sort_values('metric_Energy'))
 
     def test_mobilenet(self):
         spec = Specification.from_yaml(

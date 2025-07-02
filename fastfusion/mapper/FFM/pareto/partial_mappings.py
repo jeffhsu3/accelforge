@@ -1,74 +1,25 @@
 from collections import defaultdict
 import copy
+import functools
 import itertools
 import re
 
 # Disable numba. We need user_has_package("numba") to be False
-import sys
-import time
-from typing import Any, Callable, Iterable, Optional, Tuple, Union, NamedTuple
-
-from joblib import delayed
-from fastfusion.accelerated_imports import np
+from typing import Iterable, Optional, Tuple, Union
 
 from fastfusion.frontend.mapping import Iteration, Nested
 from fastfusion.mapper.FFM.compress_pmappings import decompress_joined_df
 from fastfusion.mapper.FFM.joining.mappinginfo import TensorStorage
 from fastfusion.util import fzs
-from fastfusion.util.util import parallel
 from fastfusion.mapper.FFM.compress_pmappings import GroupedDecompressData
 
-from paretoset import paretoset
-
 from fastfusion.accelerated_imports import pd
-import functools
 
-LOGSTRING = "__Mappings"
-MAPPING_COLUMN = "__MAPPING"
-STATS = "__STATS"
-OCCUPANCY = "__Occupancy"
-TENSORS = "__TENSORS"
-IN_PROGRESS_STATS = "__IN_PROGRESS_STATS"
-MAPPING_HASH = "__MAPPING_HASH"
-TAGS_COLUMN = "__TAGS"
-PER_COMPONENT_ACCESSES_ENERGY = "Per-Component Energy"
-COMPRESSED_INDEX = "__COMPRESSED_INDEX"
+from .df_convention import *
+from .pareto_impl import makepareto
 
-TILE_SHAPE_PREFIX = "__tile_shape"
-
-DICT_COLUMNS = set(
-    [
-        LOGSTRING,
-        MAPPING_COLUMN,
-        STATS,
-        TENSORS,
-        IN_PROGRESS_STATS,
-        MAPPING_HASH,
-        TAGS_COLUMN,
-        PER_COMPONENT_ACCESSES_ENERGY,
-    ]
-)
-RESERVED_COLUMNS = DICT_COLUMNS
-
-TUPLABE_COLUMNS = set([MAPPING_COLUMN, TENSORS])
 
 CHECK_CORRECTNESS = False
-
-_resource_name_nloops_reg = re.compile(r"RESOURCE_(.+?)(?:_LEFT)?_LEVEL_(-?\d+)")
-
-_resource_name_tensor_reg = re.compile(r"RESOURCE_(.+?)_LEVEL_(.+?)")
-
-def dict_cached(func):
-    cache = {}
-
-    @functools.wraps(func)
-    def wrapper(*args, **kwargs):
-        key = (args, fzs(kwargs.items()))
-        if key not in cache:
-            cache[key] = func(*args, **kwargs)
-        return cache[key]
-
-    return wrapper
 
 def error_check_wrapper(func):
     if not CHECK_CORRECTNESS:
@@ -97,244 +48,6 @@ def error_check_wrapper(func):
             func(*args, **kwargs) # For debugging
     return wrapper
 
-@dict_cached
-def col2nameloop(x):
-    m = _resource_name_nloops_reg.match(x)
-    return (m.group(1), int(m.group(2))) if m is not None else None
-
-
-@dict_cached
-def nameloop2col(name, nloops, left: bool = False):
-    if left:
-        return f"RESOURCE_{name}_LEFT_LEVEL_{nloops}"
-    return f"RESOURCE_{name}_LEVEL_{nloops}"
-
-@dict_cached
-def tensor2col(tensor):
-    return f"TENSOR_{tensor}"
-
-@dict_cached
-def col2nametensor(col):
-    m = _resource_name_tensor_reg.match(col)
-    return (m.group(1), m.group(2)) if m is not None else None
-
-@dict_cached
-def col2nameloopleft(x):
-    m = _resource_name_nloops_reg.match(x)
-    return (m.group(1), int(m.group(2)), is_left_col(x)) if m is not None else None
-
-def is_reservation_col(x):
-    return col2nameloop(x) is not None
-
-@dict_cached
-def is_left_col(x):
-    return "_LEFT_LEVEL_" in x
-
-def add_to_col(df, target, source):
-    df.loc[:, target] = df[target] + df[source] if target in df else df[source]
-
-
-def max_to_col(df, target, source):
-    df.loc[:, target] = df[[target, source]].max(axis=1) if target in df else df[source]
-
-
-def is_special_col(c):
-    return c in RESERVED_COLUMNS or col2nameloop(c) is not None
-
-def col_used_in_pareto(c):
-    return col2nameloop(c) is not None or c.startswith("metric_")
-# Pipeline:
-# - Need to share temporal loops up to the spatial loop index
-#   Resources:
-#   - Energy
-#   - PE utilization
-#   - Buf utilization
-#   - Buf accesses (for BW calculation later)
-
-# - Options:
-#   - Non-pipelined: Sum resources above shared loops, max below.
-#   - Pipelined: Sum resources above shared loops, max below. Sum
-#     PE utilization. Latency is pipeline latency summed.
-#
-#  *  Can't bake into compatiblity unless we have a notion of left vs.
-#     right pipelined.
-
-# PIPELINE CHANGES REQUIRED:
-# - Latency above above loop index (first tile), below (all subsequent tiles)
-# - Compatibility includes information for how may be fused:
-#   - Pipelined: Max below latencies,
-#   - Non-pipelined:
-# Shared resources:
-# -
-# SEQUENTIAL:
-# - In parallel: Fetch all above-shared-loop resources for all operations
-# - Sequentially: Fetch any below-shared-loop resources for all operations
-# PIPELINE:
-# - In parallel: Fetch all above-shared-loop resources for all operations
-# - Sequentially: Fetch any below-shared-loop resources for the first iteration of all operations
-# - In parallel: Fetch all below-shared-loop resources for all operations in all subsequent iterations
-
-
-# Above index 0: Freed when Einsum fully terminates
-# Above index 1: Freed after each iteration of the outermost loop
-
-# -1 -> global resource
-# 0 -> einsum only
-
-# Shared index -1: Sum -1 resources, max everyone below
-# Shared index 0: Sum 0 resources, max everyone below
-
-def dominates(a: pd.Series, b: pd.Series) -> bool:
-    return all(a[i] <= b[i] for i in range(len(a)))
-
-def check_dominance(df: pd.DataFrame, n_optimal: int):
-    # mask = np.zeros(len(df), dtype=bool)
-    # mask[:new_point] = True
-    mask = np.zeros(len(df) - n_optimal, dtype=bool)
-    for col in df.columns:
-        compare = df.iloc[n_optimal - 1][col]
-        mask = mask | (df[col].iloc[n_optimal:] < compare)
-    return np.concatenate([np.ones(n_optimal, dtype=bool), mask])
-
-
-def quickpareto(df: pd.DataFrame) -> pd.DataFrame:
-    # Step 1: Sort by the column with the most unique values
-    # Step 2: Extract the first row. Add it to the pareto set
-    # Step 3: Remove all dominated points
-    # Step 4: Repeat until no more points to add
-    
-    # Step 1: Sort by the column with the most unique values
-    original_len = len(df)
-    col_to_sort = max(df.columns, key=lambda c: df[c].nunique())
-    df = df.sort_values(by=col_to_sort).drop(columns=[col_to_sort])
-    
-    new_point = 0
-    while new_point < len(df):
-        mask = check_dominance(df, new_point + 1)
-        df = df[mask]
-        new_point += 1
-        
-    # Turn the index into a mask
-    mask = np.zeros(original_len, dtype=bool)
-    mask[df.index] = True
-    return mask
-
-from fast_pareto import is_pareto_front
-def makepareto_quick2(mappings: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
-    m2 = mappings[columns]
-    m2 = m2[is_pareto_front(m2.to_numpy())].drop_duplicates()
-    return mappings.loc[m2.index]
-    
-def makepareto_quick(mappings: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
-    return mappings[quickpareto(mappings[columns])]
-
-def paretofy_chunk(chunk, sense: list[str]):
-    return paretoset(chunk, sense=sense)
-
-def makepareto_merge(mappings: pd.DataFrame, columns: list[str], parallelize: bool = False, split_by_cols: list[str]=()) -> pd.DataFrame:
-    chunk_size = 10000
-    if len(mappings) <= 1:
-        return mappings
-    
-    sense = ["min"] * len(columns) + ["diff"] * len(split_by_cols)
-    
-    to_chunk = mappings[columns + list(split_by_cols)]
-    chunks = parallel(
-        [delayed(paretofy_chunk)(chunk, sense)
-        for chunk in [to_chunk[i:i+chunk_size] for i in range(0, len(to_chunk), chunk_size)]],
-        n_jobs = 1 if parallelize else None
-    )
-    mappings = mappings[np.concatenate(chunks)]
-    return mappings[paretoset(mappings[columns + list(split_by_cols)], sense=sense)]
-
-def makepareto_time_compare(mappings: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
-    t0 = time.time()
-    pareto = makepareto_merge(mappings, columns)
-    t1 = time.time()
-    merge_time = t1 - t0
-    print(f"Time to make pareto with merge: {t1 - t0: .2f}. Number of pareto points: {len(pareto)}")
-    
-    t0 = time.time()
-    pareto2 = makepareto_quick2(mappings, columns)
-    t1 = time.time()
-    print(f"Time to make pareto with quick: {t1 - t0: .2f}. Number of pareto points: {len(pareto2)}")
-    quick_time = t1 - t0
-    
-    print(f'Quick is {quick_time / merge_time: .2f}x slower')
-    
-    if len(pareto) != len(pareto2):
-        print(f"mismatch: {len(pareto)} != {len(pareto2)}")
-        makepareto_quick2(mappings)
-        
-    return pareto2
-
-# 2d. Blockwise vectorized CuPy Pareto front with sorting by one objective (full check)
-# 2c. Fully vectorized CuPy brute-force Pareto front
-# (returns numpy mask for compatibility)
-def pareto_front_cupy_vectorized(X):
-    # if len(X) > 1000:
-    #     return X[paretoset(X.get(), sense=["min"] * X.shape[1])]
-    
-    # Broadcast X_gpu to (n, n, m) for all-pairs comparison
-    A = X[:, None, :]  # shape (n, 1, m)
-    B = X[None, :, :]  # shape (1, n, m)
-    less_equal = (B <= A).all(axis=2)  # shape (n, n)
-    strictly_less = (B < A).any(axis=2)  # shape (n, n)
-    dominated = less_equal & strictly_less  # shape (n, n)
-    is_pareto = ~dominated.any(axis=1)
-    return is_pareto
-
-# 2d. Recursive blockwise merge CuPy Pareto front with sorting by one objective
-def pareto_front_cupy_blockwise_sorted_recursive(X, block_size=2000):
-    N = X.shape[0]
-    if N <= block_size:
-        # Base case: just compute Pareto front directly
-        mask = pareto_front_cupy_vectorized(X)
-        return mask
-    # Split into two halves
-    mid = N // 2
-    a, b = X[:mid], X[mid:]
-    mask_a = pareto_front_cupy_blockwise_sorted_recursive(a, block_size)
-    mask_b = pareto_front_cupy_blockwise_sorted_recursive(b, block_size)
-    # Get Pareto-optimal points from both halves
-    pareto_points_a = a[mask_a]
-    pareto_points_b = b[mask_b]
-    merged_points = np.vstack([pareto_points_a, pareto_points_b])
-    # Compute Pareto front of the merged set
-    merged_mask = pareto_front_cupy_vectorized(merged_points)
-    merged_indices = np.where(merged_mask)[0]
-    # Map merged_indices back to the original indices in X
-    # First, get the indices in X for the merged points
-    indices_a = np.where(mask_a)[0]
-    indices_b = np.where(mask_b)[0] + mid
-    all_indices = np.concatenate([indices_a, indices_b])
-    merged_indices_in_X = all_indices[merged_indices]
-    # Build the final mask for X
-    mask = np.zeros(N, dtype=bool)
-    mask[merged_indices_in_X] = True
-    return mask
-
-def makepareto(mappings: pd.DataFrame, columns: list[str] = None, parallelize: bool = False, split_by_cols: list[str] = ()) -> pd.DataFrame:
-    # return makepareto_time_compare(mappings)
-    if columns is None:
-        columns = [c for c in mappings.columns if col_used_in_pareto(c)]
-    if accelerated_imports.ACCELERATED:
-        mask = pareto_front_cupy_blockwise_sorted_recursive(mappings[columns].to_cupy())
-        return mappings[mask]
-        
-def makepareto(mappings: pd.DataFrame, columns: list[str] = None, parallelize: bool = False, split_by_cols: list[str] = ()) -> pd.DataFrame:
-    # return makepareto_time_compare(mappings)
-    if columns is None:
-        columns = [c for c in mappings.columns if col_used_in_pareto(c)]
-    return makepareto_merge(mappings, columns, parallelize=parallelize, split_by_cols=split_by_cols)
-    if len(mappings) <= 1:
-        return mappings
-    columns = [c for c in mappings.columns if col_used_in_pareto(c)]
-    sense = ["min"] * len(columns)
-    columns += list(extra_columns)
-    sense += ["diff"] * len(extra_columns)
-    return mappings[paretoset(mappings[columns], sense=sense)]
-    
 
 class PartialMappings:
     def __init__(
@@ -940,3 +653,4 @@ def row2pmappings(row: pd.Series, einsum_names: list[str], rank_variable_bounds:
         pmappings.append(pmapping.clear_nodes_of_type(Fill))
         pmapping.beautify_loops(rank_variable_bounds)
     return pmappings
+

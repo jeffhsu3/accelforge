@@ -4,11 +4,9 @@ import unittest
 from fastfusion.frontend import Specification, Workload
 
 from fastfusion.mapper.FFM.exploration import metrics
-from fastfusion.mapper.FFM.exploration.tile_shape_exploration.tile_shape_exploration import get_initial_delta_choices
+from fastfusion.mapper.FFM.exploration.tile_shape_exploration import get_initial_delta_choices
 from fastfusion.mapper.FFM.exploration.mapper_multi_einsum import get_sims
 from fastfusion.mapper.FFM.exploration.mapping_filter_tags import get_one_split_tag
-from fastfusion.mapper.FFM.exploration.mapping_filter_tags.onesplit import ONE_SPLIT
-from fastfusion.mapper.FFM.tags import Tags, TagMatch
 from fastfusion.mapper.FFM.pareto import nameloop2col
 
 from .simcache import make_sim_pickle_cache
@@ -45,7 +43,6 @@ class TestExploration(unittest.TestCase):
         spec.estimate_energy_area()
 
         sim_cache = make_sim_pickle_cache(config_names)
-        print(sim_cache.fname)
 
         sims, decompress_data = sim_cache.set(get_sims(spec))
         for per_einsum_sims in sims.values():
