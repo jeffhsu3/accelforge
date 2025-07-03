@@ -5,7 +5,7 @@ from fastfusion.frontend import Specification, Workload
 
 from fastfusion.mapper.FFM.exploration import metrics
 from fastfusion.mapper.FFM.exploration.tile_shape_exploration import get_initial_delta_choices
-from fastfusion.mapper.FFM.exploration.mapper_multi_einsum import PmappingExplorer
+from fastfusion.mapper.FFM.exploration.mapper_multi_einsum import get_sims
 from fastfusion.mapper.FFM.exploration.mapping_filter_tags import get_one_split_tag
 from fastfusion.mapper.FFM.pareto import nameloop2col
 
@@ -23,9 +23,7 @@ class TestPmappingExploration(unittest.TestCase):
             PARENT_DIR / "mha.renames.yaml",
         )
         spec.estimate_energy_area()
-
-        explorer = PmappingExplorer(spec, einsum_names=["K"])
-        sims, decompress_data = explorer.generate_complete_pmappings()
+        sims, decompress_data = get_sims(spec)
 
     def test_mha_full(self):
         config_names = [
@@ -39,8 +37,7 @@ class TestPmappingExploration(unittest.TestCase):
 
         sim_cache = make_sim_pickle_cache(config_names)
 
-        explorer = PmappingExplorer(spec)
-        sims, decompress_data = sim_cache.set(explorer.generate_complete_pmappings())
+        sims, decompress_data = sim_cache.set(get_sims(spec))
         for per_einsum_sims in sims.values():
             for sim in per_einsum_sims:
                 for resource, levels in sim.mappings.right_reservations.items():
@@ -61,8 +58,7 @@ class TestPmappingExploration(unittest.TestCase):
         def tagger(pmapping):
             return get_one_split_tag(pmapping)
 
-        explorer = PmappingExplorer(spec, einsum_names=["Q"], tagger=tagger)
-        sims, decompress_data = explorer.generate_complete_pmappings()
+        sims, decompress_data = get_sims(spec, einsum_names=["Q"], tagger=tagger)
 
     def test_conv_with_snowcat(self):
         spec = Specification.from_yaml(
@@ -71,10 +67,8 @@ class TestPmappingExploration(unittest.TestCase):
         )
         spec.estimate_energy_area()
 
-        explorer = PmappingExplorer(spec,
-                                    einsum_names=["Dwise0"],
-                                    metrics=metrics.Metrics.ENERGY)
-        sims, decompress_data = explorer.generate_complete_pmappings()
+        sims, decompress_data = get_sims(spec, einsum_names=["Dwise0"],
+                                         metrics=metrics.Metrics.ENERGY)
 
 
 class TestInitialDeltaGeneration(unittest.TestCase):

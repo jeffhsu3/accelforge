@@ -170,144 +170,107 @@ def get_memories_to_track(
     return memories_track_all, memories_track_pmappings_only
 
 
-class PmappingExplorer:
+def get_sims(
+    spec: Specification,
+    flattened_arch: Optional[list[architecture.Leaf]] = None,
+    tagger: Callable[[Mapping], Tags] | None = None,
+    metrics: Metrics = Metrics.ENERGY | Metrics.LATENCY,
+    einsum_names: Optional[list[EinsumName]] = None,
+    fail_if_no_pmappings_for_einsum: bool = True
+):
     """
     Explores pmapspace of `einsum_names` (default: all Einsums in workload).
-
-    Call `generate_unshaped_pmappings` first to explore dataflow and storage
-    nodes order. 
     """
-    def __init__(
-        self,
-        spec: Specification,
-        flattened_arch: Optional[list[architecture.Leaf]] = None,
-        tagger: Callable[[Mapping], Tags] | None = None,
-        metrics: Metrics = Metrics.ENERGY | Metrics.LATENCY,
-        einsum_names: Optional[list[EinsumName]] = None,
-        except_from_imperfect: set = set(),
-        fail_if_no_pmappings_for_einsum: bool = True
+    if flattened_arch is None:
+        flattened_arch = spec.get_flattened_architecture()
+
+    if einsum_names is None:
+        einsum_names = spec.workload.einsum_names
+
+    einsum2jobs = get_jobs(spec,
+                           flattened_arch,
+                           tagger,
+                           metrics,
+                           einsum_names,
+                           fail_if_no_pmappings_for_einsum)
+    if fail_if_no_pmappings_for_einsum:
+        _raise_error_if_no_pmappings(einsum2jobs)
+
+    _fill_jobs_with_memories_to_track(einsum2jobs, spec, flattened_arch, metrics)
+
+    calls = _allocate_jobs(einsum2jobs)
+
+    grouped_decompress_data = GroupedDecompressData(prefix2datalist={})
+    sims = {einsum_name: [] for einsum_name in spec.workload.einsum_names}
+    for einsum_name, new_sims, decompress_data, job_ids in parallel(
+        calls,
+        pbar=f"Generating Pmappings",
+        return_as="generator_unordered",
     ):
-        self.spec = spec
-
-        if flattened_arch is None:
-            flattened_arch = spec.get_flattened_architecture()
-        self.flattened_arch = flattened_arch
-
-        self.tagger = tagger
-        self.metrics = metrics
-
-        if einsum_names is None:
-            einsum_names = spec.workload.einsum_names
-        self.einsum_names = einsum_names
-
-        self.except_from_imperfect = except_from_imperfect
-        self.fail_if_no_pmappings_for_einsum = fail_if_no_pmappings_for_einsum
-
-        self._einsum2jobs = None
-        self._sims = None
-        self._grouped_decompress_data = None
-
-    def generate_unshaped_pmappings(self):
-        """Generate pmappings without tile shapes. Caches results."""
-        if self._einsum2jobs is not None:
-            return
-        self._einsum2jobs = get_jobs(self.spec,
-                                    self.flattened_arch,
-                                    self.tagger,
-                                    self.metrics,
-                                    self.einsum_names,
-                                    self.except_from_imperfect,
-                                    self.fail_if_no_pmappings_for_einsum)
-        if self.fail_if_no_pmappings_for_einsum:
-            for einsum_name, jobs in self._einsum2jobs.items():
-                if len(jobs) == 0:
-                    raise ValueError(
-                        f"No pmappings for {einsum_name}. "
-                        f"Was the mapspace overconstrained?"
-                    )
-
-    @property
-    def einsum2unshaped_compatibilities(self):
-        self.generate_unshaped_pmappings()
-        return {einsum_name: compatibility
-                for einsum_name, compatibilities in self._einsum2jobs.items()
-                for compatibility in compatibilities}
-
-    def prune_unshaped_pmappings(self):
-        raise NotImplementedError()
-
-    def generate_complete_pmappings(self):
-        """Generate pmappings complete with shapes. Caches results."""
-        if self._sims is not None:
-            return self._sims, self._grouped_decompress_data
-
-        self.generate_unshaped_pmappings()
-
-        self._fill_jobs_with_memories_to_track()
-
-        calls = self._allocate_jobs()
-
-        grouped_decompress_data = GroupedDecompressData(prefix2datalist={})
-        sims = {einsum_name: [] for einsum_name in self.spec.workload.einsum_names}
-        for einsum_name, new_sims, decompress_data, job_ids in parallel(
-            calls,
-            pbar=f"Generating Pmappings",
-            return_as="generator_unordered",
-        ):
-            grouped_decompress_data.register_decompress_data(
-                einsum_name,
-                job_ids,
-                decompress_data,
-            )
-            sims[einsum_name].extend(new_sims)
-            # for sim_group in new_sims:
-            #     for sim in sim_group._equivalent_sims:
-            #         # if sim.compatibility in seen_compatibilities[einsum_name]:
-            #         #     print(f'Einsum: {einsum_name}')
-            #         #     job_a = job
-            #         #     job_b = seen_compatibilities[einsum_name][sim.compatibility]
-            #         #     print(f'\tJob {id(job_a)} compatibility: {job_a.compatibility}')
-            #         #     print(f'\tJob {id(job_b)} compatibility: {job_b.compatibility}')
-            #         #     print(f'\tDuplicate compatibility {sim.compatibility}')
-            #         #     raise ValueError(f"Duplicate compatibility {sim.compatibility} for {einsum_name}")
-            #         seen_compatibilities[einsum_name][sim.compatibility] = job
-        
-        self.sims = sims
-        self.grouped_decompress_data = grouped_decompress_data
-
-        return sims, grouped_decompress_data
-
-    def _allocate_jobs(self):
-        calls = []
-        for einsum_name, jobs in self._einsum2jobs.items():
-            calls.extend(delayed(generate_pmappings)(job_list)
-                        for job_list in jobs.values())
-            
-        if util.PARALLELIZE and len(calls) < util.N_PARALLEL_THREADS * 4:
-            logging.warning(
-                f"Insufficient jobs available to utilize available threads. "
-                f"Splitting jobs into smaller chunks."
-            )
-            calls = []
-            for einsum_name, jobs in self._einsum2jobs.items():
-                for job_list in jobs.values():
-                    calls.extend(delayed(generate_pmappings)(job)
-                                for job in job_list.split())
-
-        return calls
-
-    def _fill_jobs_with_memories_to_track(self):
-        jobs_flattened = [
-            j for compatibility2joblist in self._einsum2jobs.values() 
-            for job_list in compatibility2joblist.values()
-            for j in job_list
-        ]
-        memories_track_all, memories_track_pmappings_only = get_memories_to_track(
-            self.spec,
-            self.flattened_arch,
-            jobs_flattened, 
-            self.metrics
+        grouped_decompress_data.register_decompress_data(
+            einsum_name,
+            job_ids,
+            decompress_data,
         )
-        for j in jobs_flattened:
-            j.memories_track_all = memories_track_all
-            j.memories_track_pmappings_only = memories_track_pmappings_only
+        sims[einsum_name].extend(new_sims)
+        # for sim_group in new_sims:
+        #     for sim in sim_group._equivalent_sims:
+        #         # if sim.compatibility in seen_compatibilities[einsum_name]:
+        #         #     print(f'Einsum: {einsum_name}')
+        #         #     job_a = job
+        #         #     job_b = seen_compatibilities[einsum_name][sim.compatibility]
+        #         #     print(f'\tJob {id(job_a)} compatibility: {job_a.compatibility}')
+        #         #     print(f'\tJob {id(job_b)} compatibility: {job_b.compatibility}')
+        #         #     print(f'\tDuplicate compatibility {sim.compatibility}')
+        #         #     raise ValueError(f"Duplicate compatibility {sim.compatibility} for {einsum_name}")
+        #         seen_compatibilities[einsum_name][sim.compatibility] = job
+    return sims, grouped_decompress_data
+
+
+def _raise_error_if_no_pmappings(einsum2jobs):
+    for einsum_name, jobs in einsum2jobs.items():
+        if len(jobs) == 0:
+            raise ValueError(
+                f"No pmappings for {einsum_name}. "
+                f"Was the mapspace overconstrained?"
+            )
+
+
+def _allocate_jobs(einsum2jobs):
+    calls = []
+    for einsum_name, jobs in einsum2jobs.items():
+        calls.extend(delayed(generate_pmappings)(job_list)
+                    for job_list in jobs.values())
+        
+    if util.PARALLELIZE and len(calls) < util.N_PARALLEL_THREADS * 4:
+        logging.warning(
+            f"Insufficient jobs available to utilize available threads. "
+            f"Splitting jobs into smaller chunks."
+        )
+        calls = []
+        for einsum_name, jobs in einsum2jobs.items():
+            for job_list in jobs.values():
+                calls.extend(delayed(generate_pmappings)(job)
+                            for job in job_list.split())
+    return calls
+
+def _fill_jobs_with_memories_to_track(
+    einsum2jobs,
+    spec,
+    flattened_arch,
+    metrics,
+):
+    jobs_flattened = [
+        j for compatibility2joblist in einsum2jobs.values() 
+        for job_list in compatibility2joblist.values()
+        for j in job_list
+    ]
+    memories_track_all, memories_track_pmappings_only = get_memories_to_track(
+        spec,
+        flattened_arch,
+        jobs_flattened, 
+        metrics
+    )
+    for j in jobs_flattened:
+        j.memories_track_all = memories_track_all
+        j.memories_track_pmappings_only = memories_track_pmappings_only
