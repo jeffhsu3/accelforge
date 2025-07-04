@@ -2,6 +2,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from numbers import Number
 from typing import Callable
+from uuid import UUID
 
 import fastfusion.frontend.architecture as architecture
 from fastfusion.frontend.mapping import (
@@ -20,7 +21,7 @@ from fastfusion.frontend.workload.workload import (
     RankName,
 )
 
-from fastfusion.mapper.FFM.exploration import metrics
+from fastfusion.mapper import metrics
 from fastfusion.mapper.FFM.joining.mappinginfo import (
     Compatibility,
     Loop,
@@ -65,7 +66,7 @@ def make_compatibility(
     compatibility_reservations = []
     for above_loop_index, reservation_nodes in loop_idx2reservations.items():
         for reservation in reservation_nodes:
-            tensor = reservation.tensor
+            tensor = reservation.purpose
             rank_var2ranks = einsum.tensor_accesses[tensor].rank_variable2ranks
             tensor_loops = []
             for loop_idx, loop in enumerate(fused_loops[:above_loop_index]):
@@ -81,9 +82,9 @@ def make_compatibility(
 
             compatibility_reservations.append(
                 TensorStorage(
-                    name=reservation.tensor,
+                    name=reservation.purpose,
                     loops=tuple(tensor_loops),
-                    resource_name=reservation.memory,
+                    resource_name=reservation.resource,
                     size=None,
                 )
             )
@@ -134,7 +135,7 @@ def make_compatibility(
         storages = []
         for n_loops, reservations_at_level in loop_idx2reservations.items():
             for reservation in reservations_at_level:
-                tensor = reservation.tensor
+                tensor = reservation.purpose
                 tensor_stride_and_halo = stride_and_halo[tensor]
                 rank_var2ranks = einsum.tensor_accesses[tensor].rank_variable2ranks
 
@@ -175,10 +176,10 @@ def make_compatibility(
                     tensor_loops.append(Loop(rank, rank_bound, isinstance(loop, Spatial)))
 
                 storages.append(TensorStorage(
-                    reservation.tensor,
+                    reservation.purpose,
                     tuple(tensor_loops),
-                    reservation.memory,
-                    size=tensor2size[reservation.tensor]
+                    reservation.resource,
+                    size=tensor2size[reservation.purpose]
                 ))
         compat = Compatibility(n_loops=max(len(s.loops) for s in storages),
                                storage=fzs(storages))
@@ -191,7 +192,7 @@ class Job:
     spec: Specification
     tagger: Callable[[Mapping], Tags]
     metrics: metrics.Metrics
-    job_id: int
+    job_id: UUID
     rank_variable_bounds: dict[RankVariableName, int]
     stride_and_halo: dict[TensorName, dict[tuple[RankName, RankVariableName], tuple[int, int]]] | None = None
     mapping: Mapping | None = None

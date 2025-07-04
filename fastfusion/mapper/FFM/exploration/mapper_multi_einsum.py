@@ -2,6 +2,7 @@ import logging
 from math import prod
 from pathlib import Path
 from typing import Callable, Optional
+import uuid
 
 from joblib import delayed
 from fastfusion.accelerated_imports import pd
@@ -13,11 +14,10 @@ from fastfusion.frontend.workload.isl import get_rank_variable_bounds
 from fastfusion.frontend.workload.workload import EinsumName, TensorName
 
 from fastfusion.mapper.FFM.exploration.mapper_one_einsum.mapper_one_einsum import generate_pmappings
-from fastfusion.mapper.FFM.exploration.metrics import Metrics
+from fastfusion.mapper.metrics import Metrics
 from fastfusion.mapper.FFM.exploration.mapper_one_einsum import get_single_einsum_jobs
 from fastfusion.mapper.FFM.joining.mappinginfo import Compatibility
 from fastfusion.mapper.FFM.joining.sim import SIM
-from fastfusion.mapper.FFM.compress_pmappings import DecompressData, GroupedDecompressData
 from fastfusion.mapper.FFM.tags import Tags
 from fastfusion.util.util import parallel
 from fastfusion.util import util
@@ -93,7 +93,7 @@ def get_jobs(
             tensor2compatibilties={},#tensor2compatibilties
             tensor2boundless_compatibilities={},#tensor2boundless_compatibilities
             tagger=tagger,
-            job_id=0,
+            job_id=uuid.uuid4(),
             except_from_imperfect=except_from_imperfect,
             intermediate_tensors=intermediate_tensors & workload_einsum.tensor_names
         )
@@ -110,14 +110,14 @@ def get_jobs(
     ):
         print(f"Generated {sum(len(j) for j in jobs.values())} jobs for {einsum_name}")
         einsum2jobs[einsum_name] = jobs
-        
+
     if fail_if_no_pmappings_for_einsum:
         for einsum_name, jobs in einsum2jobs.items():
             if len(jobs) == 0:
                 raise ValueError(
                     f"No pmappings for {einsum_name}. Was the mapspace overconstrained?"
                 )
-                
+
     return einsum2jobs
 
 def get_memories_to_track(
@@ -177,7 +177,7 @@ def get_sims(
     metrics: Metrics = Metrics.ENERGY | Metrics.LATENCY,
     einsum_names: Optional[list[EinsumName]] = None,
     fail_if_no_pmappings_for_einsum: bool = True
-):
+) -> tuple[dict[EinsumName, list[SIM]], dict[EinsumName, dict[uuid.UUID, Mapping]]]:
     """
     Explores pmapspace of `einsum_names` (default: all Einsums in workload).
     """
@@ -193,38 +193,26 @@ def get_sims(
                            metrics,
                            einsum_names,
                            fail_if_no_pmappings_for_einsum)
-    if fail_if_no_pmappings_for_einsum:
-        _raise_error_if_no_pmappings(einsum2jobs)
 
     _fill_jobs_with_memories_to_track(einsum2jobs, spec, flattened_arch, metrics)
 
     calls = _allocate_jobs(einsum2jobs)
 
-    grouped_decompress_data = GroupedDecompressData(prefix2datalist={})
+    pmapping_objects = {}
     sims = {einsum_name: [] for einsum_name in spec.workload.einsum_names}
-    for einsum_name, new_sims, decompress_data, job_ids in parallel(
+    for einsum_name, new_sims, pmappings in parallel(
         calls,
-        pbar=f"Generating Pmappings",
+        pbar=f"Generating pmappings",
         return_as="generator_unordered",
     ):
-        grouped_decompress_data.register_decompress_data(
-            einsum_name,
-            job_ids,
-            decompress_data,
-        )
+        # grouped_decompress_data.register_decompress_data(
+        #     einsum_name,
+        #     job_ids,
+        #     decompress_data,
+        # )
         sims[einsum_name].extend(new_sims)
-        # for sim_group in new_sims:
-        #     for sim in sim_group._equivalent_sims:
-        #         # if sim.compatibility in seen_compatibilities[einsum_name]:
-        #         #     print(f'Einsum: {einsum_name}')
-        #         #     job_a = job
-        #         #     job_b = seen_compatibilities[einsum_name][sim.compatibility]
-        #         #     print(f'\tJob {id(job_a)} compatibility: {job_a.compatibility}')
-        #         #     print(f'\tJob {id(job_b)} compatibility: {job_b.compatibility}')
-        #         #     print(f'\tDuplicate compatibility {sim.compatibility}')
-        #         #     raise ValueError(f"Duplicate compatibility {sim.compatibility} for {einsum_name}")
-        #         seen_compatibilities[einsum_name][sim.compatibility] = job
-    return sims, grouped_decompress_data
+        pmapping_objects.setdefault(einsum_name, {}).update(pmappings)
+    return sims, pmapping_objects
 
 
 def _raise_error_if_no_pmappings(einsum2jobs):

@@ -8,10 +8,8 @@ import re
 from typing import Iterable, Optional, Tuple, Union
 
 from fastfusion.frontend.mapping import Iteration, Nested
-from fastfusion.mapper.FFM.compress_pmappings import decompress_joined_df
 from fastfusion.mapper.FFM.joining.mappinginfo import TensorStorage
 from fastfusion.util import fzs
-from fastfusion.mapper.FFM.compress_pmappings import GroupedDecompressData
 
 from fastfusion.accelerated_imports import pd
 
@@ -634,19 +632,15 @@ class PartialMappings:
         graph.add_node(pydot.Node("data", label=data_str, shape="plaintext"))
         with open(to_file, "wb") as f:
             f.write(graph.create_png())
-            
-    def decompress(self, decompress_data: GroupedDecompressData):
-        self._data = decompress_joined_df(self.data, decompress_data)
 
 
 def row2pmappings(row: pd.Series, einsum_names: list[str], rank_variable_bounds: dict[str, dict[str, int]]) -> list[Nested]:
     from fastfusion.frontend.mapping import Fill, Reservation
     pmappings: list[Nested] = []
     for einsum_name in einsum_names:
-        pmapping: Nested = copy.deepcopy(row[f"{einsum_name}{MAPPING_COLUMN}"])
-        tile_shape_reg = einsum_name + r"__tile_shape\d+"
-        tile_shapes = row[[c for c in row.index if re.match(tile_shape_reg, c)]]
-        tile_shapes = list(tile_shapes)
+        pmapping: Nested = copy.deepcopy(row[f"{einsum_name}_{MAPPING_COLUMN}"])
+        tile_shape_reg = einsum_name + r"___tile_shape\d+"
+        tile_shapes = list(row[[c for c in row.index if re.match(tile_shape_reg, c)]])
         for node in pmapping.nodes:
             if isinstance(node, Iteration):
                 node.tile_shape = tile_shapes.pop(0)

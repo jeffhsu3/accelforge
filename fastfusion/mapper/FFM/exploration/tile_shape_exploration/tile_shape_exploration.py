@@ -15,13 +15,13 @@ from fastfusion.frontend.workload.isl import get_rank_variable_bounds
 from fastfusion.frontend.workload.symbolic import get_stride_and_halo
 from fastfusion.frontend.mapping import Temporal, Spatial, Storage, Pattern
 
-from fastfusion.mapper.FFM.exploration import metrics
+from fastfusion.mapper import metrics
 from fastfusion.model.looptree.reuse.summarized.symbolic import analyze_reuse
 from fastfusion.model.looptree.energy import compute_energy_from_actions, gather_actions
 from fastfusion.model.looptree.latency import get_latency
 
 from fastfusion.mapper.FFM.pareto import nameloop2col, tensor2col
-from fastfusion.mapper.FFM.exploration.metrics import Metrics
+from fastfusion.mapper.metrics import Metrics
 
 
 

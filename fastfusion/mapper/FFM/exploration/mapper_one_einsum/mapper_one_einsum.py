@@ -2,7 +2,9 @@ import copy
 from collections import defaultdict
 import math
 from numbers import Number
+import time
 from typing import Callable, Iterator, List
+import uuid
 
 from fastfusion.accelerated_imports import pd
 from tqdm import tqdm
@@ -25,15 +27,10 @@ from fastfusion.frontend.workload.workload import (
     RankVariableName,
     Workload,
 )
-
-from fastfusion.mapper.FFM.compress_pmappings import (
-    COMPRESSED_INDEX_COLUMN,
-    compress_df,
-)
 from fastfusion.mapper.FFM.exploration.mapper_one_einsum.dataflow_generator import (
     get_storage_choices,
 )
-from fastfusion.mapper.FFM.exploration.metrics import Metrics
+from fastfusion.mapper.metrics import Metrics
 from fastfusion.mapper.FFM.exploration.tile_shape_exploration import (
     explore_tile_shapes,
     get_initial_delta_choices,
@@ -398,7 +395,7 @@ def get_single_einsum_jobs(job: Job) -> SameEinsumJobs:
         new_job = copy.deepcopy(job)
         new_job.mapping = mapping
         new_job.constraints = constraints
-        new_job.job_id = job.job_id + i
+        new_job.job_id = uuid.uuid4()
         new_job.flattened_arch = job.flattened_arch
         new_job.rank_variable_bounds = get_rank_variable_bounds(
             job.spec.workload, job.einsum_name
@@ -415,8 +412,9 @@ def generate_pmappings(
 ):
     total_pmappings = 0
     results = []
-
+    
     job_ids = [job.job_id for job in jobs_with_similar_compatibilities]
+    
     for job in jobs_with_similar_compatibilities:
         result, n_pmappings = explore_tile_shapes(job)
         # This changes the pmapping count to include permutations
@@ -440,7 +438,7 @@ def generate_pmappings(
         # also increase the index factorization space size.
         # n_pmappings *= math.prod(math.factorial(n) for n in n_loops)
         
-        result[COMPRESSED_INDEX_COLUMN] = job.job_id
+        result[MAPPING_COLUMN] = job.job_id
         cols_to_drop = []
         for col in result.columns:
             if is_reservation_col(col) and col2nameloop(col)[0] in job.memories_track_pmappings_only:
@@ -478,34 +476,24 @@ def generate_pmappings(
         return einsum_name, [], None, job_ids
 
     # fused_loop_cols = [col for col in results if col.startswith(TILE_SHAPE_PREFIX)]
-    fused_loop_cols = [f"__tile_shape{i}" for i in range(compatibility.n_loops)] # TODO: Make this work for extended Einsums
-    tensor2size_cols = [tensor2col(t) for t in intermediate_tensors]
-    pareto_cols = [c for c in results.columns if col_used_in_pareto(c)]
-    compress_cols = [
-        c for c in results.columns if c not in tensor2size_cols and c not in pareto_cols
+    fused_loop_cols = [f"{einsum_name}___tile_shape{i}" for i in range(compatibility.n_loops)] # TODO: Make this work for extended Einsums
+    
+    tensor_cols = [tensor2col(tensor) for tensor in intermediate_tensors]
+    
+    results.columns = [
+        c if col_used_in_pareto(c) or c in tensor_cols
+        else f"{einsum_name}_{c}"
+        for c in results.columns
     ]
-
-    jobs_passed_pareto = sorted(results[COMPRESSED_INDEX_COLUMN].unique())
-
-    extra_data = {
-        job.job_id: {f"{job.einsum_name}{MAPPING_COLUMN}": job.mapping}
-        for job in jobs_with_similar_compatibilities
-        if job.job_id in jobs_passed_pareto
-    }
     
     # Pareto prune
     prev_size = len(results)
     results = makepareto(results, split_by_cols=fused_loop_cols)
     new_size = len(results)
+    
+    jobs_passed_pareto = sorted(results[f"{einsum_name}_{MAPPING_COLUMN}"].unique())
+    pmapping_objects = {job.job_id: job.mapping for job in jobs_with_similar_compatibilities if job.job_id in jobs_passed_pareto}
     # print(f'Pareto pruned from {prev_size} to {new_size} pmappings ({new_size / prev_size * 100:.2f}%)')
-
-    results, decompress_data = compress_df(
-        df=results,
-        einsum_name=einsum_name,
-        keep_columns=pareto_cols + tensor2size_cols + fused_loop_cols,
-        compress_columns=compress_cols,
-        extra_data=extra_data,
-    )
 
     if fused_loop_cols:
         groups = list(results.groupby(fused_loop_cols))
@@ -523,7 +511,7 @@ def generate_pmappings(
     for tile_shape, mappings in groups:
         tensor2size = {}
 
-        dropcols = list(fused_loop_cols)
+        dropcols = []#list(fused_loop_cols)
         for tensor in intermediate_tensors:  # Sizes are all the same
             tensor2size[tensor] = mappings[tensor2col(tensor)].iloc[0]
             dropcols.append(tensor2col(tensor))
@@ -535,7 +523,7 @@ def generate_pmappings(
         shift_reservations_by_null_loop_indices(mappings, null_loop_indices)
 
         # TODO: Redundant capacity checks because limit_capacity is called. We want it
-        # so we can drop dead reservations though.fcompress_dfz
+        # so we can drop dead reservations though.
         # Skip pareto because we already did it above
         # prev_len = len(mappings)
         next_shared_loop_index_this_group = new_compatibility.n_loops - 1
@@ -558,4 +546,4 @@ def generate_pmappings(
         seen_compatibilities.update(e.compatibility for e in sim._equivalent_sims)
         sims.append(sim)
 
-    return einsum_name, sims, decompress_data, jobs_passed_pareto
+    return einsum_name, sims, pmapping_objects

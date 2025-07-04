@@ -14,7 +14,7 @@ from fastfusion.util.basetypes import ParsableModel, ParsableList, ParsesTo, Inf
 from fastfusion.version import assert_version, __version__
 import pydot
 
-T = TypeVar("T")
+T = TypeVar("T", bound="MappingNode")
 
 node_list: TypeAlias = ParsableList[Annotated[
         Union[
@@ -67,6 +67,27 @@ class MappingNode(ParsableModel, ABC):
     
     def _render_make_children(self) -> list[str]:
         return []
+                
+    def get_nodes_of_type(self, *types: Type[T]) -> List[T]:
+        nodes: List[T] = []
+        if isinstance(self, types):
+            nodes.append(self)
+        if isinstance(self, MappingNodeWithChildren):
+            for node in self.nodes:
+                if isinstance(node, types):
+                    nodes.append(node)
+                if isinstance(node, MappingNodeWithChildren):
+                    nodes.extend(node.get_nodes_of_type(*types))
+        return nodes
+    
+    def flatten(self) -> list["MappingNode"]:
+        if isinstance(self, MappingNodeWithChildren):
+            result = [self]
+            for node in self.nodes:
+                result.extend(node.flatten())
+            return result
+        return [self]
+
 
 class Pattern(ParsableModel):
     stride: ParsesTo[Literal['symbol'] | int]
@@ -157,7 +178,7 @@ class Storage(MappingNode):
     
     def __str__(self) -> str:
         tname = ", ".join(self.tensors)
-        return f"{tname} in {self.memory}"
+        return f"{tname} reused via {self.memory}"
     
         # return f"[(\"{tensors} in {self.memory}\")]"
     
@@ -172,6 +193,9 @@ class Storage(MappingNode):
     
     def _render_node_shape(self) -> str:
         return "cylinder"
+    
+    def _color_key(self) -> str:
+        return tuple(sorted(self.tensors))
 
 
 
@@ -227,7 +251,17 @@ class MappingNodeWithChildren(MappingNode):
             new_nodes.append(node)
         return type(self)(nodes=new_nodes)
     
-    def consolidate_storage(self) -> "MappingNodeWithChildren":
+    def clear_nodes(self, *nodes: MappingNode) -> "MappingNodeWithChildren":
+        new_nodes: list[MappingNode] = []
+        for node in self.nodes:
+            if node in nodes:
+                continue
+            if isinstance(node, MappingNodeWithChildren):
+                node = node.clear_nodes(*nodes)
+            new_nodes.append(node)
+        return type(self)(nodes=new_nodes)
+    
+    def _consolidate_storage(self) -> "MappingNodeWithChildren":
         new_nodes = []
         for node in self.nodes:
             if isinstance(node, Storage):
@@ -242,20 +276,44 @@ class MappingNodeWithChildren(MappingNode):
                 if not found:
                     new_nodes.append(copy.deepcopy(node))
             elif isinstance(node, MappingNodeWithChildren):
-                new_nodes.append(node.consolidate_storage())
+                new_nodes.append(node._consolidate_storage())
             else:
-                new_nodes.append(node)
+                new_nodes.append(copy.deepcopy(node))
+        assert new_nodes, "BUG"
+        return type(self)(nodes=new_nodes)
+    
+    def _consolidate_reservations(self) -> "MappingNodeWithChildren":
+        new_nodes = []
+        for node in self.nodes:
+            if isinstance(node, Reservation):
+                found = False
+                for n in new_nodes[::-1]:
+                    if isinstance(n, Reservation) and n.resource == node.resource:
+                        n.purpose = n.purpose + "," + node.purpose
+                        found = True
+                        break
+                    if isinstance(n, Iteration):
+                        break
+                if not found:
+                    new_nodes.append(copy.deepcopy(node))
+            elif isinstance(node, MappingNodeWithChildren):
+                new_nodes.append(node._consolidate_reservations())
+            else:
+                new_nodes.append(copy.deepcopy(node))
         assert new_nodes, "BUG"
         return type(self)(nodes=new_nodes)
 
-    def get_nodes_of_type(self, *types: type) -> list[MappingNode]:
-        mine = []
+    def _elevate_storage_above_splits(self) -> "MappingNodeWithChildren":
+        new_nodes: list[MappingNode] = []
         for node in self.nodes:
-            if isinstance(node, types):
-                mine.append(node)
+            if isinstance(node, Split):
+                shared_storages = node._get_shared_storage_nodes()
+                new_nodes.extend(shared_storages)
+                node = node.clear_nodes(*shared_storages)
             if isinstance(node, MappingNodeWithChildren):
-                mine.extend(node.get_nodes_of_type(*types))
-        return mine
+                node = node._elevate_storage_above_splits()
+            new_nodes.append(node)
+        return type(self)(nodes=new_nodes)
 
 class Split(MappingNodeWithChildren):
     pass
@@ -265,6 +323,19 @@ class Split(MappingNodeWithChildren):
     
     def _render_node_shape(self) -> str:
         return "hexagon"
+    
+    def _get_shared_storage_nodes(self) -> list[Storage]:
+        storages = [n.get_nodes_of_type(Storage) for n in self.nodes]
+        shared_storages = []
+        for i in range(len(storages)):
+            for j in range(i + 1, len(storages)):
+                for a in storages[i]:
+                    for b in storages[j]:
+                        if a._backing and b._backing and a not in shared_storages:
+                            assert len(a.tensors) == 1 and len(b.tensors) == 1, "BUG"
+                            shared_storages.append(a)
+                            break
+        return shared_storages
 
 LoopGroup: TypeAlias = list[Iteration]
 NonLoopGroup: TypeAlias = list[MappingNode]
@@ -321,7 +392,7 @@ class Nested(MappingNodeWithChildren):
         for i, node in enumerate(self.nodes):
             if isinstance(node, Iteration):
                 n_shared_loops += 1
-            if isinstance(node, Reservation) and (node.tensor, node.memory) in shared_storage:
+            if isinstance(node, Reservation) and (node.purpose, node.resource) in shared_storage:
                 return n_shared_loops
             if isinstance(node, Split):
                 raise ValueError("Can't check for n_shared_loops beneath a split")
@@ -338,8 +409,9 @@ class Nested(MappingNodeWithChildren):
         if stop_at_n_loops == 0 and not any(isinstance(node, Iteration) for node in self.nodes):
             return []
         
+        i = 0
         for i, node in enumerate(self.nodes):
-            if seen_loops >= stop_at_n_loops and isinstance(node, Iteration):
+            if seen_loops >= stop_at_n_loops:
                 break
             is_iteration = isinstance(node, Iteration)
             if cur_group is None:
@@ -356,8 +428,20 @@ class Nested(MappingNodeWithChildren):
         if cur_group:
             groups.append(cur_group)
             
+        final_group = self.nodes[i:]
+        groups.append(final_group)
+            
         if seen_loops < stop_at_n_loops:
             raise ValueError(f"Expected {stop_at_n_loops} loops, but only found {seen_loops}")
+            
+        # Lower reservations. If reservations are in the second-to-last group
+        # # non-iteration group, lower them to the last group.
+        # if len(groups) > 3:
+        #     assert not any(isinstance(x, Iteration) for x in groups[-1]), "BUG"
+        #     assert not any(isinstance(x, Iteration) for x in groups[-3]), "BUG"
+        #     reservations = [x for x in groups[-2] if isinstance(x, Reservation)]
+        #     groups[-1].extend(reservations)
+        #     groups[-3] = [x for x in groups[-3] if x not in reservations]
             
         return groups
     
@@ -370,8 +454,10 @@ class Nested(MappingNodeWithChildren):
         # Break up the nodes above the indices. We need to have them in the format of
         # [(loop, other stuff...), (loop, other stuff...), ...]
         my_groups = self._break_into_reorderable_groups(stop_at_n_loops=n_shared_loops)
+        my_remaining = my_groups.pop(-1)
         other_groups = other._break_into_reorderable_groups(stop_at_n_loops=n_shared_loops)
-        
+        other_remaining = other_groups.pop(-1)
+                
         # Reorder so that the loops are in the same order. We can't reorder groups that
         # have other stuff in them because that'll change the behavior of the mapping.
         zipped_groups = []
@@ -382,7 +468,7 @@ class Nested(MappingNodeWithChildren):
         
         my_loop_group = _pop_loop_group(my_groups)
         other_loop_group = _pop_loop_group(other_groups)
-        while my_groups and other_groups:
+        while (my_groups or my_loop_group) and (other_groups or other_loop_group):
             if not my_loop_group:
                 my_loop_group = _pop_loop_group(my_groups)
                 continue
@@ -405,6 +491,8 @@ class Nested(MappingNodeWithChildren):
                 raise ValueError(f"No matching loop found for {my_loop_group} and {other_loop_group}")
 
             zipped_groups.append(to_add)
+            
+        assert not my_loop_group and not other_loop_group, "BUG"
 
         zipped_groups.extend(my_groups)
         zipped_groups.extend(other_groups)
@@ -412,31 +500,19 @@ class Nested(MappingNodeWithChildren):
         flattened = list(x for group in zipped_groups for x in group)
         new_nodes = [x for x in flattened if not isinstance(x, Sequential)]
         new_nodes.extend([x for x in flattened if isinstance(x, Sequential)])
-        
-        loops_left = n_shared_loops
-        my_remaining = list(self.nodes)
-        for i, node in enumerate(my_remaining):
-            if isinstance(node, Iteration):
-                loops_left -= 1
-            if loops_left <= -1:
-                break
-        my_remaining = my_remaining[i:] if my_remaining[i:] else my_remaining
-        
-        loops_left = n_shared_loops
-        other_remaining = list(other.nodes)
-        for i, node in enumerate(other_remaining):
-            if isinstance(node, Iteration):
-                loops_left -= 1
-            if loops_left <= -1:
-                break
-        other_remaining = other_remaining[i:] if other_remaining[i:] else other_remaining
-        
+
         if isinstance(my_remaining[0], Sequential) and isinstance(other_remaining[0], Sequential):
             my_remaining[0].nodes.extend(other_remaining[0].nodes)
+            assert len(my_remaining) == 1 and len(other_remaining) == 1, "BUG"
+            new_nodes.append(my_remaining[0])
         elif isinstance(my_remaining[0], Sequential):
             my_remaining[0].nodes.append(Nested(nodes=other_remaining))
+            assert len(my_remaining) == 1, "BUG"
+            new_nodes.append(my_remaining[0])
         elif isinstance(other_remaining[0], Sequential):
             other_remaining[0].nodes.append(Nested(nodes=my_remaining))
+            assert len(other_remaining) == 1, "BUG"
+            new_nodes.append(other_remaining[0])
         else:
             new_nodes.append(Sequential(nodes=[Nested(nodes=my_remaining), Nested(nodes=other_remaining)]))
 
@@ -501,12 +577,20 @@ class ModelOnlyNode:
     pass
 
 class Reservation(MappingNode, ModelOnlyNode):
-    tensor: str
-    memory: str
+    purpose: str
+    resource: str
 
     def compact_string(self) -> str:
-        return f'R {self.tensor} in {self.memory}'
-
+        return f'R {self.purpose} reserves {self.resource}'
+    
+    def __str__(self) -> str:
+        return f"{self.purpose} reserves {self.resource}"
+    
+    def _render_node_shape(self) -> str:
+        return "signature"
+    
+    def _color_key(self) -> tuple[str]:
+        return (self.purpose,)
 
 class Fill(MappingNode, ModelOnlyNode):
     tensor: str
@@ -531,6 +615,69 @@ MappingNodeTypes: TypeAlias = Union[
 ]
 
 
+def _make_color_map(n_colors: int) -> list[str]:
+    """Generate a colorblind-friendly color map with colors that are far apart but get closer as n_colors increases."""
+    if n_colors <= 0:
+        return []
+    
+    # Colorblind-friendly base colors (light enough for black text)
+    base_colors = [
+        "#FFD700",  # Light orange
+        "#87CEEB",  # Light sky blue  
+        "#90EE90",  # Light green
+        "#FFFFE0",  # Light yellow
+        "#ADD8E6",  # Light blue
+        "#FFB6C1",  # Light red
+        "#DDA0DD",  # Light purple
+        "#F5F5DC",  # Light beige
+    ]
+    
+    if n_colors <= len(base_colors):
+        return base_colors[:n_colors]
+    
+    # For more colors, generate additional colors using HSV space
+    colors = base_colors.copy()
+    
+    # Generate additional colors using golden ratio in HSV space
+    golden_ratio = 0.618033988749895
+    
+    for i in range(len(base_colors), n_colors):
+        # Use golden ratio to space hues evenly
+        hue = (i * golden_ratio) % 1.0
+        
+        # Vary saturation and value to create more distinction
+        # Ensure value is high enough for black text readability
+        saturation = 0.4 + 0.3 * (i % 3) / 2.0  # 0.4 to 0.7 (lower saturation for lighter colors)
+        value = 0.8 + 0.15 * (i % 2)  # 0.8 to 0.95 (high value for light backgrounds)
+        
+        # Convert HSV to RGB
+        h = hue * 6
+        c = value * saturation
+        x = c * (1 - abs(h % 2 - 1))
+        m = value - c
+        
+        if h < 1:
+            r, g, b = c, x, 0
+        elif h < 2:
+            r, g, b = x, c, 0
+        elif h < 3:
+            r, g, b = 0, c, x
+        elif h < 4:
+            r, g, b = 0, x, c
+        elif h < 5:
+            r, g, b = x, 0, c
+        else:
+            r, g, b = c, 0, x
+            
+        r = int((r + m) * 255)
+        g = int((g + m) * 255)
+        b = int((b + m) * 255)
+        
+        colors.append(f"#{r:02x}{g:02x}{b:02x}")
+    
+    return colors
+    
+
 class Mapping(Nested):
     version: Annotated[str, assert_version] = __version__
 
@@ -545,19 +692,19 @@ class Mapping(Nested):
         relevant_intermediate_tensors = set()
         for node in self.nodes:
             if isinstance(node, Reservation):
-                if node.tensor in intermediate_tensors:
-                    relevant_intermediate_tensors.add(node.tensor)
+                if node.purpose in intermediate_tensors:
+                    relevant_intermediate_tensors.add(node.purpose)
 
         fused_slice = Mapping(nodes=[])
         to_add = []
         for node in self.nodes:
             node = copy.deepcopy(node)
             if isinstance(node, Reservation):
-                if node.tensor not in relevant_intermediate_tensors:
+                if node.purpose not in relevant_intermediate_tensors:
                     continue
                 fused_slice.nodes.extend(to_add + [node])
                 to_add = []
-                relevant_intermediate_tensors.remove(node.tensor)
+                relevant_intermediate_tensors.remove(node.purpose)
                 if len(relevant_intermediate_tensors) == 0:
                     break
             elif isinstance(node, Iteration):
@@ -575,21 +722,27 @@ class Mapping(Nested):
         graph = pydot.Dot(graph_type='digraph', rankdir='TD')
         graph.set_node_defaults(shape="box", fontname="Arial", fontsize="12")
         graph.set_edge_defaults(fontname="Arial", fontsize="10")
-        # graph.add_nodes_from(self._render_make_children())
         for node in self._render_make_children():
             graph.add_node(node)
-
-        backing_storage_nodes = self.get_backing_storage_nodes()
-        for a in backing_storage_nodes:
-            for b in backing_storage_nodes:
-                if str(a) == str(b) and id(a) != id(b):
-                    edge = pydot.Edge(a._render_node_name(), b._render_node_name())
-                    edge.set_constraint('false')
-                    graph.add_edge(edge)
-                    for node in [graph.get_node(a._render_node_name()), graph.get_node(b._render_node_name())]:
-                        for n in node:
-                            n.set_fillcolor('cyan')
-                            n.set_style('filled')
+            
+            
+        color_keys = set()
+        all_nodes = self.flatten()
+        for node in all_nodes:
+            if isinstance(node, (Storage, Reservation)):
+                color_keys.add(node._color_key())
+                
+        # Generate colorblind-friendly color map
+        color_list = _make_color_map(len(color_keys))
+        color_map = {key: color_list[i] for i, key in enumerate(color_keys)}
+        
+        for node in all_nodes:
+            if isinstance(node, (Storage, Reservation)):
+                graph_nodes = graph.get_node(node._render_node_name())
+                for graph_node in graph_nodes:
+                    graph_node.set_fillcolor(color_map[node._color_key()])
+                    graph_node.set_style('filled')
+                
             
         added_edges = set()
         for parent, child in self._parent2child(None):
@@ -623,17 +776,21 @@ class Mapping(Nested):
                     highest_n_shared_loops = shared_index
                     highest_shared_pmapping_index = i
 
-            # def einsum_names(pmapping: Nested) -> str:
-            #     return ",".join(n.einsum for n in pmapping.get_nodes_of_type(Compute))
-            # names_a = einsum_names(pmappings[highest_shared_pmapping_index])
-            # names_b = einsum_names(pmappings[highest_shared_pmapping_index + 1])
-            # print(f'Merging with shared loops {highest_n_shared_loops}: {names_a} <--> {names_b}.')
+            def einsum_names(pmapping: Nested) -> str:
+                return ",".join(n.einsum for n in pmapping.get_nodes_of_type(Compute))
+            names_a = einsum_names(pmappings[highest_shared_pmapping_index])
+            names_b = einsum_names(pmappings[highest_shared_pmapping_index + 1])
+            print(f'Merging with shared loops {highest_n_shared_loops}: {names_a} <--> {names_b}.')
             pmappings[highest_shared_pmapping_index] = pmappings[highest_shared_pmapping_index].merge(
                 pmappings.pop(highest_shared_pmapping_index + 1),
                 highest_n_shared_loops,
             )
-
-        return cls(nodes=pmappings)
+            
+        mapping: Mapping = cls(nodes=pmappings)
+        mapping = mapping._elevate_storage_above_splits()
+        mapping = mapping._consolidate_storage()
+        mapping = mapping._consolidate_reservations()
+        return mapping
         
         
         # import mermaid as md

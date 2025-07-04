@@ -319,7 +319,7 @@ def insert_reservation_nodes(mapping, info: AnalysisInfo):
         for tracker_idx in reversed(to_remove):
             tracker = trackers.pop(tracker_idx)
             buffet = tracker.buffet
-            node = Reservation(tensor=buffet.tensor, memory=buffet.level)
+            node = Reservation(purpose=buffet.tensor, resource=buffet.level)
             if tracker.insert_reservation_under:
                 reservation_insert_below.append(node)
             else:
@@ -613,8 +613,8 @@ def analyze_reservation(node_idx, current_shape, info: AnalysisInfo):
 
     child_result = analyze_node(node_idx+1, current_shape, info)
 
-    tensor = TensorName(node.tensor)
-    buffet = Buffet(tensor, einsum_name, node.memory)
+    tensor = TensorName(node.purpose)
+    buffet = Buffet(tensor, einsum_name, node.resource)
 
     # Reservation nodes are the first to produce stats for a buffet
     assert buffet not in child_result.buffet_stats
@@ -625,7 +625,7 @@ def analyze_reservation(node_idx, current_shape, info: AnalysisInfo):
         compute_dense_tile_occupancy(projection, current_shape)
     child_result.buffet_stats[buffet] = buffet_stats
 
-    fanout_key = (node.memory, einsum_name)
+    fanout_key = (node.resource, einsum_name)
     if fanout_key not in child_result.fanout:
         child_result.fanout[fanout_key] = {}
 

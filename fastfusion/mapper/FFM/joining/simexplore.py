@@ -5,7 +5,7 @@ from fastfusion.accelerated_imports import pd
 from fastfusion.frontend import architecture
 from fastfusion.frontend.specification import Specification
 from fastfusion.frontend.workload import Einsum
-from fastfusion.mapper.FFM.exploration.metrics import Metrics
+from fastfusion.mapper.metrics import Metrics
 from fastfusion.mapper.FFM.joining.sim import SIM, Loop, Compatibility
 from fastfusion.mapper.FFM.pareto import PartialMappings
 from fastfusion.util import fzs, parallel, debugger_active
@@ -82,8 +82,8 @@ def make_full_equivalent_rank_variables(pairwise_equivalent_rank_variables):
 
 def join_sims(
     sims: dict[str, list[SIM]],
-    spec: Specification = None,
-    flattened_architecture: list[architecture.Leaf] = None,
+    spec: Specification,
+    resource2capacity: dict[str, int],
     # Optimality-maintaining optimizations.
     skip_invalid: bool = True,
     combine_reservations: bool = True,
@@ -101,14 +101,9 @@ def join_sims(
       memories lower in the hierarchy. e.g., memory 0 is the largest,
       memory 1 the next largest, and memory N is the smallest.
     """
+    metrics = spec.mapper_ffm.metrics
 
     drop_valid_reservations = not (Metrics.RESOURCE_USAGE & metrics)
-
-    resource2capacity = {}
-    flattened_architecture = flattened_architecture or spec.get_flattened_architecture()
-    for l in flattened_architecture:
-        if isinstance(l, architecture.Memory):
-            resource2capacity[l.name] = l.attributes.size
 
     pairwise_equivalent_rank_variables = (
         spec.workload.get_pairwise_equivalent_rank_variables()
