@@ -395,7 +395,13 @@ class Nested(MappingNodeWithChildren):
             if isinstance(node, Reservation) and (node.purpose, node.resource) in shared_storage:
                 return n_shared_loops
             if isinstance(node, Split):
-                raise ValueError("Can't check for n_shared_loops beneath a split")
+                for child in node.nodes:
+                    max_child_n_shared_loops = 0
+                    try:
+                        max_child_n_shared_loops = max(max_child_n_shared_loops, child.get_n_shared_loops(other))
+                    except ValueError:
+                        pass
+                    return max_child_n_shared_loops
             
         raise ValueError("BUG")
     
@@ -407,7 +413,7 @@ class Nested(MappingNodeWithChildren):
         seen_loops = 0
         
         if stop_at_n_loops == 0 and not any(isinstance(node, Iteration) for node in self.nodes):
-            return []
+            return [list(self.nodes)]
         
         i = 0
         for i, node in enumerate(self.nodes):
