@@ -31,16 +31,16 @@ class LogicalDomain(Domain):
     ranks: Tuple[str] = (
         'c', 'h', 'w', 'p', 'q', 'r', 's'
     )
-    dims: ParsableList[str]
+    l_dims: ParsableList[str]
 
     @property
     def isl_space(self) -> isl.Space:
         return isl.Space.create_from_names(
             isl.DEFAULT_CONTEXT,
             in_=self.ranks,
-            out=self.dims
+            out=self.l_dims
         ).set_tuple_name(
-            isl.dim_type.out, "l_dims"
+            isl.dim_type.out, f"l_{self.name}_dims"
         )
     
     @property
@@ -59,7 +59,7 @@ class PhysicalDomain(Domain):
             isl.DEFAULT_CONTEXT,
             set=self.p_dims
         ).set_tuple_name(
-            isl.dim_type.set, "p_dims"
+            isl.dim_type.set, f"p_{self.name}_dims"
         )
     
     @property
@@ -78,7 +78,7 @@ class BindingNode(ParsableModel):
     logical: LogicalDomain
     physical: PhysicalDomain
     relations: ParsableDict[str, str]
-    _nodes: ParsableDict[str, isl.Map]
+    _node: ParsableDict[str, isl.Map] = {}
 
     @model_validator(mode='after')
     def validate_isl(self):
@@ -96,7 +96,16 @@ class BindingNode(ParsableModel):
                     )
             )
 
-            print(binding_space)
+            # Simple bodge to get the binding space into a real space
+            binding_str: str = binding_space.to_str()
+            binding_str: str = f"{binding_str[:-1]}: {relation} {binding_str[-1]}"
+
+            binding: isl.Map = isl.Map.read_from_str(
+                ctx=isl.DEFAULT_CONTEXT,
+                str=binding_str
+            )
+
+            self._node[key] = binding
 
         return self
 
@@ -112,18 +121,30 @@ class Binding(ParsableModel):
 import yaml
 yaml_str: str = """
 binding:
-  version: 0.4
-  nodes:
-  - logical:
-      name: PE
-      dims: [i]
-    physical: 
-      name: PE
-      p_dims: [x, y]
-    relations:
-      tensorA: i = x + y * 2 # This is a dimension-major compression into the logical. It is bijective.
-      tensorB: i = x + y * 2 # This is a dimension-major compression into the logical. It is bijective.
+    version: 0.4
+    nodes:
+    -   logical:
+            name: PE
+            l_dims: [i]
+        physical: 
+            name: PE
+            p_dims: [x, y]
+        relations:
+            tensorA: i = x + y * 2 # This is a dimension-major compression into the logical. It is bijective.
+            tensorB: i = x + y * 2 # This is a dimension-major compression into the logical. It is bijective.
+    -   logical:
+            name: Scratchpad
+            l_dims: [x, y]
+        physical:
+            name: GLB
+            p_dims: [gamma, omega]
+        relations:
+            tensorA: x = gamma and y = omega
+            tensorB: x = omega and y = gamma
 """
 
 binding = Binding.model_validate(yaml.safe_load(yaml_str)['binding'])
-print(binding)
+
+for node in binding.nodes:
+    for relation in node._node.values():
+        print(relation)
