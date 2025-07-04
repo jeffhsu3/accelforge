@@ -1,11 +1,15 @@
-from abc import abstractmethod
-from typing import Dict, List, Tuple
+"""
+Defines Pydantic models to handle Binding Specifications that relate logical to
+physical architectures.
+"""
 
-from pydantic import BaseModel, StrictFloat, model_validator
+from abc import abstractmethod
+from typing import Dict, Tuple
+
+from pydantic import StrictFloat
 import islpy as isl
 
 from fastfusion.util.basetypes import ParsableDict, ParsableList, ParsableModel
-from fastfusion.util.isl import ISLMap
 
 
 class Domain(ParsableModel):
@@ -17,12 +21,14 @@ class Domain(ParsableModel):
 
     @property
     @abstractmethod
-    def isl_space(self):
+    def isl_space(self) -> isl.Space:
+        """Gets the domain as an isl.Space"""
         raise NotImplementedError(f"{type(self)} has not implemented isl_space")
 
     @property
     @abstractmethod
-    def isl_universe(self):
+    def isl_universe(self) -> isl.Set:
+        """Gets the domain as an isl.Set"""
         raise NotImplementedError(f"{type(self)} has not implemented isl_universe")
 
 
@@ -122,35 +128,35 @@ class Binding(ParsableModel):
     nodes: ParsableList[BindingNode]
 
 
-# now loads YAML
-import yaml
+if __name__ == "__main__":
+    # now loads YAML
+    import yaml
 
-yaml_str: str = """
-binding:
-    version: 0.4
-    nodes:
-    -   logical:
-            name: PE
-            l_dims: [i]
-        physical: 
-            name: PE
-            p_dims: [x, y]
-        relations:
-            tensorA: i = x + y * 2 # This is a dimension-major compression into the logical. It is bijective.
-            tensorB: i = x + y * 2 # This is a dimension-major compression into the logical. It is bijective.
-    -   logical:
-            name: Scratchpad
-            l_dims: [x, y]
-        physical:
-            name: GLB
-            p_dims: [gamma, omega]
-        relations:
-            tensorA: x = gamma and y = omega
-            tensorB: x = omega and y = gamma
-"""
+    yaml_str: str = """
+    binding:
+        version: 0.4
+        nodes:
+        -   logical:
+                name: PE
+                l_dims: [i]
+            physical: 
+                name: PE
+                p_dims: [x, y]
+            relations:
+                tensorA: i = x + y * 2 # This is a dimension-major compression into the logical. It is bijective.
+                tensorB: i = x + y * 2 # This is a dimension-major compression into the logical. It is bijective.
+        -   logical:
+                name: Scratchpad
+                l_dims: [x, y]
+            physical:
+                name: GLB
+                p_dims: [gamma, omega]
+            relations:
+                tensorA: x = gamma and y = omega
+                tensorB: x = omega and y = gamma
+    """
+    bind: Binding = Binding.model_validate(yaml.safe_load(yaml_str)["binding"])
 
-binding = Binding.model_validate(yaml.safe_load(yaml_str)["binding"])
-
-for node in binding.nodes:
-    for relation in node.isl_relations.values():
-        print(relation)
+    for node in bind.nodes:
+        for bind in node.isl_relations.values():
+            print(bind)
