@@ -78,7 +78,7 @@ class BindingNode(ParsableModel):
     logical: LogicalDomain
     physical: PhysicalDomain
     relations: ParsableDict[str, str]
-    _node: ParsableDict[str, isl.Map] = {}
+    _relations: ParsableDict[str, isl.Map] = {}
 
     @model_validator(mode='after')
     def validate_isl(self):
@@ -87,8 +87,8 @@ class BindingNode(ParsableModel):
         isl.Map representing the bindings at this binding node.
         """
         key: str
-        relation: str
-        for key, relation in self.relations.items():
+        for key in self.relations:
+            relation: str = self.relations[key]
             logical_space: isl.Space = self.logical.isl_space.set_tuple_name(
                 isl.dim_type.in_, f"{key}_ranks"
             )
@@ -109,7 +109,7 @@ class BindingNode(ParsableModel):
                 str=binding_str
             )
 
-            self._node[key] = binding
+            self._relations[key] = binding
 
         return self
 
@@ -150,5 +150,5 @@ binding:
 binding = Binding.model_validate(yaml.safe_load(yaml_str)['binding'])
 
 for node in binding.nodes:
-    for relation in node._node.values():
+    for relation in node._relations.values():
         print(relation)
