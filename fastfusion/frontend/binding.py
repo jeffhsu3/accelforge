@@ -34,7 +34,7 @@ class Domain(ParsableModel):
 
 class LogicalDomain(Domain):
     """
-    Represents the logical architecture domain space of logical dims × ranks.
+    Represents the logical architecture domain space of logical dims × tensor ranks.
     """
 
     ranks: Tuple[str] = ("c", "h", "w", "p", "q", "r", "s")
@@ -54,6 +54,7 @@ class LogicalDomain(Domain):
 class PhysicalDomain(Domain):
     """
     Represents the logical architecture domain space of physical dims.
+    The physical space is defined as the physical architecture dims.
     """
 
     p_dims: ParsableList[str]
@@ -76,7 +77,7 @@ class BindingNode(ParsableModel):
     in logical to physical space.
 
     The logical space is defined as logical architecture dims × tensor dims.
-    The physical space is defined as physical architecture dims × tensor dims.
+    The physical space is defined as the physical architecture dims.
     """
 
     logical: LogicalDomain
