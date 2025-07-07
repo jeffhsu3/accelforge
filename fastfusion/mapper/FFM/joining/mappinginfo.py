@@ -128,6 +128,7 @@ class TensorStorage(Reservation):
     def to_yaml(self):
         return {"type": "storage", **self.__dict__}
 
+    @staticmethod
     def get_backing_stores(all_tensors: set["TensorStorage"]) -> list["TensorStorage"]:
         id2tensor = defaultdict(lambda: [])
         for t in all_tensors:
