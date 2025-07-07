@@ -282,8 +282,8 @@ class Compatibility(Updatable):
         return self.update(tags=Tags(fzs()))
     
     def clear_loop_bounds(self) -> "Compatibility":
-        return self.update(loops=fzs(storage.clear_loop_bounds()
-                                     for storage in self.storage))
+        return self.update(storage=fzs(storage.clear_loop_bounds()
+                                       for storage in self.storage))
     
     def subsets_of_loops(self, clear_bounds: bool = False) -> Generator["Compatibility", None, None]:
         assert len(self.tensor_names) == 1, "Only works for single tensor"

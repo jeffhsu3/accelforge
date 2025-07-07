@@ -3,7 +3,7 @@ import unittest
 
 from fastfusion.frontend import Specification, Workload
 
-from fastfusion.mapper.FFM.exploration import metrics
+from fastfusion.mapper import metrics
 from fastfusion.mapper.FFM.exploration.tile_shape_exploration import get_initial_delta_choices
 from fastfusion.mapper.FFM.exploration.mapper_multi_einsum import get_sims
 from fastfusion.mapper.FFM.exploration.mapping_filter_tags import get_one_split_tag
