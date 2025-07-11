@@ -127,37 +127,3 @@ class Binding(ParsableModel):
 
     version: StrictFloat
     nodes: ParsableList[BindingNode]
-
-
-if __name__ == "__main__":
-    # now loads YAML
-    import yaml
-
-    yaml_str: str = """
-    binding:
-        version: 0.4
-        nodes:
-        -   logical:
-                name: PE
-                l_dims: [i]
-            physical: 
-                name: PE
-                p_dims: [x, y]
-            relations:
-                tensorA: i = x + y * 2 # This is a dimension-major compression into the logical. It is bijective.
-                tensorB: i = x + y * 2 # This is a dimension-major compression into the logical. It is bijective.
-        -   logical:
-                name: Scratchpad
-                l_dims: [x, y]
-            physical:
-                name: GLB
-                p_dims: [gamma, omega]
-            relations:
-                tensorA: x = gamma and y = omega
-                tensorB: x = omega and y = gamma
-    """
-    bind: Binding = Binding.model_validate(yaml.safe_load(yaml_str)["binding"])
-
-    for node in bind.nodes:
-        for bind in node.isl_relations.values():
-            print(bind)
