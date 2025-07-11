@@ -34,9 +34,9 @@ class TestBindingMapper(unittest.TestCase):
                 assert soln_node.keys() == isl_relations.keys(), (
                     "Not all isl_relations read in properly. Missing \n"
                     f"{set(soln_node.keys()).difference(isl_relations.keys())} "
-                    "\nfrom solutions and \n"
+                    "\nfrom isl_relations and \n"
                     f"{set(isl_relations.keys()).difference(soln_node.keys())} "
-                    "\nfrom isl_relations.\n"
+                    "\nfrom solutions.\n"
                 )
 
                 tensor: str
