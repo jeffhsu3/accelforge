@@ -1,0 +1,17 @@
+binding:
+  version: 0.4
+  nodes:
+  - logical:
+      name: PE
+      p_dims: [i]
+    physical: 
+      name: PE
+      dims: [x, y]
+    relation:
+      tensorA: i = x + y * 2 # This is a dimension-major compression into the logical. It is bijective.
+      tensorB: i = x + y * 2 # This is a dimension-major compression into the logical. It is bijective.
+  # Bindings for a hypothetical scratchpad.
+  - logical: scratchpad
+    physical: scratchpad
+    relation:
+        tensorA: LogicalScratchpad[i] -> PhysicalScratchpad[x, y] : i = x # This is a dimension-based compression into the logical. It is not surjective.
