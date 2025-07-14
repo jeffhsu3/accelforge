@@ -157,7 +157,7 @@ class TestSymbolicActions(unittest.TestCase):
         workload = Workload.from_yaml(Path(__file__).parent / 'mha.yaml')
 
         result = analyze_reuse(mapping, workload)
-        actions = gather_actions(result, mapping, workload, None, is_path=True, use_name=True)
+        actions = gather_actions(result, None, use_name=True)
 
         self.assertAlmostEqual(actions[('LocalBuffer', 'read')].total, 192.0)
         self.assertAlmostEqual(actions[('LocalBuffer', 'read')].max_per_unit, 48.0)

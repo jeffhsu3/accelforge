@@ -677,7 +677,7 @@ def run_model(pmapping, spec, flattened_arch: list[architecture.Leaf], metrics: 
 
     reuse = analyze_reuse(pmapping, workload)
     overall_latency, comp_latency, mem_latency = get_latency(reuse, pmapping, workload, flattened_arch)
-    actions = gather_actions(reuse, pmapping, workload, None, is_path=True, use_name=True)
+    actions = gather_actions(reuse, None, use_name=True)
     energy = compute_energy_from_actions(actions, ert)
 
     intermediate_tensors = workload.intermediate_tensor_names

@@ -18,9 +18,12 @@ class ActionCount:
         return ActionCount(0, 0)
 
 
-def gather_actions(looptree_results: SummarizedAnalysisOutput, mapping: Mapping, workload: Workload, bindings: dict[str, str], is_path=False, use_name=False):
-    actions: dict[tuple, ActionCount] = {}
+def gather_actions(looptree_results: SummarizedAnalysisOutput, bindings: dict[str, str], use_name=False):
+    actions: dict[tuple[str, str], ActionCount] = {}
     for buffet, accesses in looptree_results.buffet_stats.items():
+        if buffet in looptree_results.compute_stats:
+            continue
+
         buf = buffet.level
         
         if use_name:
