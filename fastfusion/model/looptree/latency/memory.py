@@ -73,45 +73,6 @@ def memory_latency(
 
     return component_latency
 
-def memory_latency_isl(
-    looptree_results: IslReuseAnalysisOutput | SummarizedAnalysisOutput,
-    flattened_arch,
-    mapping,
-    workload
-):
-    accesses_stats = isl_buffer_accesses_from_buffet_actions(
-        looptree_results,
-        mapping,
-        workload,
-        is_path=False
-    )
-
-    bandwidths, component_tensor_datawidth = get_bandwidth(flatteneds_arch)
-
-    component_to_read_writes = defaultdict(lambda: [0, 0])
-    for (component, tensor, _), accesses in accesses_stats.items():
-        if (component, tensor) in component_tensor_datawidth:
-            datawidth = component_tensor_datawidth[(component, tensor)]
-        elif (component, '*') in component_tensor_datawidth:
-            datawidth = component_tensor_datawidth[(component, '*')]
-        else:
-            raise RuntimeError(f'No datawidth for {component} and {tensor}')
-        
-        component_to_read_writes[component][0] += accesses.max_per_unit_reads*datawidth
-        component_to_read_writes[component][1] += accesses.max_per_unit_writes*datawidth
-
-    component_latency = {}
-    for component, (reads, writes) in component_to_read_writes.items():
-        read_bw, write_bw, shared_bw = bandwidths[component]
-
-        # All shared bw for writing
-        write_latency = writes / write_bw
-        read_latency = reads / read_bw
-        shared_latency = (reads + writes) / shared_bw
-        component_latency[component] = Max(write_latency, read_latency, shared_latency)
-
-    return component_latency
-
 
 def get_bandwidth(flattened_arch):
     """Returns a dictionary from memory to bandwidth in bits/cycle"""
