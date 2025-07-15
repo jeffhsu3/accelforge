@@ -60,7 +60,9 @@ class Uninitialized:
 
     def __add__(self, other):
         return self
-    
+
+# TODO: unsure if this is needed. If the sympy symbol is created with the
+# correct assumption (e.g., positive), this should be automatic.
 def min_nonzero(a: Any, b: Any) -> Any:
     if a == 0:
         return b
