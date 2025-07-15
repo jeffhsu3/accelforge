@@ -21,7 +21,7 @@ import itertools
 
 
 def insert_temporal_loops(
-    mapping: list[MappingNode],
+    mapping: list[Storage],
     einsum: Einsum,
     first_memory: architecture.Memory,
     rank_variable_bounds: dict[RankVariableName, int],
@@ -36,8 +36,7 @@ def insert_temporal_loops(
 
     split_mapping: list[list[Storage]] = [[]]
     for m in mapping:
-        split_mapping.append([])
-        split_mapping[-1].append(m)
+        split_mapping.append([m])
         if m.memory == first_memory.name:
             while len(split_mapping) > 1:
                 split_mapping[0].extend(split_mapping.pop(1))
@@ -122,8 +121,8 @@ def insert_temporal_loops(
         # becomes fused if we lower.
         prev_has_backing = any(s._backing for s in prev_storages)
         if prev_has_backing and partially_relevant_to_previous:
-            assert len(prev_storages) == 1
-            lowering_choices.append([True, False] * len(prev_storages))
+            # assert len(prev_storages) == 1
+            lowering_choices.extend([[True, False]] * len(prev_storages))
 
         # Option 2: No backing in previous. Lower all. No cost to lowering. Conditioned
         # on option 1 being false.
@@ -143,6 +142,10 @@ def insert_temporal_loops(
         else:
             raise RuntimeError("BUG")
 
+    assert sum(map(len, split_mapping)) == len(lowering_choices), \
+        (f"mismatch: {len(lowering_choices)} lowering "
+         f"choices for {len(storage_nodes)} storage nodes")
+
     # =======================================================================================
     # Iterate over all possible mappings
     # =======================================================================================
@@ -154,6 +157,7 @@ def insert_temporal_loops(
                 Temporal(rank_variable=r, tile_shape="symbol") for r in loop_order
             )
         storage_nodes = [node for node in full_mapping if isinstance(node, Storage)]
+        assert sum(map(len, split_mapping)) == len(storage_nodes)
         assert len(lowering_choices) == len(storage_nodes)
         for lowering_choice in itertools.product(*lowering_choices):
             for lower, node in zip(lowering_choice, storage_nodes):
