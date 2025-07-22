@@ -12,6 +12,8 @@ def get_config():
         hasattr(sys, "base_prefix") and sys.base_prefix != sys.prefix
     ):
         f = os.path.join(sys.prefix, "fastfusion", "config.yaml")
+    elif "FFM_CONFIG_PATH" in os.environ:
+        f = os.environ["FFM_CONFIG_PATH"]
     else:
         f = os.path.join(user_config_dir("fastfusion"), "config.yaml")
 
