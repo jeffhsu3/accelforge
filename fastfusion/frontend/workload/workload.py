@@ -377,16 +377,19 @@ class Workload(ParsableModel):
                 source = rename_tensor.source
                 expected_count = rename_tensor.expected_count
                 try:
-                    symbol_table[name] = eval_set_expression(source, symbol_table, "tensors", f"{einsum_name} tensor renames", expected_count=expected_count)
+                    symbol_table[name] = eval_set_expression(source, symbol_table, "tensors", f"{name} tensor renames", expected_count=expected_count)
                 except ParseError as e:
                     e.add_field(einsum_name)
-                    e.add_field(name)
                     raise
             for rename_rank_variable in rename.rank_variables:
                 name = rename_rank_variable.name
                 source = rename_rank_variable.source
                 expected_count = rename_rank_variable.expected_count
-                symbol_table[name] = eval_set_expression(source, symbol_table, "rank_variables", f"{einsum_name} rank variable renames", expected_count=expected_count)
+                try:
+                    symbol_table[name] = eval_set_expression(source, symbol_table, "rank_variables", f"{name} rank variable renames", expected_count=expected_count)
+                except ParseError as e:
+                    e.add_field(einsum_name)
+                    raise
                 
         for rank_variable in einsum.rank_variables:
             symbol_table[rank_variable] = InvertibleSet(instance=(rank_variable,), space_name="rank_variables", full_space=einsum.rank_variables)
