@@ -33,43 +33,43 @@ workload:
     - {name: WK, projection: [h, e, d]}
     - {name: K, projection: [b, m, h, e], output: True}
 
-  # - name: Q
-  #   tensor_accesses:
-  #   - {name: IQ, projection: [b, m, d]}
-  #   - {name: WQ, projection: [h, e, d]}
-  #   - {name: Q, projection: [b, m, h, e], output: True}
+  - name: Q
+    tensor_accesses:
+    - {name: IQ, projection: [b, m, d]}
+    - {name: WQ, projection: [h, e, d]}
+    - {name: Q, projection: [b, m, h, e], output: True}
 
-  # - name: QK
-  #   tensor_accesses:
-  #   - {name: Q, projection: [b, m, h, e]}
-  #   - {name: K, projection: { B: b, M: p, H: h, E: e }}
-  #   - {name: QK, projection: [b, m, p, h], output: True}
+  - name: QK
+    tensor_accesses:
+    - {name: Q, projection: [b, m, h, e]}
+    - {name: K, projection: { B: b, M: p, H: h, E: e }}
+    - {name: QK, projection: [b, m, p, h], output: True}
 
-  # - name: QK_softmax
-  #   tensor_accesses:
-  #   - {name: QK, projection: [b, m, p, h]}
-  #   - {name: QK_softmax, projection: [b, m, p, h], output: True}
+  - name: QK_softmax
+    tensor_accesses:
+    - {name: QK, projection: [b, m, p, h]}
+    - {name: QK_softmax, projection: [b, m, p, h], output: True}
 
-  # - name: AV
-  #   tensor_accesses:
-  #   - {name: QK_softmax, projection: [b, m, p, h]}
-  #   - {name: V, projection: { B: b, M: p, H: h, E: f}}
-  #   - {name: AV, projection: [b, m, h, f], output: True}
+  - name: AV
+    tensor_accesses:
+    - {name: QK_softmax, projection: [b, m, p, h]}
+    - {name: V, projection: { B: b, M: p, H: h, E: f}}
+    - {name: AV, projection: [b, m, h, f], output: True}
 
-  # - name: Z
-  #   tensor_accesses:
-  #   - {name: AV, projection: [b, m, h, f]}  
-  #   - {name: WZ, projection: [h, f, g]}
-  #   - {name: Z, projection: [b, m, g], output: True}
+  - name: Z
+    tensor_accesses:
+    - {name: AV, projection: [b, m, h, f]}  
+    - {name: WZ, projection: [h, f, g]}
+    - {name: Z, projection: [b, m, g], output: True}
 
-  # - name: FFA
-  #   tensor_accesses:
-  #   - {name: Z, projection: [b, m, g]}
-  #   - {name: WFFA, projection: [g, c]}
-  #   - {name: FFA, projection: [b, m, c], output: True}
+  - name: FFA
+    tensor_accesses:
+    - {name: Z, projection: [b, m, g]}
+    - {name: WFFA, projection: [g, c]}
+    - {name: FFA, projection: [b, m, c], output: True}
 
-  # - name: FFB
-  #   tensor_accesses:
-  #   - {name: FFA, projection: [b, m, c]}
-  #   - {name: WFFB, projection: [c, j]}
-  #   - {name: FFB, projection: [b, m, j], output: True}
+  - name: FFB
+    tensor_accesses:
+    - {name: FFA, projection: [b, m, c]}
+    - {name: WFFB, projection: [c, j]}
+    - {name: FFB, projection: [b, m, j], output: True}
