@@ -1,4 +1,4 @@
-from typing import List, Dict, Annotated
+from typing import List, Dict, Annotated, Optional
 from fastfusion.util.basetypes import ParsableDict, ParsableList, ParsableModel
 from fastfusion.version import assert_version, __version__
 from platformdirs import user_config_dir
@@ -36,7 +36,8 @@ class Config(ParsableModel):
     version: Annotated[str, assert_version] = __version__
     environment_variables: ParsableDict[str, str] = ParsableDict()
     expression_custom_functions: ParsableList[str] = ParsableList()
-    component_plug_ins: ParsableList[str] = ParsableList()
+    component_models: ParsableList[str] = ParsableList()
+    use_installed_component_models: Optional[bool] = None
 
     @classmethod
     def from_yaml(cls, f: str) -> "Config":

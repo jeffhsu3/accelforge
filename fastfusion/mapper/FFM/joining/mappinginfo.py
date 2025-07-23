@@ -163,17 +163,18 @@ class Compatibility(Updatable):
     tensors: fzs[TensorReservation]
     splits: fzs[Split] = fzs()
     tags: Tags = Tags(fzs())
-    
+
+    @property
     def loops(self) -> tuple[Loop, ...]:
         if self.tensors:
-            return next(iter(self.tensors)).loops
+            return max((t.loops for t in self.tensors), key=len)
         return tuple()
     
     def __hash__(self):
-        return hash((self.n_loops, self.tensors, self.tags))
+        return hash((self.n_loops, self.tensors, self.tags, self.loops))
     
     def __eq__(self, other):
-        return (self.n_loops, self.tensors, self.tags) == (other.n_loops, other.tensors, other.tags)
+        return (self.n_loops, self.tensors, self.tags, self.loops) == (other.n_loops, other.tensors, other.tags, other.loops)
 
     def __post_init__(self):
         assert isinstance(self.n_loops, int)

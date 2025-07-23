@@ -425,12 +425,13 @@ class Workload(ParsableModel):
 
         return equivalent_rank_variables
 
-    def get_tensor_copies(self) -> dict[TensorName, TensorName]:
+    def get_tensor_copies(self) -> dict[TensorName, set[TensorName]]:
         tensor_copies = {}
         for einsum in self.einsums:
             if not einsum.is_copy_operation:
                 continue
-            for input_tensor in einsum.input_tensors():
-                for output_tensor in einsum.output_tensors():
-                    tensor_copies[input_tensor] = output_tensor
+            input_tensor = einsum.copy_source_tensor()
+            for output_tensor in einsum.output_tensors():
+                tensor_copies.setdefault(input_tensor, set()).add(output_tensor)
+                tensor_copies.setdefault(output_tensor, set()).add(input_tensor)
         return tensor_copies
