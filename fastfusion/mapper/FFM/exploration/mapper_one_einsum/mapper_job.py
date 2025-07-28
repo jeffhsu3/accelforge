@@ -183,8 +183,8 @@ def make_compatibility(
                 ))
         compat = Compatibility(n_loops=max([0] + [len(s.loops) for s in tensors]),
                                tensors=fzs(tensors))
-        tags = tagger(compat)
-        compat = compat.update(tags=tags)
+        # tags = tagger(compat)
+        # compat = compat.update(tags=tags)
         return compat, null_loop_indices
     return compatibility, update_compatibility_with_tile_shapes
 
