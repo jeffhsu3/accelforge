@@ -185,17 +185,20 @@ def timeloop_style_even(mapping: list[MappingNode]):
     mapping = copy.deepcopy(mapping)
     memory2indices = defaultdict(list)
     i = 0
-    for i, node in enumerate(mapping):
+    while i < len(mapping):
+        node = mapping[i]
         if not isinstance(mapping[i], TensorHolder):
             i += 1
             continue
         node: TensorHolder
         seen = memory2indices[node.component]
+        mapping[i]._lower = len(seen) > 0
         if len(seen) <= 1:
             seen.append(i)
         else:
             mapping[i]._lower = False
             mapping.insert(seen[-1] + 1, mapping.pop(i))
+        i += 1
     return mapping
 
 
