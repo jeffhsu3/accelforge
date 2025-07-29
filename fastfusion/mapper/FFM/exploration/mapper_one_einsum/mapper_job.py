@@ -31,9 +31,6 @@ from fastfusion.mapper.FFM.exploration.contraints.constraints import (
     MappingConstraints,
 )
 from fastfusion.mapper.FFM.tags import Tags
-from fastfusion.model.looptree.reuse.summarized.symbolic import (
-    quick_insert_reservation_nodes,
-)
 from fastfusion.util.util import fzs
 from fastfusion.util.itertools import first
 from fastfusion.frontend.mapping import Reservation as ReservationNode
@@ -223,6 +220,9 @@ class Job:
         return self._update_compatibility_with_tile_shapes
 
     def _make_compatibility_and_updater(self):
+        from fastfusion.model.looptree.reuse.summarized.symbolic import (
+            quick_insert_reservation_nodes,
+        )
         with_reservations = quick_insert_reservation_nodes(
             self.mapping, self.spec.workload
         )
