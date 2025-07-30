@@ -155,7 +155,8 @@ class SplitKind(Enum):
 class Split:
     kind: SplitKind
     n_loops: int
-
+    
+MHA_PATCH = False
 
 @dataclass(frozen=True)
 class Compatibility(Updatable):
@@ -176,11 +177,16 @@ class Compatibility(Updatable):
             return max((t.loops for t in self.tensors), key=len)
         return tuple()
     
+    def _get_hash_tuple(self):
+        if MHA_PATCH:
+            return self.n_loops, self.tensors, self.tags, self.loops
+        return self.n_loops, self.tensors, self.tags
+    
     def __hash__(self):
-        return hash((self.n_loops, self.tensors, self.tags, self.loops))
+        return hash(self._get_hash_tuple())
     
     def __eq__(self, other):
-        return (self.n_loops, self.tensors, self.tags, self.loops) == (other.n_loops, other.tensors, other.tags, other.loops)
+        return self._get_hash_tuple() == other._get_hash_tuple()
 
     def __post_init__(self):
         assert isinstance(self.n_loops, int)
