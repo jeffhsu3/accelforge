@@ -541,7 +541,7 @@ def generate_pmappings(
     ).data
 
     if results.empty:
-        return einsum_name, [], None, job_ids
+        return einsum_name, [], {}
 
     # fused_loop_cols = [col for col in results if col.startswith(TILE_SHAPE_PREFIX)]
     fused_loop_cols = [f"{einsum_name}___tile_shape{i}" for i in range(compatibility.n_loops)] # TODO: Make this work for extended Einsums
