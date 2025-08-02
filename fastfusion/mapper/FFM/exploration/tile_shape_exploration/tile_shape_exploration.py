@@ -759,21 +759,23 @@ def run_model(job: Job):
                     df[nameloop2col(memory, n_loop)] = running_total
 
     if metrics & Metrics.LATENCY:
-        df['metric_Latency'] = overall_latency
-        df['compute_Latency'] = comp_latency
+        df['metric_latency'] = overall_latency
+        df['compute_latency'] = comp_latency
         for mem, latency in mem_latency.items():
-            df[f'{mem}_Latency'] = latency
+            df[f'{mem}_latency'] = latency
 
     if metrics & Metrics.ENERGY:
-        df['metric_Energy'] = sum(energy.values())
+        df['metric_energy'] = sum(energy.values())
+        for memory, energy in energy.items():
+            df[f'{memory}_energy'] = energy
 
     if metrics & Metrics.PER_COMPONENT_ENERGY:
         for component, component_energy in energy.items():
-            df[f'{component}_Energy'] = component_energy
+            df[f'{component}_energy'] = component_energy
 
     if metrics & Metrics.RESERVATIONS:
         for memory, occupancies in total_occupancy.items():
-            df[f'{memory}_Reservations'] = sum(occupancies.values())
+            df[f'{memory}_reservations'] = sum(occupancies.values())
 
     per_memory_usage_df = {}
     for memory, occupancies in total_occupancy.items():

@@ -397,8 +397,8 @@ def join_sims(
     mappings = s_final[0].mappings
 
     print_total_time()
-    # if evaluations_tracker is not None and "metric_Latency" in data.columns and "metric_Energy" in data.columns:
-    #     edp = data["metric_Latency"] * data["metric_Energy"]
+    # if evaluations_tracker is not None and "metric_latency" in data.columns and "metric_energy" in data.columns:
+    #     edp = data["metric_latency"] * data["metric_energy"]
     #     edp_min = edp.min()
     #     evaluations_tracker.add_evaluation(n_evaluations, edp_min)
     #     evaluations_tracker.n_mappings.update(n_mappings)
