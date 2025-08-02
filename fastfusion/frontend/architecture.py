@@ -184,9 +184,9 @@ class Attributes(ComponentAttributes):
 
 class TensorHolderAttributes(Attributes):
     datawidth: ParsesTo[Union[dict, int, float]] = 1
-    shared_read_write_bandwidth: ParsesTo[Union[int, float]] = float("inf")
-    read_bandwidth: ParsesTo[Union[int, float]] = float("inf")
-    write_bandwidth: ParsesTo[Union[int, float]] = float("inf")
+    bandwidth_reads_plus_writes_per_cycle: ParsesTo[Union[int, float]] = float("inf")
+    bandwidth_reads_per_cycle: ParsesTo[Union[int, float]] = float("inf")
+    bandwidth_writes_per_cycle: ParsesTo[Union[int, float]] = float("inf")
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
