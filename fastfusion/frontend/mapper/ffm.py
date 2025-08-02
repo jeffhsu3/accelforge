@@ -1,4 +1,3 @@
-from numbers import Number
 from typing import Any, Annotated
 
 from fastfusion.mapper.metrics import Metrics
@@ -11,8 +10,8 @@ class MapperFFM(ParsableModel, ParseExtras):
     timeloop_style_even: bool = False
     force_memory_hierarchy_order: bool = True
     max_fused_loops_per_rank: int = 1
-    max_loops: Number = float('inf')
-    max_loops_minus_ranks: Number = float('inf')
+    max_loops: float | int = float('inf')
+    max_loops_minus_ranks: float | int = float('inf')
     metrics: Metrics = Metrics.ENERGY
     
     def __init__(self, **kwargs: Any):
