@@ -193,11 +193,11 @@ def timeloop_style_even(mapping: list[MappingNode]):
             continue
         node: TensorHolder
         seen = memory2indices[node.component]
-        mapping[i]._lower = len(seen) > 0
+        mapping[i]._lower = False # Lowering might re-uneven the reservationsxs
+
         if len(seen) <= 1:
             seen.append(i)
         else:
-            mapping[i]._lower = False
             mapping.insert(seen[-1] + 1, mapping.pop(i))
         i += 1
     return mapping
@@ -430,13 +430,6 @@ def parse_flattened_arch(
             location=f"datawidth of {node.name} for Einsum {job.einsum_name}",
             symbol_table=symbol_table
         )
-
-        for action in node.actions:
-            action.arguments.bits_per_action = parse_tensor2bits(
-                action.arguments.bits_per_action,
-                location=f"bits_per_action of {node.name} action {action.name} for Einsum {job.einsum_name}",
-                symbol_table=symbol_table
-            )
             
     return flattened_arch
 
