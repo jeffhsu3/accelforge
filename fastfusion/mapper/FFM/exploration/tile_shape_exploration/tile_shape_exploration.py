@@ -231,13 +231,11 @@ def generate_tile_shapes(pmapping, constraints, usage_df, utilization_df, specif
                 cur_size = good_choices[:,i]
                 
                 
-        max_loops = spec.mapper_ffm.max_loops
-        max_extra_loops = spec.mapper_ffm.max_loops_minus_ranks
         max_loops = min(
-            spec.mapper_ffm.max_loops, 
-            spec.mapper_ffm.max_loops_minus_ranks + len(ranks)
+            specification.mapper_ffm.max_loops,
+            specification.mapper_ffm.max_loops_minus_ranks + len(ranks)
         )
-        good_choices = good_choices[n_loops <= max_loops + len(ranks),:]
+        good_choices = good_choices[n_loops <= max_loops,:]
 
         return good_choices
 
