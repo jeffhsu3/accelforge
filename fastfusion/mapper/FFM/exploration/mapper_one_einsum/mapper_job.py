@@ -31,9 +31,6 @@ from fastfusion.mapper.FFM.exploration.contraints.constraints import (
     MappingConstraints,
 )
 from fastfusion.mapper.FFM.tags import Tags
-from fastfusion.model.looptree.reuse.summarized.symbolic import (
-    quick_insert_reservation_nodes,
-)
 from fastfusion.util.util import fzs
 from fastfusion.util.itertools import first
 from fastfusion.frontend.mapping import Reservation as ReservationNode
@@ -41,6 +38,7 @@ from fastfusion.frontend.mapping import Reservation as ReservationNode
 
 def make_compatibility(
     mapping: Mapping,
+    tagger,
     intermediate_tensors: set[TensorName],
     workload: Workload,
     rank_variable_bounds: dict[RankVariableName, int],
@@ -88,10 +86,7 @@ def make_compatibility(
                 )
             )
 
-    compatibility = Compatibility(
-        n_loops=len(fused_loops),
-        tensors=fzs(compatibility_reservations),
-    )
+    compatibility = Compatibility(tensors=fzs(compatibility_reservations))
 
     def update_compatibility_with_tile_shapes(tile_shapes, tensor2size):
         tile_shape_idx = 0
@@ -180,8 +175,9 @@ def make_compatibility(
                     reservation.resource,
                     size=tensor2size[reservation.purpose]
                 ))
-        compat = Compatibility(n_loops=max([0] + [len(s.loops) for s in tensors]),
-                               tensors=fzs(tensors))
+        compat = Compatibility(tensors=fzs(tensors))
+        # tags = tagger(compat)
+        # compat = compat.update(tags=tags)
         return compat, null_loop_indices
     return compatibility, update_compatibility_with_tile_shapes
 
@@ -220,15 +216,19 @@ class Job:
         return self._update_compatibility_with_tile_shapes
 
     def _make_compatibility_and_updater(self):
+        from fastfusion.model.looptree.reuse.summarized.symbolic import (
+            quick_insert_reservation_nodes,
+        )
         with_reservations = quick_insert_reservation_nodes(
             self.mapping, self.spec.workload
         )
         self._compatibility, self._update_compatibility_with_tile_shapes = \
             make_compatibility(with_reservations,
-                                self.intermediate_tensors,
-                                self.spec.workload,
-                                self.rank_variable_bounds,
-                                self.stride_and_halo)
+                               self.tagger,
+                               self.intermediate_tensors,
+                               self.spec.workload,
+                               self.rank_variable_bounds,
+                               self.stride_and_halo)
             
     @property
     def is_copy_operation(self) -> bool:
