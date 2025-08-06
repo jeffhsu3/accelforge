@@ -466,9 +466,18 @@ class ParsableModel(BaseModel, Parsable['ParsableModel'], FromYAMLAble):
 
     def to_yaml(self, f: str = None) -> str:
         dump = self.model_dump()
+        def _to_str(value: Any):
+            if isinstance(value, list):
+                return [_to_str(x) for x in value]
+            elif isinstance(value, dict):
+                return {_to_str(k): _to_str(v) for k, v in value.items()}
+            elif isinstance(value, str):
+                return str(value)
+            return value
+
         if f is not None:
-            yaml.write_yaml_file(f, dump)
-        return yaml.to_yaml_string(dump)
+            yaml.write_yaml_file(f, _to_str(dump))
+        return yaml.to_yaml_string(_to_str(dump))
 
     def all_fields_default(self):
         for field in self.__class__.model_fields:
