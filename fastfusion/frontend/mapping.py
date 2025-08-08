@@ -209,10 +209,11 @@ class MappingNode(ParsableModel, ABC):
     operation manipulation.
 
     :param constraint_lambda: A series of constraints that the Node must satisfy.
-    :type constraint_lambda: List[Callable[[], bool]]
     :param must_be_here: Controls if the Mapper can move the Node in the Mapping.
-    :type must_be_here: bool
     :param required: Whether the Mapper must keep this node in exploration.
+
+    :type constraint_lambda: List[Callable[[], bool]]
+    :type must_be_here: bool
     :type required: bool
 
     :undoc-members:
