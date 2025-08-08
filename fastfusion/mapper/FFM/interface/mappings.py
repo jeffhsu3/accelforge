@@ -19,7 +19,7 @@ class Mappings:
 
     def __getitem__(self, key: str | int) -> Union[pd.Series, "Mappings"]:
         if isinstance(key, int):
-            return Mappings(self.spec, self.einsum_names, pd.DataFrame(self.data.iloc[key]))
+            return Mappings(self.spec, self.einsum_names, pd.DataFrame(self.data.iloc[key]).T)
         return self.data.iloc[:, key]
 
     def __len__(self):
@@ -103,11 +103,11 @@ class Mappings:
             for k in keys:
                 self = self.drop(k)
             return self
-
+        
         return Mappings(
             self.spec,
             self.einsum_names,
-            self.data.drop(columns=keys)
+            self.data.drop(columns=self._get_cols(keys[0]))
         )
 
     def sum(self, keep_key_index: list[int] | int | None = None) -> "Mappings":
@@ -153,3 +153,9 @@ class Mappings:
     @property
     def columns(self) -> list[str]:
         return list(self.data.columns)
+    
+    def to_dict(self) -> dict[str, list[float]]:
+        new = self.data.to_dict(orient="list")
+        if len(self) == 1:
+            new = {k: v[0] for k, v in new.items()}
+        return new
