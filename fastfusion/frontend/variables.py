@@ -9,4 +9,4 @@ class Variables(ParsableModel, ParseExtras):
     version: Annotated[str, assert_version] = __version__
     model_config = ConfigDict(extra="allow")
 
-    global_cycle_period: ParsesTo[float]
+    global_cycle_period: ParsesTo[float] = None
