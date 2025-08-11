@@ -5,7 +5,7 @@ from typing import Any
 from fastfusion.frontend import architecture
 import fastfusion.frontend.mapping as mapping_spec
 from fastfusion.frontend.architecture import ProcessingStage
-from fastfusion.frontend.mapping import Mapping, MappingNode, Spatial, Temporal, Storage, Reservation, Fill, Iteration, Pattern, TensorHolder
+from fastfusion.frontend.mapping import Mapping, MappingNode, Spatial, Temporal, Storage, Reservation, Iteration, Pattern, TensorHolder# NOFILL: Fill
 from fastfusion.frontend.workload import (
     Workload,
     TensorName,
@@ -491,22 +491,19 @@ def insert_reservation_nodes(mapping, info: AnalysisInfo):
                     to_remove.append(tracker_idx)
         elif isinstance(node, Reservation):
             pass
-        elif isinstance(node, Fill):
-            pass
         else:
             raise NotImplementedError(f"Unknown node type {type(node)}")
 
-        fill_insert_below = []
-        fill_insert_above = []
-        for tracker in trackers:
-            if not tracker.is_fill_level:
-                continue
-            buffet = tracker.buffet
-            node = Fill(tensor=buffet.tensor, memory=buffet.level)
-            if tracker.insert_fill_under:
-                fill_insert_below.append(node)
-            else:
-                fill_insert_above.append(node)
+        # NOFILL: fill_insert_below = []
+        # NOFILL: fill_insert_above = []
+        # NOFILL: for tracker in trackers:
+        # NOFILL:     if not tracker.is_fill_level:
+        # NOFILL:         continue
+        # NOFILL:     buffet = tracker.buffet
+        # NOFILL:     if tracker.insert_fill_under:
+        # NOFILL:         fill_insert_below.append(node)
+        # NOFILL:     else:
+        # NOFILL:         fill_insert_above.append(node)
 
         reservation_insert_below = []
         reservation_insert_above = []
@@ -522,12 +519,12 @@ def insert_reservation_nodes(mapping, info: AnalysisInfo):
         # The order of these for loops is important. Reservation must be below fill.
         for node in reservation_insert_below:
             mapping.insert(i+1, node)
-        for node in fill_insert_below:
-            mapping.insert(i+1, node)
+        # NOFILL: for node in fill_insert_below:
+        # NOFILL:     mapping.insert(i+1, node)
         for node in reservation_insert_above:
             mapping.insert(i, node)
-        for node in fill_insert_above:
-            mapping.insert(i, node)
+        # NOFILL: for node in fill_insert_above:
+        # NOFILL:     mapping.insert(i, node)
 
         i += 1
         n_nodes = len(mapping)
@@ -541,7 +538,6 @@ def analyze_node(node_idx, current_shape, info: AnalysisInfo) -> SummarizedAnaly
         Storage: analyze_storage,
         Reservation: analyze_reservation,
         mapping_spec.Compute: analyze_compute,
-        Fill: analyze_fill,
         ProcessingStage: analyze_processing_stage,
     }
     if type(node) not in class2analysis_function:
