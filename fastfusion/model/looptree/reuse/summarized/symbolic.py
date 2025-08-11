@@ -322,18 +322,20 @@ def convert_to_copy(mapping: list[MappingNode], workload: Workload) -> tuple[lis
 
     
     
-def analyze_reuse(
-    mapping: Mapping,
-    workload: Workload,
-    job: Job | None = None,
+def analyze_reuse_and_add_reservations_to_mapping(
+    job: Job,
 ) -> SummarizedAnalysisOutput:
-    mapping = mapping.nodes
+    mapping = job.mapping.nodes
+    workload = job.spec.workload
     einsum_name = mapping[-1].einsum
     einsum_shape = get_rank_variable_bounds(workload, einsum_name)
-    
+
     is_copy_operation = workload.einsums[einsum_name].is_copy_operation
     if is_copy_operation:
         mapping, tensor_to_backer_id = convert_to_copy(mapping, workload)
+        # We're working with a new mapping at this point, so we need to add reservations
+        # to the job mapping.
+        job.mapping = quick_insert_reservation_nodes(job.mapping, workload)
     else:
         tensor_to_backer_id = get_tensor_to_backer_id(mapping)
 
