@@ -640,7 +640,7 @@ def row2pmappings(row: pd.Series, einsum_names: list[str], rank_variable_bounds:
         tile_shapes = {}
         for r, v in row.items():
             if r.startswith(f"{einsum_name}\0tile_shape\0"):
-                tile_shapes[r.split("\0")[-1]] = v
+                tile_shapes[int(r.split("\0")[-1])] = v
         tile_shapes = [tile_shapes[k] for k in sorted(tile_shapes.keys())]
         for shape, node in zip(
             tile_shapes,
