@@ -601,8 +601,23 @@ class ParsableDict(dict[K, V], Parsable['ParsableDict[K, V]'], Generic[K, V], Fr
             no_info_plain_validator_function(lambda x: cls(x))
         ])
 
-class ParseExtras:
+class ParseExtras(ParsableModel):
     def get_validator(self, field: str) -> type:
         if field not in self.__class__.model_fields:
             return ParsesTo[Any]
         return self.__class__.model_fields[field].annotation
+
+
+    def __init__(self, **kwargs):
+        new_kwargs = {}
+        for field, value in kwargs.items():
+            if field.startswith("_"):
+                field = field[1:]
+                if field not in self.__class__.model_fields:
+                    raise ValueError(
+                        f"Field {field} is not a known field for "
+                        f"{self.__class__.__name__}. Known fields are: "
+                        f"{', '.join(sorted(self.__class__.model_fields.keys()))}"
+                    )
+            new_kwargs[field] = value
+        super().__init__(**new_kwargs)
