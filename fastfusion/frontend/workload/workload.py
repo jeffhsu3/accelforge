@@ -239,7 +239,7 @@ class Workload(ParsableModel):
                         f"TensorName {tensor_accesses.name} has inconsistent ranks. Found "
                         f"{tensor2ranks[tensor_accesses.name]} and {tensor_accesses.ranks}. "
                         f"TensorName is in Einsums "
-                        f"{', '.join(e.name for e in self.einsums_with_tensor(tensor_accesses))}"
+                        f"{', '.join(e.name for e in self.einsums_with_tensor(tensor_accesses.name))}"
                     )
 
     @property
