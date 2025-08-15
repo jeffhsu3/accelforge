@@ -357,8 +357,10 @@ class Workload(ParsableModel):
             full_space=all_rank_variables,
             space_name=f"rank_variables",
         )
+
         symbol_table = {
             "Nothing": InvertibleSet(instance=(), **kwargs_tensors),
+            "Tensors": InvertibleSet(instance=all_, **kwargs_tensors),
             "All": InvertibleSet(instance=all_, **kwargs_tensors),
             "Inputs": InvertibleSet(instance=inputs, **kwargs_tensors),
             "Outputs": InvertibleSet(instance=outputs, **kwargs_tensors),
@@ -366,9 +368,10 @@ class Workload(ParsableModel):
             "Shared": InvertibleSet(instance=shared, **kwargs_tensors),
             **{t: InvertibleSet(instance=(t,), **kwargs_tensors) for t in all_},
             **{r: InvertibleSet(instance=(r,), **kwargs_rank_variables) for r in all_rank_variables},
+            "Einsum": einsum_name,
+            "Einsum_Object": einsum,
         }
 
-        
         if renames is not None:
             rename = renames.get_renames_for_einsum(einsum_name)
             for rename_tensor in rename.tensor_accesses:
