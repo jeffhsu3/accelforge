@@ -729,7 +729,7 @@ def run_model(job: Job):
         if isinstance(node, architecture.TensorHolder):
             if isinstance(node, architecture.Memory):
                 memory_to_size[node.name] = node.attributes.size
-        component_to_max_fanout[node.name] = node.spatial.fanout
+        component_to_max_fanout[node.name] = {s.name: s.fanout for s in node.spatial}
 
     df = {}
 

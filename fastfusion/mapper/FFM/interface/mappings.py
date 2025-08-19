@@ -159,7 +159,7 @@ class Mappings:
     def to_dict(self) -> dict[str, list[float]]:
         new = self.data.to_dict(orient="list")
         if len(self) == 1:
-            new = {k: v[0] for k, v in new.items()}
+            new = {k.replace("\0", " "): v[0] for k, v in new.items()}
         return new
 
     def per_compute(self, per_einsum: bool = False) -> "Mappings":
@@ -186,7 +186,7 @@ class Mappings:
                 continue
         return Mappings(self.spec, self.einsum_names, new_df)
 
-    def drop_zero(self) -> "Mappings":
+    def drop_zeros(self) -> "Mappings":
         new_df = self.data.copy()
         new_df = new_df[(c for c in new_df.columns if (new_df[c] != 0).any())]
         return Mappings(self.spec, self.einsum_names, new_df)

@@ -154,7 +154,7 @@ class Iteration(ParsableModel):
         )
         
 class Spatial(Iteration):
-    dimension: str
+    name: str
     min_utilization: Union[float, str] = 0.0
     def combine(self, other: "Spatial"):
         if self.reuse != other.reuse:
@@ -166,11 +166,11 @@ class Spatial(Iteration):
         
     @property
     def name(self):
-        return self.dimension
+        return self.name
     
     def _parse(self, symbol_table: dict[str, Any], location: str):
         return type(self)(
-            dimension=self.dimension,
+            name=self.name,
             loop_bounds=[x._parse(symbol_table, location) for x in self.loop_bounds],
             reuse=eval_set_expression(self.reuse, symbol_table, "tensors", location),
             min_utilization=parse_expression(self.min_utilization, symbol_table, "min_utilization", location),

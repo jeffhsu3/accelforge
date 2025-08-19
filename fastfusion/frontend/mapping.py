@@ -381,32 +381,32 @@ class Spatial(Iteration):
     """
     A Spatial :class:`~.Iteration`.
 
-    :param dimension: The dimension the spatial is occuring over.
-    :param across: The hardware feature name hosting the iteration.
-    :param across_object: The hardware feature hosting the Iteration.
+    :param name: The dimension the spatial is occuring over.
+    :param component: The hardware feature name hosting the iteration.
+    :param component_object: The hardware feature hosting the Iteration.
 
-    :type dimension: Union[int, str]
-    :type across: str
-    :type across_object: Optional[architecture.Leaf]
+    :type name: Union[int, str]
+    :type component: str
+    :type component_object: Optional[architecture.Leaf]
     """
 
-    dimension: Union[int, str]
-    across: str
-    across_object: Optional[architecture.Leaf] = None
+    name: Union[int, str]
+    component: str
+    component_object: Optional[architecture.Leaf] = None
 
     def compact_string(self) -> str:
-        return f"S{self.dimension}-{self.rank_variable}-{self.loop_bound}"
+        return f"S{self.name}-{self.rank_variable}-{self.loop_bound}"
 
     def __str__(self) -> str:
-        return f"S{self.dimension} " + super().__str__()
+        return f"S{self.name} " + super().__str__()
 
     def __eq__(self, other: "Spatial") -> bool:
         return (
             isinstance(other, Spatial)
             and super().__eq__(other)
-            and self.dimension == other.dimension
-            and self.across == other.across
-            and self.across_object == other.across_object
+            and self.name == other.name
+            and self.component == other.component
+            and self.component_object == other.component_object
         )
 
 

@@ -32,13 +32,13 @@ class MappingConstraints:
     def check_min_utilization_constraints(
             self,
             component_name: str,
-            dimension: str,
+            name: str,
             utilization: np.ndarray,
             rank_vars: set[RankVariableName]
         ):
-        if (component_name, dimension) not in self.min_utilization_constraints:
+        if (component_name, name) not in self.min_utilization_constraints:
             return np.ones(utilization.shape[0], dtype=np.bool)
-        return self.min_utilization_constraints[(component_name, dimension)](rank_vars, utilization)
+        return self.min_utilization_constraints[(component_name, name)](rank_vars, utilization)
     
     def set_loop_indices(self, loops: list[Iteration]):
         for c in self.tile_shape_constraints:
@@ -75,7 +75,7 @@ def first_tensor_holder_index(mapping: list[MappingNode], memory_name: str) -> i
             return i
     return None
 
-def constrained_loops(mapping: list[MappingNode], rank_variables: set[RankVariableName], start_index: int=None, look_behind: bool=False, across: str=None) -> list[Iteration]:
+def constrained_loops(mapping: list[MappingNode], rank_variables: set[RankVariableName], start_index: int=None, look_behind: bool=False, component: str=None) -> list[Iteration]:
     nodes = []
     remaining_rank_variables = set(rank_variables)
     
@@ -92,14 +92,14 @@ def constrained_loops(mapping: list[MappingNode], rank_variables: set[RankVariab
     for m in to_check:
         if not isinstance(m, Iteration):
             continue
-        if across is not None and (not isinstance(m, Spatial) or m.across != across):
+        if component is not None and (not isinstance(m, Spatial) or m.component != component):
             continue
         assert isinstance(m.rank_variable, RankVariableName)
         if m.rank_variable in remaining_rank_variables:
             nodes.append(m)
             remaining_rank_variables.discard(m.rank_variable)
     for r in remaining_rank_variables:
-        assert across is None, "There should be a spatial loop for every rank variable"
+        assert component is None, "There should be a spatial loop for every rank variable"
         node = Temporal(rank_variable=r, tile_shape='symbol')
         mapping.insert(start_index, node)
         nodes.append(node)
@@ -140,16 +140,17 @@ def get_constraints(
         if not isinstance(m, architecture.Memory):
             continue
 
-        for dim in m.spatial.fanout:
+        for dim in m.spatial:
+            dim = dim.name
             if dim not in m.constraints.spatial:
                 continue
-            loops = [n for n in mapping if isinstance(n, Spatial) and (n.across, n.dimension) == (m.name, dim)]
+            loops = [n for n in mapping if isinstance(n, Spatial) and (n.component, n.name) == (m.name, dim)]
             spatial_constraint = m.constraints.spatial[dim]._parse(symbol_table, f"{m.name}.constraints.spatial")
 
             # Loop bounds constraints
             if spatial_constraint.loop_bounds:
                 for c in spatial_constraint.loop_bounds:
-                    nodes = constrained_loops(loops, c.expression, across=m.name)
+                    nodes = constrained_loops(loops, c.expression, component=m.name)
                     for exp in c.split_expression():
                         new_nodes = [l for l in loops if l.rank_variable in exp]
                         constraint = LoopBoundsConstraintLambda(c, new_nodes, exp)
@@ -158,7 +159,7 @@ def get_constraints(
             # Min utilization constraints
             if spatial_constraint.min_utilization > 0:
                 target_mapping_nodes = [
-                    n for n in mapping if isinstance(n, Spatial) and n.across == m.name and n.dimension == dim
+                    n for n in mapping if isinstance(n, Spatial) and n.component == m.name and n.name == dim
                 ]
                 if not target_mapping_nodes:
                     continue
