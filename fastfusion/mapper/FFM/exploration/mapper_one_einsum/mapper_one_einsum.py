@@ -90,7 +90,7 @@ def label_fused_loops(mapping: List[MappingNode]):
             last_backer = i
     if last_backer is None:
         raise ValueError(
-            f"No backing TensorHolder found in mapping {", ".join(m.compact_string() for m in mapping)}"
+            f"No backing TensorHolder found in mapping {", ".join(m.compact_str() for m in mapping)}"
         )
 
     for i, node in enumerate(mapping):

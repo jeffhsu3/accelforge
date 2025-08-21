@@ -114,7 +114,7 @@ def recursive_order_tensor_choices(
                 f"Einsum {einsum_name} has a mapping that is missing tensors. Ensure that "
                 f"there is a node storing each tensor in the Einsum. Missing tensors: "
                 f"{tensors - tensors_in_mapping}. Mapping:\n\t" + "\n\t".join(
-                    m.compact_string() for m in mapping
+                    m.compact_str() for m in mapping
                 )
             )
     
@@ -133,7 +133,7 @@ def recursive_order_tensor_choices(
             yield mapping
             return
 
-    for choice in sorted(remaining_choices, key=lambda x: x.compact_string()):
+    for choice in sorted(remaining_choices, key=lambda x: x.compact_str()):
         mapping.append(choice)
         new_remaining = [c for c in remaining_choices if c != choice]
         if valid_tensor_holder_order(mapping, [n.name for n in nodes], required_order, spec):

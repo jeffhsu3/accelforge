@@ -1,11 +1,11 @@
 import logging
 from math import prod
-from pathlib import Path
+
 from typing import Callable, Optional
 import uuid
 
 from joblib import delayed
-from fastfusion.accelerated_imports import pd
+
 
 from fastfusion.frontend import architecture
 from fastfusion.frontend.specification import Specification
@@ -87,8 +87,8 @@ def get_jobs(
             metrics=metrics,
             rank_variable_bounds=rank_variable_bounds,
             flattened_arch=flattened_arch,
-            tensor2compatibilties={},#tensor2compatibilties
-            tensor2boundless_compatibilities={},#tensor2boundless_compatibilities
+            tensor2compatibilties={},  # tensor2compatibilties
+            tensor2boundless_compatibilities={},  # tensor2boundless_compatibilities
             tagger=tagger,
             job_id=uuid.uuid4(),
             except_from_imperfect=except_from_imperfect,
@@ -115,6 +115,25 @@ def get_jobs(
                 raise ValueError(
                     f"No pmappings for {einsum_name}. Was the mapspace overconstrained?"
                 )
+
+    total_jobs = sum(len(jobs) for jobs in einsum2jobs.values())
+    n_procs = util.N_PARALLEL_THREADS if util.PARALLELIZE else 1
+    memory_limit = min(
+        spec.mapper.ffm.memory_limit,
+        spec.mapper.ffm.memory_limit_per_process / n_procs
+    )
+    time_limit = min(
+        spec.mapper.ffm.time_limit * n_procs / max(total_jobs, 1),
+        spec.mapper.ffm.time_limit_per_bypass_choice
+    )
+    for einsum_name, compatibility_jobs in einsum2jobs.items():
+        total_jobs = sum(len(j) for j in compatibility_jobs.values())
+        logging.warning(f"Einsum {einsum_name} has {total_jobs} bypass choices:")
+        for job_list in compatibility_jobs.values():
+            for job in job_list:
+                logging.warning(f"\t{job.mapping.compact_str()}")
+                job.memory_limit = memory_limit
+                job.time_limit = time_limit
 
     return einsum2jobs
 

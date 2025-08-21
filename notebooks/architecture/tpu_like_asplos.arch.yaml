@@ -71,8 +71,7 @@ architecture:
     actions:
     - {name: compute, arguments: {energy: 0}}
     - {name: leak, arguments: {energy: 0}}
-    constraints:
-      enabled: len(All()) == 2
+    constraints: {misc: {enabled: len(All()) == 2}}
 
   - !Memory
     name: Register
@@ -113,5 +112,4 @@ architecture:
     actions:
     - {name: compute, arguments: {energy: 0.84e-12}}
     - {name: leak, arguments: {energy: 0}}
-    constraints:
-      enabled: len(All()) == 3
+    constraints: {misc: {enabled: len(All()) == 3}}

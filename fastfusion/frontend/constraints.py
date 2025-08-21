@@ -48,7 +48,7 @@ class Comparison(ParsableModel):
         return sorted(set((x, )) for x in self.expression)
 
     def to_constraint_lambda(
-            self, 
+            self,
             increasing_sizes: bool,
         ) -> Callable[[bool, np.ndarray], Union[bool, np.ndarray]]:
         # Equal operators can only evaluate when all sizes are known
@@ -234,24 +234,34 @@ class ConstraintLambda:
         self.constraint_lambda = None if constraint is None else constraint.to_constraint_lambda(True)
         self.target_mapping_nodes = target_mapping_nodes
         self.rank_variables = rank_variables
+        self._target_node_indices = None
+        self._target_loop_indices = None
 
     def __call__(self, rank_variables: set[RankVariableName], sizes: np.ndarray) -> bool:
         final = self.rank_variables.issubset(rank_variables)
         return self.constraint_lambda(final, sizes)
+    
+    def _constrained_node_str(self) -> str:
+        return f"constrains {self._target_node_indices}"
 
 class TileShapeConstraintLambda(ConstraintLambda):
-    pass
+    def pretty_str(self) -> str:
+        return f"Tile shape {self.constraint.operator} {self.constraint.value} {self._constrained_node_str()}"
+
 
 class LoopBoundsConstraintLambda(ConstraintLambda):
-    pass
+    def pretty_str(self) -> str:
+        return f"Loop bounds {self.constraint.operator} {self.constraint.value} {self._constrained_node_str()}"
+
 
 class MinUtilizationConstraintLambda(ConstraintLambda):
     def __init__(self, target_mapping_nodes: list[Spatial], rank_variables: set[str], min_utilization: float):
         super().__init__(None, target_mapping_nodes, rank_variables)
         self.min_utilization = min_utilization
         
-    def __call__(self, rank_variables: set[RankVariableName], utilizations: np.ndarray) -> bool:
-        final = self.rank_variables.issubset(rank_variables)
+    def __call__(self, complete_indices: list[int], utilizations: np.ndarray) -> bool:
+        # final = self.rank_variables.issubset(rank_variables)
+        final = set(self._target_loop_indices).issubset(set(complete_indices))
         if not final:
             return np.ones(utilizations.shape[0], dtype=np.bool)
         
@@ -263,6 +273,10 @@ class MinUtilizationConstraintLambda(ConstraintLambda):
         # Nobody is amove the minimum. Return the best we can do.
         max_utilization = np.max(utilizations, axis=0)
         return utilizations == max_utilization
+    
+    def pretty_str(self) -> str:
+        return f"Min utilization {self.min_utilization} {self._constrained_node_str()}"
+
 
 class Constraints(ParsableModel):
     version: Annotated[str, assert_version] = __version__
