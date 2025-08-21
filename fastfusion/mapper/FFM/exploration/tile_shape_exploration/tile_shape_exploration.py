@@ -536,7 +536,43 @@ def generate_tile_shapes(
     #         break
     #     rank_var_and_choices.insert(0, get_combined_choices(spatial_a, spatial_b, rank_var_and_choices, shape))
 
-    rank_var_and_choices.sort(key=lambda x: x[-1].shape[0], reverse=True)
+    # Start combining from the loop with the fewest choices
+    _, fewest_index = min(
+        ((x[-1].shape[0], i) for i, x in enumerate(rank_var_and_choices))
+    )
+    rank_var_and_choices.insert(0, rank_var_and_choices.pop(fewest_index))
+
+    # Then, combine the loops that lead to the most reduction in the number of choices
+    while len(rank_var_and_choices) > 1:
+        best_reduction = 2
+        best_index = None
+        a = rank_var_and_choices.pop(0)
+        choices_a = a[-1]
+        for i, b in enumerate(rank_var_and_choices):
+            choices_b = b[-1]
+
+            # If we're going to have too many choices, skip
+            if choices_a.shape[0] * choices_b.shape[0] > 100000:
+                continue
+            
+            other_rank_var_and_choices = [x for k, x in enumerate(rank_var_and_choices) if k != i]
+            combined = get_combined_choices(a, b, other_rank_var_and_choices, shape, track_masked=False)
+            choices_combined = combined[-1]
+            total_shape = max((choices_a.shape[0] * choices_b.shape[0]), 1)
+            reduction = choices_combined.shape[0] / total_shape
+
+            if reduction < best_reduction:
+                best_reduction = reduction
+                best_index = i
+
+        if best_index is None:
+            rank_var_and_choices.insert(0, a)
+            break
+        
+        b = rank_var_and_choices.pop(best_index)
+        rank_var_and_choices.insert(0, get_combined_choices(a, b, rank_var_and_choices, shape))
+
+    # If we still have loops to combine, just combine them all
     while len(rank_var_and_choices) > 1:
         a, b = rank_var_and_choices.pop(0), rank_var_and_choices.pop(0)
         rank_var_and_choices.insert(0, get_combined_choices(a, b, rank_var_and_choices, shape))
