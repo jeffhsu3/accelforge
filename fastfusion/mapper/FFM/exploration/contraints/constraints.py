@@ -83,7 +83,6 @@ class MappingConstraints:
         to_remove = set()
         for c in self.loop_bounds_constraints:
             if c.constraint.constrained_to_one():
-                print(f"")
                 my_remove = set(id(t) for t in c.target_mapping_nodes) - do_not_remove
                 c.target_mapping_nodes = [t for t in c.target_mapping_nodes if id(t) not in my_remove]
                 to_remove.update(my_remove)
@@ -114,10 +113,16 @@ def first_tensor_holder_index(mapping: list["MappingNode"], memory_name: str) ->
             return i
     return None
 
-def constrained_loops(mapping: list["MappingNode"], rank_variables: set[RankVariableName], start_index: int=None, look_behind: bool=False, component: str=None) -> list[Iteration]:
+def constrained_loops(
+        mapping: list["MappingNode"], 
+        rank_variables: set[RankVariableName], 
+        start_index: int=None, 
+        look_behind: bool=False, 
+        component: str=None,
+        one_loop_per_rank_variable: bool=True,
+    ) -> list[Iteration]:
     nodes = []
     remaining_rank_variables = set(rank_variables)
-    
     
     if look_behind:
         to_check = list(enumerate(mapping))
@@ -136,7 +141,8 @@ def constrained_loops(mapping: list["MappingNode"], rank_variables: set[RankVari
         assert isinstance(m.rank_variable, RankVariableName)
         if m.rank_variable in remaining_rank_variables:
             nodes.append(m)
-            remaining_rank_variables.discard(m.rank_variable)
+            if one_loop_per_rank_variable:
+                remaining_rank_variables.discard(m.rank_variable)
     for r in remaining_rank_variables:
         assert component is None, "There should be a spatial loop for every rank variable"
         node = Temporal(rank_variable=r, tile_shape='symbol')
@@ -155,9 +161,11 @@ def get_constraints(
     
     # Tensor constraints
     for m in arch_flattened:
+        # Ignore if not a memory
         if not isinstance(m, architecture.Memory):
             continue
         
+        # Ignore if it doesn't hold any tensors
         if (index := first_tensor_holder_index(mapping, m.name)) is None:
             continue
 
@@ -170,6 +178,22 @@ def get_constraints(
                 new_nodes = [n for n in nodes if n.rank_variable in exp]
                 constraint = TileShapeConstraintLambda(c, new_nodes, exp)
                 constraints.tile_shape_constraints.append(constraint)
+                
+        # No refetch from above constraints
+        exp = tensor_constraints.no_refetch_from_above & symbol_table[m.name]
+        result = set()
+        for no_refetch in exp.iter_one_element_sets():
+            result.update(~no_refetch.rank_variables())
+        nodes = constrained_loops(mapping, result, index - 1, look_behind=True, one_loop_per_rank_variable=False)
+        constraints.loop_bounds_constraints.append(LoopBoundsConstraintLambda(
+            Comparison(
+                expression=exp,
+                operator='==',
+                value=1
+            ),
+            nodes,
+            exp
+        ))
                 
     # Temporal loop bounds constraints
     # TODO: Implement

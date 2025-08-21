@@ -85,34 +85,12 @@ class Comparison(ParsableModel):
     def force_to_one(self):
         return self.value == 1 and self.operator in ["==", "<=", "product==", "product<="]
 
-# class ComparisonList(ParsableList):
-#     def __init__(self, *args, **kwargs):
-#         new_args = []
-#         for arg in args:
-#             if isinstance(arg, Comparison):
-#                 new_args.extend(arg)
-#             elif isinstance(arg, list):
-#                 if len(arg) != 3:
-#                     raise ValueError(
-#                         "To make a comparison from a list, it must have "
-#                         "three elements: expression, operator, value. Got "
-#                         f"{arg}"
-#                     )
-#                 new_args.append(Comparison(arg))
-#             else:
-#                 new_args.append(arg)
-#         super().__init__(*new_args, **kwargs)
-        
-# def parse_comparison_list(x: ParsableList[RankVariableName]) -> ComparisonList:
-#     if not isinstance(x, list):
-#         raise ValueError(f"Must be a list. Got {type(x)}")
-#     return ComparisonList(*x)
 
 class Tensors(ParsableModel):
     bypass: Union[str, InvertibleSet[TensorName], set[TensorName]] = "~All"
     keep: Union[str, InvertibleSet[TensorName], set[TensorName]] = "~All"
-    coalesce: Union[str, InvertibleSet[TensorName], set[TensorName]] = "All"
     tile_shape: ParsableList[Comparison] = []
+    no_refetch_from_above: Union[str, InvertibleSet[TensorName], set[TensorName]] = "~All"
 
     def _parse_keep_bypass(self, symbol_table: dict[str, Any], location: str):
         if "bypass" in self.keep and "keep" in self.bypass:
@@ -135,8 +113,8 @@ class Tensors(ParsableModel):
 
     def _parse_non_keep_bypass(self, symbol_table: dict[str, Any], location: str):
         return type(self)(
-            coalesce=eval_set_expression(self.coalesce, symbol_table, "tensors", location),
             tile_shape=[x._parse(symbol_table, location) for x in self.tile_shape],
+            no_refetch_from_above=eval_set_expression(self.no_refetch_from_above, symbol_table, "tensors", location),
         )
 
 class Iteration(ParsableModel):

@@ -247,7 +247,6 @@ class Workload(ParsableModel):
         return [EinsumName(e.name) for e in self.einsums]
 
     def einsums_with_tensor(self, tensor: TensorName) -> list["Einsum"]:
-        print(tensor)
         return [e for e in self.einsums if tensor in e.tensor_names]
 
     def tensors_read_by_einsum(self, einsum_name: str) -> set[TensorName]:
