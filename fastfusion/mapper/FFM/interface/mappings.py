@@ -159,7 +159,7 @@ class Mappings:
     def to_dict(self) -> dict[str, list[float]]:
         new = self.data.to_dict(orient="list")
         if len(self) == 1:
-            new = {k.replace("\0", " "): v[0] for k, v in new.items()}
+            new = {k: v[0] for k, v in new.items()}
         return new
 
     def per_compute(self, per_einsum: bool = False) -> "Mappings":
