@@ -119,7 +119,7 @@ def get_jobs(
                 )
 
     total_jobs = sum(len(jobs) for jobs in einsum2jobs.values())
-    n_procs = util.N_PARALLEL_THREADS if util.PARALLELIZE else 1
+    n_procs = util.N_PARALLEL_PROCESSES if util.PARALLELIZE else 1
     memory_limit = min(
         spec.mapper.ffm.memory_limit,
         spec.mapper.ffm.memory_limit_per_process / n_procs
@@ -260,7 +260,7 @@ def _allocate_jobs(einsum2jobs):
         calls.extend(delayed(generate_pmappings)(job_list)
                     for job_list in jobs.values())
 
-    if util.PARALLELIZE and len(calls) < util.N_PARALLEL_THREADS * 4:
+    if util.PARALLELIZE and len(calls) < util.N_PARALLEL_PROCESSES * 4:
         logging.warning(
             f"Insufficient jobs available to utilize available threads. "
             f"Splitting jobs into smaller chunks."
