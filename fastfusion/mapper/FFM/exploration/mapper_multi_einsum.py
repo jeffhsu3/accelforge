@@ -65,7 +65,7 @@ def get_per_tensor_size(spec: Specification) -> dict[TensorName, int]:
 
 def get_jobs(
     spec: Specification,
-    flattened_arch: Optional[list[architecture.Leaf]] = None,
+    flattened_arches: list[list[architecture.Leaf]],
     tagger: Callable[[Mapping], Tags] | None = None,
     metrics: Metrics = Metrics.ENERGY | Metrics.LATENCY,
     einsum_names: Optional[list[EinsumName]] = None,
@@ -77,7 +77,7 @@ def get_jobs(
     intermediate_tensors = spec.workload.intermediate_tensor_names
     rank_variable_bounds = get_rank_variable_bounds_for_all_einsums(spec)
 
-    def make_jobs_for_einsum(einsum_name: EinsumName):
+    def make_jobs_for_einsum(einsum_name: EinsumName, flattened_arch: list[architecture.Leaf]):
         workload_einsum = spec.workload.einsums[einsum_name]
         # Create jobs for each Einsum
         jobs = {}
@@ -101,13 +101,15 @@ def get_jobs(
 
     einsum2jobs = {}
     for einsum_name, jobs in parallel(
-        [delayed(make_jobs_for_einsum)(einsum_name) for einsum_name in einsum_names],
+        [delayed(make_jobs_for_einsum)(einsum_name, flattened_arch) for einsum_name in einsum_names for flattened_arch in flattened_arches],
         pbar="Generating jobs",
         return_as="generator",
     ):
-        n_jobs = sum(len(j) for j in jobs.values())
-        print(f"Generated {n_jobs} job{'s'[:n_jobs != 1]} for {einsum_name}")
-        einsum2jobs[einsum_name] = jobs
+        # n_jobs = sum(len(j) for j in jobs.values())
+        # print(f"Generated {n_jobs} job{'s'[:n_jobs != 1]} for {einsum_name}")
+        einsum2jobs.setdefault(einsum_name, {})
+        for compatibility, job_list in jobs.items():
+            einsum2jobs[einsum_name].setdefault(compatibility, SameCompatibilityJobs()).extend(job_list)
 
     if fail_if_no_pmappings_for_einsum:
         for einsum_name, jobs in einsum2jobs.items():
@@ -137,13 +139,29 @@ def get_jobs(
 
     return einsum2jobs
 
+def get_memory_to_size(flattened_arches: list[list[architecture.Leaf]]) -> dict[str, tuple[architecture.Memory, int]]:
+    result = {}
+    for flattened_arch in flattened_arches:
+        for l in flattened_arch:
+            if not isinstance(l, architecture.Memory):
+                continue
+            size = l.attributes.size
+            result.setdefault(l.name, (l, size))
+            if result[l.name][1] != size:
+                raise ValueError(
+                    f"Memory {l.name} has different sizes in different flattened "
+                    f"architectures: {result[l.name]} and {size}. Size may not depend "
+                    f"on which compute node is used.")
+    return result
+
 def get_memories_to_track(
     spec: Specification,
-    flattened_arch: Optional[list[architecture.Leaf]],
+    flattened_arches: list[list[architecture.Leaf]],
     jobs: list[Job],
     metrics: Metrics,
 ) -> tuple[list[str], list[str]]:
-    memories_track_all = [m.name for m in flattened_arch if isinstance(m, architecture.Memory)]
+    memory_to_size = get_memory_to_size(flattened_arches)
+    memories_track_all = list(memory_to_size.keys())
     memories_track_pmappings_only = []
     
     if metrics.RESOURCE_USAGE in metrics:
@@ -154,10 +172,8 @@ def get_memories_to_track(
     # If the memory is big enough to hold all the tensors then we don't need to consider
     # it
     for m in list(memories_track_all):
-        memory = [n for n in flattened_arch if n.name == m]
-        assert len(memory) == 1
-        memory = memory[0]
-        if memory.attributes.size >= total_tensor_sizes * max(memory.attributes.datawidth.values()):
+        memory, size = memory_to_size[m]
+        if size >= total_tensor_sizes * max(memory.attributes.datawidth.values()):
             memories_track_all.remove(m)
             logging.info(
                 f"Not tracking memory {m}. It is big enough to hold "
@@ -189,7 +205,7 @@ def get_memories_to_track(
 
 def get_sims(
     spec: Specification,
-    flattened_arch: Optional[list[architecture.Leaf]] = None,
+    flattened_arches: list[list[architecture.Leaf]],
     tagger: Callable[[Mapping], Tags] | None = None,
     metrics: Metrics = Metrics.ENERGY | Metrics.LATENCY,
     einsum_names: Optional[list[EinsumName]] = None,
@@ -198,20 +214,22 @@ def get_sims(
     """
     Explores pmapspace of `einsum_names` (default: all Einsums in workload).
     """
-    if flattened_arch is None:
-        flattened_arch = spec.get_flattened_architecture()
-
     if einsum_names is None:
         einsum_names = spec.workload.einsum_names
 
-    einsum2jobs = get_jobs(spec,
-                           flattened_arch,
-                           tagger,
-                           metrics,
-                           einsum_names,
-                           fail_if_no_pmappings_for_einsum)
 
-    _fill_jobs_with_memories_to_track(einsum2jobs, spec, flattened_arch, metrics)
+    einsum2jobs = {}
+    new_einsum2jobs = get_jobs(spec,
+                        flattened_arches,
+                        tagger,
+                        metrics,
+                        einsum_names,
+                        fail_if_no_pmappings_for_einsum)
+    _fill_jobs_with_memories_to_track(new_einsum2jobs, spec, flattened_arches, metrics)
+    for einsum_name, jobs in new_einsum2jobs.items():
+        einsum2jobs.setdefault(einsum_name, {})
+        for compatibility, job_list in jobs.items():
+            einsum2jobs[einsum_name].setdefault(compatibility, SameCompatibilityJobs()).extend(job_list)
 
     calls = _allocate_jobs(einsum2jobs)
 
@@ -257,7 +275,7 @@ def _allocate_jobs(einsum2jobs):
 def _fill_jobs_with_memories_to_track(
     einsum2jobs,
     spec,
-    flattened_arch,
+    flattened_arches,
     metrics,
 ):
     jobs_flattened = [
@@ -267,7 +285,7 @@ def _fill_jobs_with_memories_to_track(
     ]
     memories_track_all, memories_track_pmappings_only = get_memories_to_track(
         spec,
-        flattened_arch,
+        flattened_arches,
         jobs_flattened, 
         metrics
     )

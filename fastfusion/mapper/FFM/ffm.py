@@ -29,24 +29,20 @@ class MappingFromRow:
 def make_pmappings(
     spec: Specification, einsum_names: list[EinsumName] | None = None, tagger = None,
 ) -> MultiEinsumPmappings:
-    flattened_arch = spec.get_flattened_architecture()
-    result = None
-    for f in flattened_arch:
-        print(f"Generating pmappings for compute node {f[-1].name}")
-        sims, pmapping_objects = get_sims(
-            spec,
-            f,
-            tagger=tagger,
-            metrics=spec.mapper.ffm.metrics,
-            einsum_names=einsum_names
-        )
-        resource2capacity = {}
-        for l in f:
+    flattened_arches = spec.get_flattened_architecture()
+    sims, pmapping_objects = get_sims(
+        spec,
+        flattened_arches,
+        tagger=tagger,
+        metrics=spec.mapper.ffm.metrics,
+        einsum_names=einsum_names
+    )
+    resource2capacity = {}
+    for flattened_arch in flattened_arches:
+        for l in flattened_arch:
             if isinstance(l, architecture.Memory):
                 resource2capacity[l.name] = l.attributes.size
-        new_pmappings = MultiEinsumPmappings(sims, pmapping_objects, resource2capacity)
-        result = new_pmappings if result is None else result | new_pmappings
-    return result
+    return MultiEinsumPmappings(sims, pmapping_objects, resource2capacity)
 
 def row2mapping(row: pd.Series, spec: Specification, rank_variable_bounds: dict[str, dict[str, int]]) -> Mapping:
     return Mapping.from_pmappings(row2pmappings(row, spec.workload.einsum_names, rank_variable_bounds), rank_variable_bounds=rank_variable_bounds)
