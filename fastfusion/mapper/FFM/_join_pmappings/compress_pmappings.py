@@ -3,9 +3,9 @@ from typing import Any, NamedTuple
 from tqdm import tqdm
 from fastfusion.accelerated_imports import pd
 from fastfusion.frontend.workload.workload import EinsumName
-from fastfusion.mapper.FFM.joining.sim import SIM
-from fastfusion.mapper.FFM.pareto.df_convention import COMPRESSED_INDEX, col_used_in_pareto
-from fastfusion.mapper.FFM.pareto.partial_mappings import PartialMappings
+from fastfusion.mapper.FFM._join_pmappings.sim import SIM
+from fastfusion.mapper.FFM._pmapping_group.df_convention import COMPRESSED_INDEX, col_used_in_pareto
+from fastfusion.mapper.FFM._pmapping_group.pmapping_group import PmappingGroup
 from fastfusion.util.util import parallel, delayed
 
 
@@ -13,7 +13,7 @@ class DecompressData(NamedTuple):
     data: dict[EinsumName, pd.DataFrame]
 
 
-def _compress(einsum_name: EinsumName, pmappings: PartialMappings, start_index: int) -> tuple["PartialMappings", pd.DataFrame]:
+def _compress(einsum_name: EinsumName, pmappings: PmappingGroup, start_index: int) -> tuple["PmappingGroup", pd.DataFrame]:
     data = pmappings.data
     data.reset_index(drop=True, inplace=True)
     data[f"{einsum_name}\0{COMPRESSED_INDEX}"] = data.index
@@ -23,10 +23,10 @@ def _compress(einsum_name: EinsumName, pmappings: PartialMappings, start_index: 
     compressed_data = data[keep_cols].copy()
     decompress_data = data[compress_cols]
     compressed_data[f"{einsum_name}\0{COMPRESSED_INDEX}"] = data.index
-    return PartialMappings(compressed_data, skip_pareto=True), decompress_data
+    return PmappingGroup(compressed_data, skip_pareto=True), decompress_data
 
 
-def _compress_pmapping_list(einsum_name: EinsumName, pmappings: list[SIM]) -> tuple[list[PartialMappings], pd.DataFrame]:
+def _compress_pmapping_list(einsum_name: EinsumName, pmappings: list[SIM]) -> tuple[list[PmappingGroup], pd.DataFrame]:
     decompress_data = []
     compressed = []
     start_index = 0
@@ -52,7 +52,7 @@ def _compress_pmapping_list(einsum_name: EinsumName, pmappings: list[SIM]) -> tu
 
 def compress_einsum2pmappings(
     einsum2pmappings: dict[EinsumName, list[SIM]],
-) -> tuple[dict[EinsumName, list[PartialMappings]], DecompressData]:
+) -> tuple[dict[EinsumName, list[PmappingGroup]], DecompressData]:
     decompress_data = {}
     compressed_einsum2pmappings = {}
     
@@ -76,9 +76,9 @@ def compress_einsum2pmappings(
 
 
 def decompress_pmappings(
-    pmappings: PartialMappings,
+    pmappings: PmappingGroup,
     decompress_data: DecompressData,
-) -> PartialMappings:
+) -> PmappingGroup:
     data = pmappings.data
     for einsum_name, decompress in decompress_data.data.items():
         data = pd.merge(
@@ -95,7 +95,7 @@ def decompress_pmappings(
     ]
     if compressed_index_cols:
         data = data.drop(columns=compressed_index_cols)
-    return PartialMappings(data, skip_pareto=True)
+    return PmappingGroup(data, skip_pareto=True)
 
 
 # def _compress_data(
@@ -152,7 +152,7 @@ def decompress_pmappings(
 
 
 # @classmethod
-# def compress_paretos(cls, einsum_name: EinsumName, paretos: list["PartialMappings"], job_id: int, extra_data: dict[str, Any], skip_columns: list[str] = None, keep_columns: list[str] = None) -> DecompressData:
+# def compress_paretos(cls, einsum_name: EinsumName, paretos: list["PmappingGroup"], job_id: int, extra_data: dict[str, Any], skip_columns: list[str] = None, keep_columns: list[str] = None) -> DecompressData:
 #     index = 0
 #     decompress_data = []
 #     for p in paretos:

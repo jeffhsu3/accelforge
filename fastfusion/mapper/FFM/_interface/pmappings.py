@@ -1,6 +1,6 @@
 from typing import Callable
 from uuid import UUID
-from fastfusion.mapper.FFM.joining.sim import SIM
+from fastfusion.mapper.FFM._join_pmappings.sim import SIM
 from fastfusion.frontend.workload import EinsumName
 from fastfusion.frontend.mapping import Mapping
 

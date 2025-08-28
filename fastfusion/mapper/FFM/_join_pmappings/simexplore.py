@@ -7,8 +7,8 @@ from fastfusion.frontend import arch
 from fastfusion.frontend.specification import Specification
 from fastfusion.frontend.workload import Einsum
 from fastfusion.mapper.metrics import Metrics
-from fastfusion.mapper.FFM.joining.sim import SIM, Loop, Compatibility
-from fastfusion.mapper.FFM.pareto import PartialMappings
+from fastfusion.mapper.FFM._join_pmappings.sim import SIM, Loop, Compatibility
+from fastfusion.mapper.FFM._pmapping_group import PmappingGroup
 from fastfusion.util import fzs, parallel, debugger_active
 
 
@@ -20,7 +20,7 @@ def mapping2sims(einsum_to_result: Compatibility):
 
 
 def paretofy(k, v):
-    return SIM(k, PartialMappings(pd.DataFrame(v).fillna(0)))
+    return SIM(k, PmappingGroup(pd.DataFrame(v).fillna(0)))
 
 
 prev_time = 0

@@ -2,13 +2,11 @@ from collections import defaultdict
 import copy
 import functools
 import itertools
-import re
 
-# Disable numba. We need user_has_package("numba") to be False
 from typing import Iterable, Optional, Tuple, Union
 
 from fastfusion.frontend.mapping import Iteration, Nested
-from fastfusion.mapper.FFM.joining.mappinginfo import TensorReservation
+from fastfusion.mapper.FFM._join_pmappings.mappinginfo import TensorReservation
 from fastfusion.util import fzs
 
 from fastfusion.accelerated_imports import pd
@@ -40,14 +38,14 @@ def error_check_wrapper(func):
                     if idx < len(args):
                         live_tensors = args[idx]
             for prev_arg in itertools.chain(prev_args, prev_kwargs.values()):
-                if isinstance(prev_arg, PartialMappings):
+                if isinstance(prev_arg, PmappingGroup):
                     prev_arg.fail(0, live_tensors)
                 break
             func(*args, **kwargs) # For debugging
     return wrapper
 
 
-class PartialMappings:
+class PmappingGroup:
     def __init__(
             self, 
             data: pd.DataFrame, 
@@ -73,11 +71,11 @@ class PartialMappings:
             self.free_to_loop_index(loop_index=next_shared_loop_index)
             self.limit_capacity(resource2capacity={}, next_shared_loop_index=next_shared_loop_index, drop_valid_reservations=limit_capacity_drop_valid_reservations)
 
-        if fill_reservation_cols: # Affects PartialMappings so must go before
+        if fill_reservation_cols: # Affects PmappingGroup so must go before
             self.fill_reservation_cols(fill_reservation_cols)
         if check_above_subset_below:
             self.check_above_subset_below()
-        if max_right_to_left: # Affects PartialMappings so must go before
+        if max_right_to_left: # Affects PmappingGroup so must go before
             self.max_right_to_left()
         if check_above_subset_below:
             self.check_above_subset_below()
@@ -286,7 +284,7 @@ class PartialMappings:
     @error_check_wrapper
     def merge_next(
         self,
-        right: "PartialMappings",
+        right: "PmappingGroup",
         shared_loop_index: int,
         next_shared_loop_index: int,
         live_tensors: set[int],
@@ -295,7 +293,7 @@ class PartialMappings:
         duplicated_aliased_tensors: set[TensorReservation],
         resource2capacity: dict[str, int] = None,
         drop_valid_reservations: bool = True,
-    ) -> "PartialMappings":
+    ) -> "PmappingGroup":
         """
             A  B            A2
              / | --- 0      |
@@ -384,7 +382,7 @@ class PartialMappings:
                 
         df = df.drop(columns=dropcols)
         n_pmappings = self.n_pmappings * right.n_pmappings
-        result = PartialMappings(df, skip_pareto=True, check_above_subset_below=False, n_pmappings=n_pmappings)
+        result = PmappingGroup(df, skip_pareto=True, check_above_subset_below=False, n_pmappings=n_pmappings)
         # Remove tensors that were allocated in both branches and got added
         # together.
         shared_to_free = [s for s in shared_tensors if s.above_loop_index <= shared_loop_index]
@@ -460,7 +458,7 @@ class PartialMappings:
                 self._adjust_reservations_one_resource(resource, cur_alloc, cur_free)
 
     @staticmethod
-    def concat(paretos: list["PartialMappings"], skip_pareto: bool = False) -> "PartialMappings":
+    def concat(paretos: list["PmappingGroup"], skip_pareto: bool = False) -> "PmappingGroup":
         if len(paretos) == 0:
             raise ValueError("No paretos to concatenate")
         if len(paretos) == 1:
@@ -473,7 +471,7 @@ class PartialMappings:
         
         concatenated = pd.concat([p.data for p in paretos]).reset_index(drop=True)
         
-        p = PartialMappings(
+        p = PmappingGroup(
             concatenated.fillna(0),
             skip_pareto=len(paretos) == 1 or skip_pareto,
             fill_reservation_cols=fill_cols,
@@ -483,8 +481,8 @@ class PartialMappings:
         p.parents = paretos[0].parents
         return p
 
-    def copy(self) -> "PartialMappings":
-        p = PartialMappings(self.data.copy(), skip_pareto=True, check_above_subset_below=False)
+    def copy(self) -> "PmappingGroup":
+        p = PmappingGroup(self.data.copy(), skip_pareto=True, check_above_subset_below=False)
         p.parents = copy.deepcopy(self.parents)
         return p
     
@@ -604,7 +602,7 @@ class PartialMappings:
     #                 )
 
     # def fail(self, index, live_tensors):
-    #     from fastfusion.mapper.FFM.joining.sim import TensorReservation
+    #     from fastfusion.mapper.FFM._join_pmappings.sim import TensorReservation
     #     r = self.data.iloc[index]
     #     assert not self.data.isnull().values.any(), f"NaN in {self.data}"
     #     self = self.copy()

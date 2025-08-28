@@ -13,15 +13,15 @@ from fastfusion.frontend.mapping import Iteration, Mapping, TensorHolder
 from fastfusion.frontend.workload.isl import get_rank_variable_bounds
 from fastfusion.frontend.workload.workload import EinsumName, TensorName
 
-from fastfusion.mapper.FFM.exploration.mapper_one_einsum.mapper_one_einsum import generate_pmappings
+from fastfusion.mapper.FFM._make_pmappings.mapper_one_einsum.mapper_one_einsum import generate_pmappings
 from fastfusion.mapper.metrics import Metrics
-from fastfusion.mapper.FFM.exploration.mapper_one_einsum import get_single_einsum_jobs
-from fastfusion.mapper.FFM.joining.mappinginfo import Compatibility
-from fastfusion.mapper.FFM.joining.sim import SIM
+from fastfusion.mapper.FFM._make_pmappings.mapper_one_einsum import get_single_einsum_jobs
+from fastfusion.mapper.FFM._join_pmappings.mappinginfo import Compatibility
+from fastfusion.mapper.FFM._join_pmappings.sim import SIM
 from fastfusion.mapper.FFM.deprecate_maybe.tags import Tags
 from fastfusion.util.util import parallel
 from fastfusion.util import util
-from fastfusion.mapper.FFM.exploration.mapper_one_einsum.mapper_job import Job, SameCompatibilityJobs
+from fastfusion.mapper.FFM._make_pmappings.mapper_one_einsum.mapper_job import Job, SameCompatibilityJobs
 
 def get_rank_variable_bounds_for_all_einsums(spec: Specification):
     rank_variable_bounds = {

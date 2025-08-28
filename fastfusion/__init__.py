@@ -9,3 +9,5 @@ from fastfusion.frontend import renames
 from fastfusion.frontend import specification
 from fastfusion.frontend import variables
 from fastfusion.frontend import workload
+from fastfusion.frontend import specification
+from fastfusion.frontend.specification import Specification

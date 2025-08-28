@@ -4,8 +4,8 @@ from collections.abc import Iterable, Set
 
 from fastfusion.frontend.specification import Specification
 from fastfusion.frontend.workload import EinsumName, TensorName
-from fastfusion.mapper.FFM.joining.mappinginfo import Compatibility
-from fastfusion.mapper.FFM.joining.sim import SIM
+from fastfusion.mapper.FFM._join_pmappings.mappinginfo import Compatibility
+from fastfusion.mapper.FFM._join_pmappings.sim import SIM
 
 
 DO_PRINT = False

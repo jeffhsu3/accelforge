@@ -84,7 +84,7 @@ def run_looptree_symbolic(config_dir, paths, tmp_path, bindings, call_accelergy)
     from pytimeloop.looptree.latency import get_latency
     from pytimeloop.timeloopfe.v4fused import Specification
     from pytimeloop.timeloopfe.common.backend_calls import call_accelergy_verbose
-    from fastfusion.mapper.FFM.exploration.mapper_one_einsum.mapper_job import Job
+    from fastfusion.mapper.FFM._make_pmappings.mapper_one_einsum.mapper_job import Job
 
     yaml_str = gather_yaml_configs(config_dir, paths)
 

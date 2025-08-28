@@ -18,7 +18,7 @@ from fastfusion.util.basetypes import ParsableModel
 
 
 class Specification(ParsableModel):
-    architecture: Arch = Arch()
+    arch: Arch = Arch()
     component_classes: Components = Components()
     constraints: Constraints = Constraints()
     mapping: Mapping = Mapping()

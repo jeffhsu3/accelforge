@@ -20,7 +20,7 @@ from fastfusion.frontend.workload.symbolic import (
     PartiallyRelevant
 )
 
-from fastfusion.mapper.FFM.exploration.mapper_one_einsum.mapper_job import Job
+from fastfusion.mapper.FFM._make_pmappings.mapper_one_einsum.mapper_job import Job
 from fastfusion.util.sympy.broadcast_max import Min, Max
 
 import sympy

@@ -7,8 +7,8 @@ from joblib import delayed
 from fastfusion.accelerated_imports import pd
 from fastfusion.frontend import arch
 from fastfusion.frontend.specification import Specification
-from fastfusion.mapper.FFM.joining.sim import SIM, Loop, Compatibility
-from fastfusion.mapper.FFM.pareto import PartialMappings, is_reservation_col
+from fastfusion.mapper.FFM._join_pmappings.sim import SIM, Loop, Compatibility
+from fastfusion.mapper.FFM._pmapping_group import PmappingGroup, is_reservation_col
 from fastfusion.mapper.simanneal.simanneal import MapspaceGlobals, _fuse_sims
 from fastfusion.mapper.simanneal.tracking import EvaluationsScoreTracker
 from fastfusion.util import fzs, parallel, util
@@ -22,7 +22,7 @@ def mapping2sims(einsum_to_result: Compatibility):
 
 
 def paretofy(k, v):
-    return SIM(k, PartialMappings(pd.DataFrame(v).fillna(0)))
+    return SIM(k, PmappingGroup(pd.DataFrame(v).fillna(0)))
 
 
 def get_possible_translations(
@@ -156,7 +156,7 @@ def join_sims(
     algorithm: str,
     spec: Specification = None,
     flattened_architecture: list[arch.Leaf] = None,
-) -> PartialMappings:
+) -> PmappingGroup:
     objective_function_cols = None
     cols = next(iter(sims.values()))[0].mappings.data.columns
     if objective_function_cols is None:

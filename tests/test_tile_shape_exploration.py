@@ -4,9 +4,9 @@ from pathlib import Path
 import time
 
 from fastfusion.frontend.specification import Specification, Mapping
-from fastfusion.mapper.FFM.exploration.contraints.constraints import MappingConstraints
-from fastfusion.mapper.FFM.exploration.mapper_one_einsum.mapper_job import Job
-from fastfusion.mapper.FFM.exploration.tile_shape_exploration import *
+from fastfusion.mapper.FFM._make_pmappings.contraints.constraints import MappingConstraints
+from fastfusion.mapper.FFM._make_pmappings.mapper_one_einsum.mapper_job import Job
+from fastfusion.mapper.FFM._make_pmappings.tile_shape_exploration import *
 from fastfusion.mapper.metrics import Metrics
 from fastfusion.frontend import arch
 

@@ -23,13 +23,13 @@ from fastfusion.frontend.workload.workload import (
 )
 
 from fastfusion.mapper import metrics
-from fastfusion.mapper.FFM.joining.mappinginfo import (
+from fastfusion.mapper.FFM._join_pmappings.mappinginfo import (
     Compatibility,
     Loop,
     TilePattern,
     TensorReservation,
 )
-from fastfusion.mapper.FFM.exploration.contraints.constraints import (
+from fastfusion.mapper.FFM._make_pmappings.contraints.constraints import (
     MappingConstraints,
     ConstraintLambda,
 )

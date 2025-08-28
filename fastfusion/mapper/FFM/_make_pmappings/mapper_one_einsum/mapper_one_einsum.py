@@ -28,18 +28,18 @@ from fastfusion.frontend.workload.workload import (
     RankVariableName,
     Workload,
 )
-from fastfusion.mapper.FFM.exploration.mapper_one_einsum.dataflow_generator import (
+from fastfusion.mapper.FFM._make_pmappings.mapper_one_einsum.dataflow_generator import (
     get_tensor_choices,
 )
 from fastfusion.mapper.metrics import Metrics
-from fastfusion.mapper.FFM.exploration.tile_shape_exploration import (
+from fastfusion.mapper.FFM._make_pmappings.tile_shape_exploration import (
     explore_tile_shapes,
     get_initial_delta_choices,
 )
-from fastfusion.mapper.FFM.joining.sim import SIM
-from fastfusion.mapper.FFM.pareto import (
+from fastfusion.mapper.FFM._join_pmappings.sim import SIM
+from fastfusion.mapper.FFM._pmapping_group import (
     MAPPING_COLUMN,
-    PartialMappings,
+    PmappingGroup,
     TILE_SHAPE_PREFIX,
     col2nameloop,
     col_used_in_pareto,
@@ -48,17 +48,17 @@ from fastfusion.mapper.FFM.pareto import (
     nameloop2col,
     tensor2col,
 )
-from fastfusion.mapper.FFM.exploration.contraints.constraints import (
+from fastfusion.mapper.FFM._make_pmappings.contraints.constraints import (
     MappingConstraints,
     get_constraints,
 )
 from fastfusion.mapper.FFM.deprecate_maybe.tags import Tags
 from fastfusion.frontend.mapping import Reservation as ReservationNode
-from fastfusion.mapper.FFM.exploration.mapper_one_einsum.loop_generator import (
+from fastfusion.mapper.FFM._make_pmappings.mapper_one_einsum.loop_generator import (
     insert_temporal_loops,
     insert_spatial_loops,
 )
-from fastfusion.mapper.FFM.exploration.mapper_one_einsum.mapper_job import (
+from fastfusion.mapper.FFM._make_pmappings.mapper_one_einsum.mapper_job import (
     Job,
     SameCompatibilityJobs,
     SameEinsumJobs
@@ -480,12 +480,12 @@ def generate_pmappings(
     metrics = jobs_with_similar_compatibilities.metrics
     limit_capacity_drop_valid_reservations = not (Metrics.RESOURCE_USAGE & metrics)
 
-    # Creating a PartialMappings fills in reservation columns since different partial
+    # Creating a PmappingGroup fills in reservation columns since different partial
     # mappings have different ones.
     next_shared_loop_index = compatibility.n_loops - 1
-    results = PartialMappings.concat(
+    results = PmappingGroup.concat(
         [
-            PartialMappings(
+            PmappingGroup(
                 r,
                 skip_pareto=True,
                 next_shared_loop_index=next_shared_loop_index,
@@ -552,7 +552,7 @@ def generate_pmappings(
         # Skip pareto because we already did it above
         # prev_len = len(mappings)
         next_shared_loop_index_this_group = new_compatibility.n_loops - 1
-        partial_mappings = PartialMappings(
+        partial_mappings = PmappingGroup(
             mappings,
             next_shared_loop_index=next_shared_loop_index_this_group,
             n_pmappings=pmappings_per_group,

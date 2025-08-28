@@ -3,9 +3,9 @@ import pickle
 import unittest
 
 from fastfusion.frontend import Specification
-from fastfusion.mapper.FFM.exploration.mapper_multi_einsum import get_sims
-from fastfusion.mapper.FFM.joining.compatexplore import join_compatibilities, sims2untiled_compats, remove_unimportant_sims
-from fastfusion.mapper.FFM.joining.simexplore import join_sims
+from fastfusion.mapper.FFM._make_pmappings.mapper_multi_einsum import get_sims
+from fastfusion.mapper.FFM._join_pmappings.compatexplore import join_compatibilities, sims2untiled_compats, remove_unimportant_sims
+from fastfusion.mapper.FFM._join_pmappings.simexplore import join_sims
 
 from simcache import make_sim_pickle_cache
 

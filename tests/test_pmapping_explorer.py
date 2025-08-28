@@ -4,10 +4,10 @@ import unittest
 from fastfusion.frontend import Specification, Workload
 
 from fastfusion.mapper import metrics
-from fastfusion.mapper.FFM.exploration.tile_shape_exploration import get_initial_delta_choices
-from fastfusion.mapper.FFM.exploration.mapper_multi_einsum import get_sims
-from fastfusion.mapper.FFM.exploration.mapping_filter_tags import get_one_split_tag
-from fastfusion.mapper.FFM.pareto import nameloop2col
+from fastfusion.mapper.FFM._make_pmappings.tile_shape_exploration import get_initial_delta_choices
+from fastfusion.mapper.FFM._make_pmappings.mapper_multi_einsum import get_sims
+from fastfusion.mapper.FFM._make_pmappings.mapping_filter_tags import get_one_split_tag
+from fastfusion.mapper.FFM._pmapping_group import nameloop2col
 
 from simcache import make_sim_pickle_cache
 

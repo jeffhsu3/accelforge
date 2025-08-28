@@ -24,13 +24,13 @@ from fastfusion.frontend.workload.symbolic import get_stride_and_halo
 from fastfusion.frontend.mapping import Iteration, MappingNode, Temporal, Spatial, TensorHolder, Pattern
 
 from fastfusion.mapper import metrics
-from fastfusion.mapper.FFM.exploration.contraints.constraints import MappingConstraints
-from fastfusion.mapper.FFM.exploration.mapper_one_einsum.mapper_job import Job
+from fastfusion.mapper.FFM._make_pmappings.contraints.constraints import MappingConstraints
+from fastfusion.mapper.FFM._make_pmappings.mapper_one_einsum.mapper_job import Job
 from fastfusion.model.looptree.reuse.summarized.symbolic import analyze_reuse_and_add_reservations_to_mapping
 from fastfusion.model.looptree.energy import compute_energy_from_actions, gather_actions
 from fastfusion.model.looptree.latency import get_latency
 
-from fastfusion.mapper.FFM.pareto import nameloop2col, tensor2col
+from fastfusion.mapper.FFM._pmapping_group import nameloop2col, tensor2col
 from fastfusion.mapper.metrics import Metrics
 
 class GivenShape(int):
@@ -585,7 +585,7 @@ def generate_tile_shapes(
             rank_a,
             index_a,
             is_symbol_a,
-            choices_a,#[paretoset.paretoset(np.concatenate([x.reshape(-1, 1) for x in df.values()], axis=1)), :]
+            choices_a,#[paretoset._paretoset(np.concatenate([x.reshape(-1, 1) for x in df.values()], axis=1)), :]
         )
 
     # First, combine spatial loops

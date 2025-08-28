@@ -1,14 +1,14 @@
 from fastfusion.frontend.specification import Specification
-from fastfusion.mapper.FFM.interface.pmappings import MultiEinsumPmappings
-from fastfusion.mapper.FFM.interface.mappings import Mappings
-from fastfusion.mapper.FFM.joining.compress_pmappings import compress_einsum2pmappings, decompress_pmappings
-from fastfusion.mapper.FFM.exploration.mapper_multi_einsum import get_sims
+from fastfusion.mapper.FFM._interface.pmappings import MultiEinsumPmappings
+from fastfusion.mapper.FFM._interface.mappings import Mappings
+from fastfusion.mapper.FFM._join_pmappings.compress_pmappings import compress_einsum2pmappings, decompress_pmappings
+from fastfusion.mapper.FFM._make_pmappings.mapper_multi_einsum import get_sims
 from fastfusion.frontend.workload import EinsumName
 from fastfusion.frontend.mapping import Mapping
-from fastfusion.mapper.FFM.joining.simexplore import join_sims
-from fastfusion.mapper.FFM.pareto.df_convention import MAPPING_COLUMN
-from fastfusion.mapper.FFM.pareto.partial_mappings import PartialMappings, row2pmappings
-from fastfusion.mapper.FFM.exploration.mapper_multi_einsum import get_rank_variable_bounds_for_all_einsums
+from fastfusion.mapper.FFM._join_pmappings.simexplore import join_sims
+from fastfusion.mapper.FFM._pmapping_group.df_convention import MAPPING_COLUMN
+from fastfusion.mapper.FFM._pmapping_group.pmapping_group import PmappingGroup, row2pmappings
+from fastfusion.mapper.FFM._make_pmappings.mapper_multi_einsum import get_rank_variable_bounds_for_all_einsums
 from fastfusion.accelerated_imports import pd
 
 
@@ -47,7 +47,7 @@ def row2mapping(row: pd.Series, spec: Specification, rank_variable_bounds: dict[
     return Mapping.from_pmappings(row2pmappings(row, spec.workload.einsum_names, rank_variable_bounds), rank_variable_bounds=rank_variable_bounds)
 
 
-def join_pmappings(spec: Specification, pmappings: MultiEinsumPmappings) -> PartialMappings:
+def join_pmappings(spec: Specification, pmappings: MultiEinsumPmappings) -> PmappingGroup:
     for einsum_name, einsum_pmappings in pmappings.einsum2pmappings.items():
         total = sum(len(p.mappings.data) for p in einsum_pmappings)
         n_compatibilities = len(einsum_pmappings)
