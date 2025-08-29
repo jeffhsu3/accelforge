@@ -29,9 +29,11 @@ class MappingFromRow:
 def make_pmappings(
     spec: Specification, einsum_names: list[EinsumName] | None = None, tagger = None,
 ) -> MultiEinsumPmappings:
-    flattened_arches = spec.get_flattened_architecture()
+    parsed_spec, _ = spec.parse_expressions()
+    parsed_spec.calculate_component_energy_area(area=False)
+    flattened_arches = parsed_spec.get_flattened_architecture()
     sims, pmapping_objects = get_sims(
-        spec,
+        parsed_spec,
         flattened_arches,
         tagger=tagger,
         metrics=spec.mapper.ffm.metrics,

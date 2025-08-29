@@ -52,7 +52,6 @@ def get_sims_with_cache(tagger_name=None,
         ARCH_DIR / f'{arch_name}.arch.yaml',
         WORKLOAD_DIR / f'{workload_name}.workload.yaml'
     )
-    spec.calculate_component_energy_area()
     workload = spec.workload
     renames = spec.renames
     flattened_architecture = spec.get_flattened_architecture()

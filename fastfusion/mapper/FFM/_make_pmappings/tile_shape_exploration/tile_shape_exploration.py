@@ -885,10 +885,10 @@ def run_model(job: Job):
                     df[nameloop2col(memory, n_loop)] = running_total
 
     if metrics & Metrics.LATENCY:
-        df[f'Total\0latency'] = overall_latency * spec.variables.global_cycle_period
-        df[f'latency\0compute'] = comp_latency * spec.variables.global_cycle_period
+        df[f'Total\0latency'] = overall_latency * spec.arch.global_cycle_period
+        df[f'latency\0compute'] = comp_latency * spec.arch.global_cycle_period
         for component, latency in mem_latency.items():
-            df[f'latency\0{component}'] = latency * spec.variables.global_cycle_period
+            df[f'latency\0{component}'] = latency * spec.arch.global_cycle_period
 
     if metrics & Metrics.ENERGY:
         df[f'Total\0energy'] = sum(energy.values())

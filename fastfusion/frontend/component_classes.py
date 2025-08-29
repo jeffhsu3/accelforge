@@ -79,10 +79,10 @@ class CompoundComponent(ParsableModel):
                 raise KeyError(
                     f"Subcomponent {subcomponent.name} referenced in action {action_name} of {self.name} not found"
                 ) from None
-            component_attributes = component.attributes.parse_expressions(attributes.model_dump(), multiply_multipliers=True)[0]
-            arguments = arguments.parse_expressions(component_attributes.model_dump(), multiply_multipliers=False)[0]
+            component_attributes = component.attributes.parse_expressions(attributes.model_dump_non_none(), multiply_multipliers=True)[0]
+            arguments = arguments.parse_expressions(component_attributes.model_dump_non_none(), multiply_multipliers=False)[0]
             for subaction in subcomponent.actions:
-                subaction_args = subaction.arguments.parse_expressions(arguments.model_dump(), multiply_multipliers=True)[0]
+                subaction_args = subaction.arguments.parse_expressions(arguments.model_dump_non_none(), multiply_multipliers=True)[0]
                 yield component.get_component_class(), component_attributes, subaction_args, subaction.name
 
 # Components are only instantiated when they are called in the arch. The

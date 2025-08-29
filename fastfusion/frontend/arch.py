@@ -14,6 +14,7 @@ from typing import (
     TypeAlias,
 )
 from pydantic import ConfigDict, RootModel, BaseModel, Tag
+import pydantic
 
 from fastfusion.util.basetypes import (
     InferFromTag,
@@ -85,7 +86,7 @@ class Spatial(ParsableModel):
 
 class Leaf(ArchNode, ABC):
     name: str
-    attributes: ComponentAttributes
+    attributes: ComponentAttributes = ComponentAttributes()
     spatial: ParsableList[Spatial] = ParsableList()
     constraints: ConstraintGroup = ConstraintGroup()
 
@@ -214,7 +215,7 @@ class MemoryAttributes(TensorHolderAttributes):
 
 class TensorHolder(Component):
     actions: ParsableList[ArchMemoryAction] = MEMORY_ACTIONS
-    attributes: TensorHolderAttributes
+    attributes: TensorHolderAttributes = pydantic.Field(default_factory=TensorHolderAttributes)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -222,7 +223,7 @@ class TensorHolder(Component):
 
 
 class Memory(TensorHolder):
-    attributes: "MemoryAttributes"
+    attributes: "MemoryAttributes" = pydantic.Field(default_factory=MemoryAttributes)
 
 
 class ProcessingStage(TensorHolder):
@@ -235,7 +236,7 @@ class ComputeAttributes(ComponentAttributes):
 
 class Compute(Component):
     actions: ParsableList[SubcomponentAction] = COMPUTE_ACTIONS
-    attributes: ComputeAttributes
+    attributes: ComputeAttributes = pydantic.Field(default_factory=ComputeAttributes)
     constraints: MiscOnlyConstraints = MiscOnlyConstraints()
 
     def __init__(self, *args, **kwargs):
@@ -338,6 +339,21 @@ class Hierarchical(Branch):
 
 class Arch(Hierarchical):
     version: Annotated[str, assert_version] = __version__
+    global_cycle_period: ParsesTo[Union[int, float]] = \
+        '"Set me with Specification().arch.global_cycle_period = [value]"'
+        
+    def parse_expressions(self, symbol_table: dict[str, Any], *args, **kwargs):
+        # Parse global_cycle_period
+        global_cycle_period = parse_expression(
+            expression=self.global_cycle_period,
+            symbol_table=symbol_table,
+            attr_name="global_cycle_period",
+            location="global_cycle_period",
+        )
+        symbol_table["global_cycle_period"] = global_cycle_period
+        new, symbol_table = super().parse_expressions(symbol_table, *args, **kwargs)
+        new.global_cycle_period = global_cycle_period
+        return new, symbol_table
 
 
 # We had to reference Hierarchical before it was defined

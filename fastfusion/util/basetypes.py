@@ -219,6 +219,7 @@ class Parsable(ABC, Generic[M]):
 
 
     def _parse_expressions(self, symbol_table: dict[str, Any], order: tuple[str, ...], post_calls: tuple[PostCall[T], ...], use_setattr: bool = True, **kwargs) -> tuple["Parsable", dict[str, Any]]:
+        self._parsed = True
         field_order = get_parsable_field_order(
             order,
             [(field, getattr(self, field) if use_setattr else self[field], self.get_validator(field))
@@ -403,6 +404,8 @@ def parse_field(field, value, validator, symbol_table, parent, **kwargs):
         elif isinstance(value, Parsable):
             parsed, _ = value.parse_expressions(symbol_table, **kwargs)
             return parsed
+        elif isinstance(value, str):
+            return RawString(value)
         else:
             return value
     except ParseError as e:
@@ -521,6 +524,9 @@ class ParsableModel(ModelWithUnderscoreFields, Parsable['ParsableModel'], FromYA
             if getattr(self, field) != default:
                 return False
         return True
+
+    def model_dump_non_none(self, **kwargs):
+        return {k: v for k, v in self.model_dump(**kwargs).items() if v is not None}
 
 class NonParsableModel(ModelWithUnderscoreFields, FromYAMLAble):
     model_config = ConfigDict(extra="forbid")

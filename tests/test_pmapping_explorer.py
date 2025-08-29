@@ -22,7 +22,6 @@ class TestPmappingExploration(unittest.TestCase):
             PARENT_DIR / "mha.workload.yaml",
             PARENT_DIR / "mha.renames.yaml",
         )
-        spec.calculate_component_energy_area()
         sims, decompress_data = get_sims(spec)
 
     def test_mha_full(self):
@@ -33,7 +32,6 @@ class TestPmappingExploration(unittest.TestCase):
         ]
         paths = [PARENT_DIR / f"{config_name}.yaml" for config_name in config_names]
         spec = Specification.from_yaml(*paths)
-        spec.calculate_component_energy_area()
 
         sim_cache = make_sim_pickle_cache(config_names)
 
@@ -53,7 +51,6 @@ class TestPmappingExploration(unittest.TestCase):
             PARENT_DIR / "mha.workload.yaml",
             PARENT_DIR / "mha.renames.yaml",
         )
-        spec.calculate_component_energy_area()
 
         def tagger(pmapping):
             return get_one_split_tag(pmapping)
@@ -65,14 +62,12 @@ class TestPmappingExploration(unittest.TestCase):
             PARENT_DIR / "snowcat.arch.yaml",
             PARENT_DIR / "mobilenet_long.workload.yaml",
         )
-        spec.calculate_component_energy_area()
         config_names = [
             "snowcat.arch",
             "mobilenet_long.workload",
         ]
         paths = [PARENT_DIR / f"{config_name}.yaml" for config_name in config_names]
         spec = Specification.from_yaml(*paths)
-        spec.calculate_component_energy_area()
 
         sim_cache = make_sim_pickle_cache(config_names)
 
