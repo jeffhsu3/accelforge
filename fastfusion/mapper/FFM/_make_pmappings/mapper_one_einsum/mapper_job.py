@@ -2,7 +2,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 import logging
 from numbers import Number
-from typing import Callable, Optional
+from typing import Any, Callable, Optional
 from uuid import UUID
 
 import fastfusion.frontend.arch as arch
@@ -88,99 +88,104 @@ def make_compatibility(
             )
 
     compatibility = Compatibility(tensors=fzs(compatibility_reservations))
+    return compatibility, dict(
+        einsum=einsum,
+        fused_loops=fused_loops,
+        rank_variable_bounds=rank_variable_bounds,
+        loop_idx2reservations=loop_idx2reservations,
+        stride_and_halo=stride_and_halo,
+    )
 
-    def update_compatibility_with_tile_shapes(tile_shapes, tensor2size):
-        tile_shape_idx = 0
-        null_loop_indices: set[int] = set()
-        loops: list[tuple[str, int | TilePattern]] = []
-        for loop_idx, loop in enumerate(fused_loops):
-            rank_variable = loop.rank_variable
 
-            cur_tile_shape = tile_shapes[tile_shape_idx]
+def update_compatibility_with_tile_shapes(compatibility, tile_shapes, tensor2size, einsum,fused_loops, rank_variable_bounds, loop_idx2reservations, stride_and_halo):
+    tile_shape_idx = 0
+    null_loop_indices: set[int] = set()
+    loops: list[tuple[str, int | TilePattern]] = []
+    for loop_idx, loop in enumerate(fused_loops):
+        rank_variable = loop.rank_variable
 
-            prev_size = rank_variable_bounds[rank_variable]
-            if loop_idx > 0:
-                prev_loop = first(
-                    (l for l in loops[loop_idx-1::-1] if l[0] == rank_variable),
-                    None
-                )
-                if prev_loop is not None:
-                    prev_rank_var, prev_bound = prev_loop
-                    assert prev_rank_var == rank_variable
-                    if isinstance(prev_bound, TilePattern):
-                        prev_size = prev_bound.stride
-                    elif isinstance(prev_bound, Number):
-                        prev_size = prev_bound
+        cur_tile_shape = tile_shapes[tile_shape_idx]
+
+        prev_size = rank_variable_bounds[rank_variable]
+        if loop_idx > 0:
+            prev_loop = first(
+                (l for l in loops[loop_idx-1::-1] if l[0] == rank_variable),
+                None
+            )
+            if prev_loop is not None:
+                prev_rank_var, prev_bound = prev_loop
+                assert prev_rank_var == rank_variable
+                if isinstance(prev_bound, TilePattern):
+                    prev_size = prev_bound.stride
+                elif isinstance(prev_bound, Number):
+                    prev_size = prev_bound
+                else:
+                    raise RuntimeError('BUG')
+
+        if prev_size == cur_tile_shape:
+            null_loop_indices.add(loop_idx)
+
+        if loop.tile_shape is not None:
+            loops.append((rank_variable, cur_tile_shape))
+        elif loop.tile_pattern is not None:
+            loops.append((
+                rank_variable,
+                TilePattern(cur_tile_shape, tile_shapes[tile_shape_idx+1])
+            ))
+
+        tile_shape_idx += 1
+
+    tensors = []
+    for n_loops, reservations_at_level in loop_idx2reservations.items():
+        for reservation in reservations_at_level:
+            tensor = reservation.purpose
+            tensor_stride_and_halo = stride_and_halo[tensor]
+            rank_var2ranks = einsum.tensor_accesses[tensor].rank_variable2ranks
+
+            tensor_loops = []
+            for loop_idx, (rank_variable, rank_var_bound) in enumerate(loops[:n_loops]):
+                if loop_idx in null_loop_indices:
+                    continue
+
+                ranks = rank_var2ranks[rank_variable]
+                if len(ranks) > 1:
+                    raise NotImplementedError('co-iteration of ranks with one rank var.')
+                if len(ranks) == 0:
+                    raise NotImplementedError('recomputation')
+
+                rank = first(ranks)
+
+                stride, halo = tensor_stride_and_halo[(rank, rank_variable)]
+
+                if isinstance(rank_var_bound, Number):
+                    if halo == 0:
+                        rank_bound = int(rank_var_bound*stride)
                     else:
-                        raise RuntimeError('BUG')
+                        rank_bound = TilePattern(
+                            int(rank_var_bound*stride),
+                            int((rank_var_bound-1)*stride + halo)
+                        )
+                elif isinstance(rank_var_bound, TilePattern):
+                    rank_var_stride = rank_var_bound.stride
+                    rank_var_initial = rank_var_bound.initial
+                    rank_stride = rank_var_stride*stride
+                    rank_initial = (rank_var_initial-1)*stride + halo
+                    if rank_stride == rank_initial:
+                        rank_bound = int(rank_stride)  # regular tile
+                    else:
+                        rank_bound = TilePattern(int(rank_stride),
+                                                    int(rank_initial))
 
-            if prev_size == cur_tile_shape:
-                null_loop_indices.add(loop_idx)
+                tensor_loops.append(Loop(rank, rank_bound, isinstance(loop, Spatial)))
 
-            if loop.tile_shape is not None:
-                loops.append((rank_variable, cur_tile_shape))
-            elif loop.tile_pattern is not None:
-                loops.append((
-                    rank_variable,
-                    TilePattern(cur_tile_shape, tile_shapes[tile_shape_idx+1])
-                ))
-
-            tile_shape_idx += 1
-
-        tensors = []
-        for n_loops, reservations_at_level in loop_idx2reservations.items():
-            for reservation in reservations_at_level:
-                tensor = reservation.purpose
-                tensor_stride_and_halo = stride_and_halo[tensor]
-                rank_var2ranks = einsum.tensor_accesses[tensor].rank_variable2ranks
-
-                tensor_loops = []
-                for loop_idx, (rank_variable, rank_var_bound) in enumerate(loops[:n_loops]):
-                    if loop_idx in null_loop_indices:
-                        continue
-
-                    ranks = rank_var2ranks[rank_variable]
-                    if len(ranks) > 1:
-                        raise NotImplementedError('co-iteration of ranks with one rank var.')
-                    if len(ranks) == 0:
-                        raise NotImplementedError('recomputation')
-
-                    rank = first(ranks)
-
-                    stride, halo = tensor_stride_and_halo[(rank, rank_variable)]
-
-                    if isinstance(rank_var_bound, Number):
-                        if halo == 0:
-                            rank_bound = int(rank_var_bound*stride)
-                        else:
-                            rank_bound = TilePattern(
-                                int(rank_var_bound*stride),
-                                int((rank_var_bound-1)*stride + halo)
-                            )
-                    elif isinstance(rank_var_bound, TilePattern):
-                        rank_var_stride = rank_var_bound.stride
-                        rank_var_initial = rank_var_bound.initial
-                        rank_stride = rank_var_stride*stride
-                        rank_initial = (rank_var_initial-1)*stride + halo
-                        if rank_stride == rank_initial:
-                            rank_bound = int(rank_stride)  # regular tile
-                        else:
-                            rank_bound = TilePattern(int(rank_stride),
-                                                     int(rank_initial))
-
-                    tensor_loops.append(Loop(rank, rank_bound, isinstance(loop, Spatial)))
-
-                tensors.append(TensorReservation(
-                    reservation.purpose,
-                    tuple(tensor_loops),
-                    reservation.resource,
-                    size=tensor2size[reservation.purpose]
-                ))
-        compat = Compatibility(tensors=fzs(tensors))
-        # tags = tagger(compat)
-        # compat = compat.update(tags=tags)
-        return compat, null_loop_indices
-    return compatibility, update_compatibility_with_tile_shapes
+            tensors.append(TensorReservation(
+                reservation.purpose,
+                tuple(tensor_loops),
+                reservation.resource,
+                size=tensor2size[reservation.purpose]
+            ))
+    compatibility = Compatibility(tensors=fzs(tensors))
+    return compatibility, null_loop_indices
 
 
 @dataclass
@@ -200,7 +205,6 @@ class Job:
     tensor2boundless_compatibilities: dict[TensorName, set[Compatibility]] | None = None
     except_from_imperfect: set = frozenset()
     _compatibility: Compatibility | None = None
-    _update_compatibility_with_tile_shapes: Callable[[Sequence[Number], dict], Compatibility] | None = None
     memories_track_all: list[str] | None = None
     memories_track_pmappings_only: list[str] | None = None
     time_limit: float | int = float('inf')
@@ -211,6 +215,8 @@ class Job:
 
     total_pmappings: int | None = None
     valid_pmappings: int | None = None
+    
+    _update_compatibility_with_tile_shapes_args: dict[str, Any] | None = None
 
     @property
     def compatibility(self) -> Compatibility:
@@ -218,18 +224,22 @@ class Job:
             self._make_compatibility_and_updater()
         return self._compatibility
 
-    @property
-    def update_compatibility_with_tile_shapes(self) -> Callable[[Sequence[Number], dict], Compatibility]:
-        if self._update_compatibility_with_tile_shapes is None:
+    def update_compatibility_with_tile_shapes(self, tile_shapes: Sequence[Number], tensor2size: dict) -> Callable[[Sequence[Number], dict], Compatibility]:
+        if self._update_compatibility_with_tile_shapes_args is None:
             self._make_compatibility_and_updater()
-        return self._update_compatibility_with_tile_shapes
+        return update_compatibility_with_tile_shapes(
+            self._compatibility,
+            tile_shapes=tile_shapes,
+            tensor2size=tensor2size,
+            **self._update_compatibility_with_tile_shapes_args
+        )
 
     def _make_compatibility_and_updater(self):
         from fastfusion.model.looptree.reuse.summarized.symbolic import (
             quick_insert_reservation_nodes,
         )
         with_reservations = quick_insert_reservation_nodes(self)
-        self._compatibility, self._update_compatibility_with_tile_shapes = \
+        self._compatibility, self._update_compatibility_with_tile_shapes_args = \
             make_compatibility(with_reservations,
                                self.tagger,
                                self.intermediate_tensors,

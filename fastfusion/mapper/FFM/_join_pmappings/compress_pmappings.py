@@ -47,7 +47,7 @@ def _compress_pmapping_list(einsum_name: EinsumName, pmappings: list[SIM]) -> tu
         compressed.append(compress)
         decompress_data.append(decompress)
 
-    return compressed, pd.concat(decompress_data)
+    return compressed, decompress_data # pd.concat(decompress_data)
 
 
 def compress_einsum2pmappings(
