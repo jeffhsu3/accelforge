@@ -10,24 +10,23 @@ from fastfusion.util.util import parallel, delayed
 
 
 class DecompressData(NamedTuple):
-    data: dict[EinsumName, pd.DataFrame]
+    data: dict[EinsumName, dict[int, pd.DataFrame]]
 
 
 def _compress(einsum_name: EinsumName, pmappings: PmappingGroup, start_index: int) -> tuple["PmappingGroup", pd.DataFrame]:
     data = pmappings.data
     data.reset_index(drop=True, inplace=True)
-    data[f"{einsum_name}\0{COMPRESSED_INDEX}"] = data.index
     data.index += start_index
     keep_cols = [c for c in data.columns if col_used_in_pareto(c)]
     compress_cols = [c for c in data.columns if c not in keep_cols]
     compressed_data = data[keep_cols].copy()
-    decompress_data = data[compress_cols]
+    decompress_data = data[compress_cols].copy()
     compressed_data[f"{einsum_name}\0{COMPRESSED_INDEX}"] = data.index
     return PmappingGroup(compressed_data, skip_pareto=True), decompress_data
 
 
-def _compress_pmapping_list(einsum_name: EinsumName, pmappings: list[SIM]) -> tuple[list[PmappingGroup], pd.DataFrame]:
-    decompress_data = []
+def _compress_pmapping_list(einsum_name: EinsumName, pmappings: list[SIM]) -> tuple[list[PmappingGroup], dict[int, pd.DataFrame]]:
+    decompress_data = {}
     compressed = []
     start_index = 0
     jobs = []
@@ -36,18 +35,17 @@ def _compress_pmapping_list(einsum_name: EinsumName, pmappings: list[SIM]) -> tu
         compress, decompress = _compress(einsum_name, pmappings.mappings, start_index)
         compress = SIM(pmappings.compatibility, compress)
         compressed.append(compress)
-        decompress_data.append(decompress)
-        return compress, decompress
+        return compress, decompress, start_index
 
     for pmapping in pmappings:
         jobs.append(delayed(job)(start_index, pmapping))
         start_index += len(pmapping.mappings.data)
 
-    for compress, decompress in parallel(jobs, n_jobs=1):
+    for compress, decompress, start_index in parallel(jobs, n_jobs=1):
         compressed.append(compress)
-        decompress_data.append(decompress)
+        decompress_data[start_index] = decompress
 
-    return compressed, decompress_data # pd.concat(decompress_data)
+    return compressed, decompress_data  # pd.concat(decompress_data)
 
 
 def compress_einsum2pmappings(
@@ -81,6 +79,20 @@ def decompress_pmappings(
 ) -> PmappingGroup:
     data = pmappings.data
     for einsum_name, decompress in decompress_data.data.items():
+        index2row = {}
+        for i in data[f"{einsum_name}\0{COMPRESSED_INDEX}"]:
+            if i in index2row:
+                continue
+            chosen = None
+            for start_index, cur_decompress in decompress.items():
+                if start_index > i:
+                    break
+                chosen = cur_decompress
+            assert chosen is not None, f"Start index {start_index}, decompress {list(decompress.keys())}"
+            chosen = chosen[chosen.index == i]
+            assert len(chosen) == 1, f"Expected 1 row, got {len(chosen)}"
+            index2row[i] = chosen
+        decompress = pd.concat(index2row.values())
         data = pd.merge(
             data,
             decompress,
@@ -88,6 +100,7 @@ def decompress_pmappings(
             right_index=True,
             how="left",
         )
+
         # Remove compressed_index columns that may have been created during
         # merge
     compressed_index_cols = [
