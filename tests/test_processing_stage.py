@@ -7,7 +7,7 @@ from fastfusion.frontend.arch import Arch
 from fastfusion.frontend.mapping import Mapping
 from fastfusion.frontend.workload import Workload
 
-from fastfusion.mapper.metrics import Metrics
+from fastfusion.frontend.mapper.metrics import Metrics
 from fastfusion.model.looptree.accesses import isl_buffer_accesses_from_buffet_actions, Accesses
 from fastfusion.model.looptree.energy import gather_actions
 from fastfusion.model.looptree.latency import get_latency

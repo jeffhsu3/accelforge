@@ -10,7 +10,7 @@ from fastfusion.mapper.FFM._pmapping_group import (
     nameloop2col,
 )
 
-from fastfusion.mapper.metrics import Metrics
+from fastfusion.frontend.mapper.metrics import Metrics
 from fastfusion.mapper.FFM._make_pmappings.tile_shape_exploration import (
     explore_tile_shapes,
 )

@@ -44,7 +44,7 @@ class AreaEntry(ParsableModel):
         else:
             class_name = class_name if isinstance(class_name, str) else class_name()
             try:
-                definition = spec.component_classes.component_classes[class_name]
+                definition = spec.components.components[class_name]
             except KeyError:
                 pass
 

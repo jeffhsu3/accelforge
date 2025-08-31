@@ -4,4 +4,4 @@ from fastfusion.mapper.FFM._interface.main import (
     MultiEinsumPmappings,
     Mappings,
 )
-from fastfusion.mapper.metrics import Metrics
+from fastfusion.frontend.mapper.metrics import Metrics

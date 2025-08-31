@@ -169,7 +169,7 @@ def eval_set_expression(
             raise ValueError(
                 f"Expected {expected_count=} elements, got {len(result)}: {result.instance}"
             )
-        if result.space_name != expected_space_name:
+        if expected_space_name is not None and result.space_name != expected_space_name:
             raise ValueError(
                 f'Returned a set with space name "{result.space_name}", '
                 f'expected "{expected_space_name}"'

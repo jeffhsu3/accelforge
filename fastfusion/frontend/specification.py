@@ -5,7 +5,7 @@ from fastfusion.frontend.arch import Compute, Leaf, Component, Arch
 from fastfusion.frontend.constraints import Constraints
 from fastfusion.frontend.workload import Workload
 from fastfusion.frontend.variables import Variables
-from fastfusion.frontend.component_classes import Components
+from fastfusion.frontend.components import Components
 from fastfusion.frontend.config import Config, get_config
 from fastfusion.frontend.component_area import ComponentArea, AreaEntry
 from fastfusion.frontend.component_energy import ComponentEnergy, EnergyEntry
@@ -18,7 +18,7 @@ from fastfusion.util.basetypes import ParsableModel
 
 class Specification(ParsableModel):
     arch: Arch = Arch()
-    component_classes: Components = Components()
+    components: Components = Components()
     constraints: Constraints = Constraints()
     mapping: Mapping = Mapping()
     workload: Workload = Workload()

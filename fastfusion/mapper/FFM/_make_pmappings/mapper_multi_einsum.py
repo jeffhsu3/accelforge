@@ -14,7 +14,7 @@ from fastfusion.frontend.workload._isl import get_rank_variable_bounds
 from fastfusion.frontend.workload.workload import EinsumName, TensorName
 
 from fastfusion.mapper.FFM._make_pmappings.mapper_one_einsum.mapper_one_einsum import generate_pmappings
-from fastfusion.mapper.metrics import Metrics
+from fastfusion.frontend.mapper.metrics import Metrics
 from fastfusion.mapper.FFM._make_pmappings.mapper_one_einsum import get_single_einsum_jobs
 from fastfusion.mapper.FFM._join_pmappings.mappinginfo import Compatibility
 from fastfusion.mapper.FFM._join_pmappings.sim import SIM

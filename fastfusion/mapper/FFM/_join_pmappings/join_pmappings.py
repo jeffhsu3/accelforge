@@ -6,7 +6,7 @@ from fastfusion.accelerated_imports import pd
 from fastfusion.frontend import arch
 from fastfusion.frontend.specification import Specification
 from fastfusion.frontend.workload import Einsum
-from fastfusion.mapper.metrics import Metrics
+from fastfusion.frontend.mapper.metrics import Metrics
 from fastfusion.mapper.FFM._join_pmappings.sim import SIM, Loop, Compatibility
 from fastfusion.mapper.FFM._pmapping_group import PmappingGroup
 from fastfusion.util import fzs, parallel, debugger_active

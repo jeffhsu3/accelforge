@@ -22,7 +22,7 @@ from fastfusion.frontend.workload.workload import (
     RankName,
 )
 
-from fastfusion.mapper import metrics
+from fastfusion.frontend.mapper import Metrics
 from fastfusion.mapper.FFM._join_pmappings.mappinginfo import (
     Compatibility,
     Loop,
@@ -192,7 +192,7 @@ def update_compatibility_with_tile_shapes(compatibility, tile_shapes, tensor2siz
 class Job:
     spec: Specification
     tagger: Callable[[Mapping], Tags]
-    metrics: metrics.Metrics
+    metrics: Metrics
     job_id: UUID
     rank_variable_bounds: dict[RankVariableName, int]
     stride_and_halo: dict[TensorName, dict[tuple[RankName, RankVariableName], tuple[int, int]]] | None = None
@@ -343,7 +343,7 @@ class SameSpecJobs(list[Job]):
         return first(self).tagger
 
     @property
-    def metrics(self) -> metrics.Metrics:
+    def metrics(self) -> Metrics:
         return first(self).metrics
 
 

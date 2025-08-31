@@ -27,7 +27,7 @@ from fastfusion.util.basetypes import (
 )
 from fastfusion.util.parse_expressions import ParseError, parse_expression
 
-from .component_classes import ComponentAttributes, SubcomponentAction
+from .components import ComponentAttributes, SubcomponentAction
 from . import constraints
 from fastfusion.version import assert_version, __version__
 from pydantic import Discriminator

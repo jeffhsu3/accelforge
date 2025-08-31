@@ -401,8 +401,8 @@ def parse_field(field, value, validator, symbol_table, parent, **kwargs):
             target_any = target_type is Any or isinstance(target_type, tuple) and Any in target_type
             if not target_any and not isinstance(parsed, target_type):
                 raise ParseError(
-                    f"{value} parsed to {parsed} with type {type(parsed).__name__}. "
-                    f"Expected {target_type}.",
+                    f"{value} parsed to \"{parsed}\" with type {type(parsed).__name__}."
+                    f" Expected {target_type}.",
                 )
             return parsed
         elif isinstance(value, Parsable):

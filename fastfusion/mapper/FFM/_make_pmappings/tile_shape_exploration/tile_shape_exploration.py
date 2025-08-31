@@ -23,7 +23,6 @@ from fastfusion.frontend.workload._isl import get_rank_variable_bounds
 from fastfusion.frontend.workload._symbolic import get_stride_and_halo
 from fastfusion.frontend.mapping import Iteration, MappingNode, Temporal, Spatial, TensorHolder, Pattern
 
-from fastfusion.mapper import metrics
 from fastfusion.mapper.FFM._make_pmappings.contraints.constraints import MappingConstraints
 from fastfusion.mapper.FFM._make_pmappings.mapper_one_einsum.mapper_job import Job
 from fastfusion.model.looptree.reuse.summarized.symbolic import analyze_reuse_and_add_reservations_to_mapping
@@ -31,7 +30,7 @@ from fastfusion.model.looptree.energy import compute_energy_from_actions, gather
 from fastfusion.model.looptree.latency import get_latency
 
 from fastfusion.mapper.FFM._pmapping_group import nameloop2col, tensor2col
-from fastfusion.mapper.metrics import Metrics
+from fastfusion.frontend.mapper.metrics import Metrics
 
 class GivenShape(int):
     def __str__(self):

@@ -92,4 +92,4 @@ class CompoundComponent(ParsableModel):
 # top-level components are non-parsable.
 class Components(NonParsableModel):
     version: Annotated[str, assert_version] = __version__
-    component_classes: ParsableList[CompoundComponent] = ParsableList()
+    components: ParsableList[CompoundComponent] = ParsableList()

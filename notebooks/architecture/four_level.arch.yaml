@@ -30,6 +30,7 @@ arch:
     constraints:
       tensors:
         keep: ~MainMemory.tensors() | input | output
+        no_refetch_from_above: All() if ~MainMemory.tensors() else Nothing()
 
   - !Memory
     name: LocalBuffer
@@ -63,7 +64,7 @@ arch:
 
   - !Memory
     name: Register
-    spatial: [{name: X, fanout: 128}, {name: Y, fanout: 128}]
+    spatial: [{name: X, fanout: 128}] #, {name: Y, fanout: 128}]
     attributes:
       _size: 8 # 8b
       _datawidth: 8

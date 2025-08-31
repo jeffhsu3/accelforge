@@ -1,13 +1,12 @@
 import re
 from itertools import product
 
-from pydantic_core import CoreSchema
 from fastfusion.util.basetypes import ParsableDict, ParsableList, ParsableModel
 from fastfusion.util.parse_expressions import ParseError
 from fastfusion.util.setexpressions import InvertibleSet, eval_set_expression
 from fastfusion.version import assert_version, __version__
-from typing import Annotated, Any, Callable, TypeAlias, Union
-from pydantic_core.core_schema import CoreSchema, chain_schema, no_info_plain_validator_function
+from typing import Annotated, TypeAlias, Union
+from fastfusion.frontend.renames import EinsumName, RankVariableName, Rename, RenameList, Renames, TensorName, RankName, rename_list_factory
 
 
 CLIST_OPERATORS = [
@@ -27,10 +26,6 @@ ISL_REGEX = re.compile(
     r"\b(?!(?:" + "|".join(CLIST_OPERATORS) + r")\b)[a-zA-Z#$@][a-zA-Z0-9_]*\b"
 )
 
-TensorName: TypeAlias = str
-RankVariableName: TypeAlias = str
-RankName: TypeAlias = str
-EinsumName: TypeAlias = str
 
 SymbolTable: TypeAlias = dict[str, InvertibleSet]
 
@@ -152,6 +147,12 @@ class Einsum(ParsableModel):
     tensor_accesses: ParsableList[TensorAccess]
     shape: Shape[str] = Shape()
     is_copy_operation: bool = False
+    renames: RenameList[Rename] = RenameList()
+    
+    def __init__(self, *args, **kwargs):
+        if "renames" in kwargs:
+            kwargs["renames"] = rename_list_factory(kwargs["renames"])
+        super().__init__(*args, **kwargs)
 
     @property
     def rank_variables(self) -> set[RankVariableName]:
@@ -319,9 +320,9 @@ class Workload(ParsableModel):
     #     return md.Mermaid(graph)
 
     def get_constraint_symbol_table(
-        self, 
+        self,
         einsum_name: EinsumName,
-        renames: Union["Renames", None] = None,
+        renames: Union[Renames, None] = None,
     ) -> SymbolTable:
         """
         Return a table that maps symbols (e.g., Nothing, All, Inputs) to
@@ -373,12 +374,23 @@ class Workload(ParsableModel):
             "Einsum": einsum_name,
             "Einsum_Object": einsum,
         }
+        
+        taken_renames = set()
+        for rename in self.einsums[einsum_name].renames:
+            symbol_table[rename.name] = eval_set_expression(
+                rename.source,
+                symbol_table,
+                None,
+                f"Einsum {einsum_name} renames",
+                rename.expected_count,
+            )
+            taken_renames.add(rename.name)
 
         if renames is not None:
             rename = renames.get_renames_for_einsum(einsum_name)
             for rename_tensor in rename.tensor_accesses:
-                einsum.output_tensors()
-                name = rename_tensor.name
+                if (name := rename_tensor.name) in taken_renames:
+                    continue
                 source = rename_tensor.source
                 expected_count = rename_tensor.expected_count
                 try:
@@ -387,7 +399,8 @@ class Workload(ParsableModel):
                     e.add_field(einsum_name)
                     raise
             for rename_rank_variable in rename.rank_variables:
-                name = rename_rank_variable.name
+                if (name := rename_rank_variable.name) in taken_renames:
+                    continue
                 source = rename_rank_variable.source
                 expected_count = rename_rank_variable.expected_count
                 try:

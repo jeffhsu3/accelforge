@@ -4,7 +4,7 @@ import pickle
 from fastfusion import Specification
 from fastfusion.mapper.FFM.ffm import make_pmappings, join_pmappings
 from fastfusion.mapper.FFM.deprecate_maybe.mapping_filter_tags import get_one_split_tag, get_ffmt_tag
-from fastfusion.mapper.metrics import Metrics
+from fastfusion.frontend.mapper.metrics import Metrics
 
 
 ARCH_DIR          = Path('architecture/')

@@ -1,6 +1,6 @@
 import copy
 from typing import Callable, Union, Annotated
-from fastfusion.frontend.component_classes import ComponentAttributes
+from fastfusion.frontend.components import ComponentAttributes
 from fastfusion.version import assert_version, __version__
 from fastfusion.util.basetypes import ParsableModel, ParsableList, ParsesTo
 from hwcomponents import get_energy
@@ -34,7 +34,7 @@ class Action(ParsableModel):
 
         definition = None
         try:
-            definition = spec.component_classes.component_classes[class_name]
+            definition = spec.components.components[class_name]
         except KeyError:
             pass
                 
@@ -65,7 +65,7 @@ class Action(ParsableModel):
         else:
             class_name = class_name if isinstance(class_name, str) else class_name()
             try:
-                definition = spec.component_classes.component_classes[class_name]
+                definition = spec.components.components[class_name]
             except KeyError:
                 pass
             if definition is not None:
