@@ -80,15 +80,16 @@ def decompress_pmappings(
     data = pmappings.data
     for einsum_name, decompress in decompress_data.data.items():
         decompress_sub_dfs = []
-        decompress_iter = iter(decompress.items())
+        # We reverse it because we have the start index of each sub df, but we need the
+        # end index so we know when to change to the next 
+        decompressed_iter = reversed(decompress.items())
         start_index, chosen = float("inf"), None
-        for i in sorted(set(data[f"{einsum_name}\0{COMPRESSED_INDEX}"])):
-            while chosen is None or i > start_index:
-                start_index, chosen = next(decompress_iter)
-            assert chosen is not None, f"Start index {start_index}, decompress {list(decompress.keys())}"
-            chosen = chosen[chosen.index == i]
-            assert len(chosen) == 1, f"Expected 1 row, got {len(chosen)}"
-            decompress_sub_dfs.append(chosen)
+        for i in reversed(sorted(set(data[f"{einsum_name}\0{COMPRESSED_INDEX}"]))):
+            while chosen is None or i < start_index:
+                start_index, chosen = next(decompressed_iter)
+            cur_chosen = chosen[chosen.index == i]
+            assert len(cur_chosen) == 1, f"Expected 1 row, got {len(cur_chosen)}. Index {i}, start index {start_index}, chosen {list(chosen.index)}"
+            decompress_sub_dfs.append(cur_chosen)
         data = pd.merge(
             data,
             pd.concat(decompress_sub_dfs),
