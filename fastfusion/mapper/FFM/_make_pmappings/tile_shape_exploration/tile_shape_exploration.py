@@ -522,7 +522,7 @@ def generate_tile_shapes(
             good_choices
         )
 
-    def greedily_maximize_reuse(rank_var_and_choices_a, other_rank_var_and_choices):
+    def _greedily_maximize_reuse(rank_var_and_choices_a, other_rank_var_and_choices):
         rank_a, index_a, is_symbol_a, choices_a = rank_var_and_choices_a
 
         # Check if completed loops are:
@@ -637,7 +637,7 @@ def generate_tile_shapes(
 
         return best_reduction if _recursed else best_index
 
-    if not specification.mapper.ffm.greedily_maximize_reuse:
+    if not specification.mapper.ffm._greedily_maximize_reuse:
         # Start combining from the loop with the fewest choices
         _, fewest_index = min(
             ((x[-1].shape[0], i) for i, x in enumerate(rank_var_and_choices))
@@ -695,7 +695,7 @@ def generate_tile_shapes(
 
             # If we've just finished processing all loops that affect a memory, then
             # save only the ones with the pareto-largest tile shapes and spatial utilization
-            rank_var_and_choices.append(greedily_maximize_reuse(rank_var_and_choices.pop(-1), rank_var_and_choices))
+            rank_var_and_choices.append(_greedily_maximize_reuse(rank_var_and_choices.pop(-1), rank_var_and_choices))
 
     combined_choices = rank_var_and_choices[0][-1]
     is_symbol = rank_var_and_choices[0][2]

@@ -126,7 +126,7 @@ def get_jobs(
     )
     time_limit = min(
         spec.mapper.ffm.time_limit * n_procs / max(total_jobs, 1),
-        spec.mapper.ffm.time_limit_per_bypass_choice
+        spec.mapper.ffm.time_limit_per_pmapping_template
     )
     for einsum_name, compatibility_jobs in einsum2jobs.items():
         total_jobs = sum(len(j) for j in compatibility_jobs.values())
