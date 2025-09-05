@@ -325,6 +325,7 @@ def analyze_reuse_and_add_reservations_to_mapping(
     workload = job.spec.workload
     einsum_name = mapping[-1].einsum
     einsum_shape = get_rank_variable_bounds(workload, einsum_name)
+    symbols = insert_sympy_symbols(mapping)
 
     is_copy_operation = workload.einsums[einsum_name].is_copy_operation
     if is_copy_operation:
@@ -359,10 +360,9 @@ def analyze_reuse_and_add_reservations_to_mapping(
         is_copy_operation=is_copy_operation,
         job=job,
     )
-    symbols = insert_sympy_symbols(mapping)
 
     insert_reservation_nodes(mapping, info)
-    
+
     result = analyze_node(0, einsum_shape, info)
 
     result.symbols = symbols
@@ -1007,12 +1007,14 @@ def insert_sympy_symbols(mapping):
     for node in mapping:
         if isinstance(node, Spatial) or isinstance(node, Temporal):
             if node.tile_shape == SYMBOL:
-                node.tile_shape = sympy.symbols(f'tileshape{loop_idx}', positive=True, integer=True)
+                node.tile_shape = sympy.symbols(f'tile_shape{loop_idx}', positive=True, integer=True)
                 symbols.append(node.tile_shape)
             elif node.loop_bound == SYMBOL:
-                node.loop_bound = sympy.symbols(f'loopbound{loop_idx}', positive=True, integer=True)
+                # TODO: This won't work with mapping visualization
+                node.loop_bound = sympy.symbols(f'loop_bound{loop_idx}', positive=True, integer=True)
                 symbols.append(node.loop_bound)
             elif node.tile_pattern == SYMBOL:
+                # TODO: This won't work with mapping visualization
                 node.tile_pattern = Pattern(stride=0)
                 node.tile_pattern.stride = sympy.symbols(f'stride{loop_idx}', positive=True, integer=True)
                 node.tile_pattern.initial_tile_shape = sympy.symbols(f'initial{loop_idx}', positive=True, integer=True)

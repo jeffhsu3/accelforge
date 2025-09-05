@@ -146,7 +146,7 @@ class Einsum(ParsableModel):
     shape: Shape[str] = Shape()
     is_copy_operation: bool = False
     renames: RenameList[Rename] = RenameList()
-    
+
     def __init__(self, *args, **kwargs):
         if "renames" in kwargs:
             kwargs["renames"] = rename_list_factory(kwargs["renames"])
