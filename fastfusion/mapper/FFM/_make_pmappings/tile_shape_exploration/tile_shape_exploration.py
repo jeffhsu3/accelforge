@@ -905,6 +905,10 @@ def run_model(job: Job):
     if metrics & Metrics.LATENCY:
         df[f'Total\0latency'] = overall_latency * spec.arch.global_cycle_period
         df[f'latency\0compute'] = comp_latency * spec.arch.global_cycle_period
+        # For first latency, we'll follow the convention of treating compute
+        # as a component, similarly to memory (see below).
+        for compute_level, stats in reuse.compute_stats.items():
+            df[f'first\0latency\0{compute_level}'] = stats.max_first_latency
         for component, latency in mem_latency.items():
             df[f'latency\0{component}'] = latency * spec.arch.global_cycle_period
 
