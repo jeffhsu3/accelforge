@@ -287,12 +287,12 @@ class AnalysisInfo:
     tensor_to_relevancy: dict
     tensor_to_backer_id: dict[TensorName, int]
 
-    # We track first latency for these nodes (should be Temporal)
-    ids_to_track_first_latency: set[int]
-
     is_copy_operation: TensorName | None
     
     job: Job
+
+    # We track first latency for these nodes (should be Temporal)
+    ids_to_track_first_latency: set[int] = field(default_factory=set)
 
 def quick_insert_reservation_nodes(job: Job) -> list[MappingNode]:
     mapping = list(job.mapping.nodes)
@@ -585,6 +585,7 @@ def analyze_temporal(node_idx,
     first_latency = None
 
     def handle_repeated_value(repeated_shape):
+        nonlocal first_latency
         shape_value = repeated_shape.value
         shape_repeats = repeated_shape.repeats
 
