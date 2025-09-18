@@ -24,7 +24,7 @@ from fastfusion.frontend.specification import Specification
 from fastfusion.frontend.workload import Workload
 from fastfusion.frontend.workload._isl import get_rank_variable_bounds
 from fastfusion.frontend.workload._symbolic import get_stride_and_halo
-from fastfusion.frontend.mapping import Iteration, Mapping, MappingNode, Temporal, Spatial, TensorHolder, TilePattern
+from fastfusion.frontend.mapping import Iteration, MappingNode, Temporal, Spatial, TensorHolder, TilePattern
 
 from fastfusion.mapper.FFM._make_pmappings.contraints.constraints import MappingConstraints
 from fastfusion.mapper.FFM._make_pmappings.mapper_one_einsum.mapper_job import Job
@@ -110,11 +110,11 @@ def _explore_tile_shapes_old(job: "Job"):
 
     set_last_tile_shape_to_one(pmapping)
 
-    symbols, symbolic_df, per_memory_usage_df, utilization_df = run_model(job)
+    symbols, symbolic_df, per_memory_occupancy_df, utilization_df = run_model(job)
 
     try:
         compiled_df = compile_dict(symbols, symbolic_df)
-        compiled_per_memory_usage_df = compile_dict(symbols, per_memory_usage_df)
+        compiled_per_memory_occupancy_df = compile_dict(symbols, per_memory_occupancy_df)
         compiled_utilization_df = compile_dict(symbols, utilization_df)
     except Exception as e:
         print('Compilation failed for this mapping:')
@@ -127,7 +127,7 @@ def _explore_tile_shapes_old(job: "Job"):
     tile_shapes, is_symbol = generate_tile_shapes(
         pmapping,
         constraints,
-        compiled_per_memory_usage_df,
+        compiled_per_memory_occupancy_df,
         compiled_utilization_df,
         specification,
         job
@@ -745,7 +745,7 @@ def collect_tiling_segments(
                 raise NotImplementedError(f'Unsupported tile shape {tile_shape}')
 
             loop_idx += 1
-
+            
     for rank_var, tiling_segment in rank_var_to_tiling_segments.items():
         tiling_segment.finish()
 
@@ -825,7 +825,7 @@ def set_last_tile_shape_to_one(pmapping):
             rank_var_to_last_node[node.rank_variable] = node
 
     for last_node in rank_var_to_last_node.values():
-        last_node.initial_tile_shape = None
+        last_node.initial_tile_shape = 1
         last_node.stride = 1
 
 
@@ -833,6 +833,7 @@ def run_model(job: Job):
     pmapping = job.mapping
     spec = job.spec
     metrics = job.metrics
+    track_memories = job.memories_track_all + job.memories_track_pmappings_only
     is_copy_op = job.is_copy_operation
     workload = spec.workload
     ert = spec.component_energy
@@ -896,7 +897,7 @@ def run_model(job: Job):
         for n_loop in range(max_n_loops):
             if n_loop in occupancies:
                 running_total += occupancies[n_loop]
-                if True or memory in job.memories_track_all:
+                if memory in track_memories:
                     df[nameloop2col(memory, n_loop)] = running_total
 
     if metrics & Metrics.LATENCY:
@@ -1066,13 +1067,6 @@ class Goal:
         else:
             return copy.copy(self)
 
-    def __eq__(self, other: "Goal"):
-        return (
-            isinstance(other, Goal) and
-            self.goal == other.goal and
-            self.max_value == other.max_value and
-            self.only_care_if_valid == other.only_care_if_valid
-        )
 
 def get_denoms(f: sympy.Expr) -> list[sympy.Expr]:
     denoms = []
@@ -1332,18 +1326,16 @@ def check_max_fused_loops_per_rank(
         if isinstance(x, Symbol):
             x = choices_enumerated[:, symbols_enumerated.index(x)]
         return x
-    
-    def can_check(x: Union[Symbol, int]):
-        return not isinstance(x, Symbol) or x in symbols_enumerated
-    
+
     for group in max_fused_loops_per_rank_check_groups:
-        if len(group) <= max_fused_loops_per_rank + 1:
+        max_n = sum(k in symbols_enumerated or isinstance(k, Number) for k in group) - 1
+        if max_n <= max_fused_loops_per_rank:
             continue
 
         n = 0
         for i, a in enumerate(group[:-1]):
             b = group[i + 1]
-            if not (can_check(a) and can_check(b)):
+            if a not in symbols_enumerated or b not in symbols_enumerated:
                 continue
             n += get_size(a) != get_size(b)
         if isinstance(n, np.ndarray):
@@ -1352,125 +1344,6 @@ def check_max_fused_loops_per_rank(
             choices_enumerated = choices_enumerated[0:0, :]
 
     return choices_enumerated
-
-
-def coalesce_symbols(
-    symbols: list[Symbol],
-    update_symbol2goal: Callable,
-    symbols_enumerated: list[Symbol],
-    symbol2goal: dict[Symbol, Goal],
-    log_message: Callable,
-):
-    sym_enumerated_set = set(symbols_enumerated)
-    new_symbol2goal = {}
-
-    log_message("coalesce symbols", f"initial")
-    for s, g in symbol2goal.items():
-        log_message(f"\t{g.goal}: {s}")
-
-    changed = True
-    while changed:
-        new_symbol2goal = {}
-
-        def latest(s=None):
-            if s is None:
-                x = dict(symbol2goal)
-                x.update(new_symbol2goal)
-                return x
-            return new_symbol2goal[s] if s in new_symbol2goal else symbol2goal[s]
-            
-        
-        for formula, goal in list(symbol2goal.items()):
-            # Not dependent on any enumerated symbols, so drop it
-            if not formula.free_symbols & sym_enumerated_set:
-                log_message("coalesce symbols", f"dropping constant: {formula}")
-                continue
-            
-            # It is an enumerated symbol, so just keep it
-            if formula in symbols_enumerated:
-                update_symbol2goal(formula, goal, new_symbol2goal)
-                continue
-            
-            # If it's a function of a non-enumerated symbol or a symbol that we can't
-            # compare and the derivative of the formula WRT the symbol does not change
-            # sign (i.e., the formula is monotonic WRT the symbol), then we can drop it
-            # because it won't affect comparisons. 
-            for s in formula.free_symbols:
-                goal_str = latest(s).goal if s in latest() else None
-                # If we don't know the symbol yet, we can't compare it
-                if s not in symbols_enumerated:
-                    goal_str = "diff"
-
-                try:
-                    diffed = sympy.diff(formula, s)
-                    # it anyway or we can't compare this symbol, we don't need to
-                    # include it here.
-                    if (diffed < 0 or diffed > 0 or diffed == 0) and goal_str == "diff":
-                        log_message("coalesce symbols", f"dropping symbol {s}: {formula}")
-                        formula = formula.subs(s, 1)
-                except TypeError:
-                    pass
-
-            # If there's only one symbol in the formula, we can try to replace it with
-            # just the symbol.
-            if len(formula.free_symbols & sym_enumerated_set) == 1:
-                prev = formula
-                formula, goal = _try_replace_single_term(formula, fzs(symbols_enumerated))
-                if goal is not None:
-                    log_message("coalesce symbols", f"replacing single term: {formula}")
-                    update_symbol2goal(formula, goal, new_symbol2goal)
-                    continue
-
-            # If we're a fraction and all of our symbols are in the denominator, replace
-            # it with the reciprocal and change the goal
-            if isinstance(formula, sympy.Mul):
-                for term in formula.args:
-                    if len(term.free_symbols) == 0:
-                        continue
-                    if isinstance(term, sympy.Pow) and term.args[1] == -1:
-                        continue
-                    break
-                else:
-                    log_message("coalesce symbols", f"replacing reciprocal: {formula}")
-                    formula = 1 / formula
-                    goal = ~goal
-                    
-            # If a formula agrees entirely with other goals, then we can remove it
-            disagrees = []
-            for s in formula.free_symbols:
-                g = latest(s).goal if s in latest() else None
-                if g in ["min", "max"]:
-                    try:
-                        diffed = sympy.diff(formula, s)
-                        if diffed > 0:
-                            if g == goal.goal:
-                                disagrees.append(s)
-                            continue
-                        if diffed < 0:
-                            if g != goal.goal:
-                                disagrees.append(s)
-                            continue
-                    except TypeError:
-                        diffed = None
-                break
-            else:
-                # We didn't break! This formula agrees with all other goals, so we can
-                # remove it.
-                log_message("coalesce symbols", f"removing formula that agrees with all other goals: {formula}")
-                for s in disagrees:
-                    log_message("coalesce symbols", f"previous formula disagreed with {s}. Changing goal to diff")
-                    update_symbol2goal(s, Goal("diff"), new_symbol2goal)
-                continue
-            update_symbol2goal(formula, goal, new_symbol2goal)
-
-        changed = symbol2goal != new_symbol2goal
-        symbol2goal = new_symbol2goal
-
-    log_message("coalesce symbols", f"final")
-    for s, g in symbol2goal.items():
-        log_message(f"\t{g.goal}: {s}")
-    
-    return symbol2goal
 
 def get_tile_shape_choices(
     objectives: list[Objective],
@@ -1509,7 +1382,6 @@ def get_tile_shape_choices(
     log = []
     def log_message(message: str, *args: str):
         log.append(f"{time.time() - prev_time:.2f}s: {message} {' '.join(args)}")
-        # print(f"{time.time() - prev_time:.2f}s: {message} {' '.join(args)}")
         time_end(message)
 
     log_message("init")
@@ -1572,6 +1444,8 @@ def get_tile_shape_choices(
         prev_size = choices_enumerated.shape[0]
         choices_enumerated = check_max_fused_loops_per_rank(symbols, symbols_enumerated, choices_enumerated, max_fused_loops_per_rank_check_groups, max_fused_loops_per_rank)
         job.log_porp_pmappings_kept(f"max_fused_loops_per_rank", choices_enumerated.shape[0] / prev_size)
+        if prev_size > choices_enumerated.shape[0]:
+            print(f"Max fused loops pruned to {choices_enumerated.shape[0] / prev_size:.2%}")
         log_message("max_fused_loops_per_rank", f"size={choices_enumerated.shape[0]}")
 
 
@@ -1638,18 +1512,43 @@ def get_tile_shape_choices(
                 update_symbol2goal(symbol, goal)
 
         job.evaluated_pmappings += choices_enumerated.shape[0]
-        if not choices_enumerated.shape[0]:
-            return np.array([]).reshape(-1, len(symbols))
 
         symbol2goal_before = dict(symbol2goal)
 
-        symbol2goal = coalesce_symbols(
-            symbols=symbols,
-            symbols_enumerated=symbols_enumerated,
-            symbol2goal=symbol2goal,
-            update_symbol2goal=update_symbol2goal,
-            log_message=log_message,
-        )
+        changed = True
+        new_symbol2goal = {}
+        while changed:
+            changed = False
+            new_symbol2goal = {}
+            for formula, goal in list(symbol2goal.items()):
+                log_message("coalesce symbols", f"{formula}")
+                if not formula.free_symbols & sym_enumerated_set:
+                    changed = True
+                    continue
+                log_message("coalesce symbols constant check", f"{formula}")
+                if formula in symbols_enumerated:
+                    update_symbol2goal(formula, goal, new_symbol2goal)
+                    continue
+                for s in formula.free_symbols:
+                    if symbol2goal.get(s, Goal()).goal == "diff" or s not in symbols_enumerated:
+                        try:
+                            diffed = sympy.diff(formula, s)
+                            if diffed < 0 or diffed > 0 or diffed == 0:
+                                formula = formula.subs(s, 1)
+                                changed = True
+                        except TypeError:
+                            pass
+                if len(formula.free_symbols & sym_enumerated_set) == 1:
+                    prev = formula
+                    formula, goal = _try_replace_single_term(formula, fzs(symbols_enumerated))
+                    if goal is not None:
+                        update_symbol2goal(formula, goal, new_symbol2goal)
+                        continue
+                update_symbol2goal(formula, goal, new_symbol2goal)
+            symbol2goal = new_symbol2goal
+
+        if not choices_enumerated.shape[0]:
+            return np.array([]).reshape(-1, len(symbols))
 
         log_message("coalesce symbols", f"{symbol2goal}")
 
@@ -1657,6 +1556,10 @@ def get_tile_shape_choices(
         if any(p.issubset(paretoed_by_key) for p in paretoed_by):
             continue
         
+        # Imperfect scales much more quickly so we'd want to Pareto more aggressively
+        # if choices_enumerated.shape[0] < 1e5 and not imperfect:
+        #     continue
+
         objective_values = {}
         for formula, goal in list(symbol2goal.items()):
             objective_values[formula] = eval_objective(formula, choices_enumerated)
@@ -1666,14 +1569,17 @@ def get_tile_shape_choices(
         if not objective_values:
             # Objective values don't depend on tile shapes
             choices_enumerated = choices_enumerated[:1,:]
-        elif not all(symbol2goal.get(s, None) == Goal("diff") for s in symbols_enumerated):
+        elif not all(symbol2goal.get(s, Goal()) == "diff" for s in symbols_enumerated):
             to_pareto = np.concatenate([v.reshape(-1, 1) for v in objective_values.values()], axis=1)
-            log_message("Pareto", f"size {to_pareto.shape[0]}", "with objectives:")
-            for obj in objectives:
-                log_message(f"\t{obj.name}: {obj.formula}")
-            log_message("Formulas:")
-            for formula, goal in symbol2goal.items():
-                log_message(f"\t{goal.goal}: {formula}")
+
+            # print(f'Symbols enumerated: {symbols_enumerated}')
+            # print(f'Objectives:')
+            # for objective in objectives:
+            #     print(f'\t{objective.name}: {objective.formula}')
+
+            # print(f'Formulas:')
+            # for formula, goal in symbol2goal.items():
+            #     print(f'\t{goal.goal}: {formula}')
 
             drop_cols = []
             pareto_goals = []
@@ -1686,10 +1592,12 @@ def get_tile_shape_choices(
             prev_size = choices_enumerated.shape[0]
             choices_enumerated = choices_enumerated[keep]
             paretoed_by.append(paretoed_by_key)
-            job.log_porp_pmappings_kept(f"Pareto", sum(keep) / choices_enumerated.shape[0])
-            log_message("pareto", f"size={choices_enumerated.shape[0]}")
+        job.log_porp_pmappings_kept(f"Pareto", sum(keep) / choices_enumerated.shape[0])
+
+        log_message("pareto", f"size={choices_enumerated.shape[0]}")
 
     total_time = sum(times.values())
+    # print(f"{total_time:.2f}s: {'  |  '.join(f'{k} {times[k] / total_time:.2%}' for k in times if times[k] / total_time > 0.01)}")
 
     t = time.time() - start_time
     if t > 60:
@@ -1707,9 +1615,37 @@ def makesymbol(name: str):
     # TODO: Do the solve() calls work with integer=True?
     return Symbol(name, positive=True, integer=True)
 
-def make_what_tiles_symbol(pmapping: Mapping, shape: dict[str, int]) -> list[tuple[Union[Symbol, int], Union[Symbol, int]]]:
+
+def _explore_tile_shapes_new(job: "Job"):
+    
+    # We're going to convert the job into a list of symbols and objectives
+    pmapping = job.mapping
+    constraints = job.constraints
+    specification = job.spec
+
+    constraints.set_loop_indices(pmapping.nodes)
+
+    set_last_tile_shape_to_one(pmapping)
+
+    symbols, symbolic_df, per_memory_occupancy_df, utilization_df = run_model(job)
+
+    def cast_max(v):
+        if isinstance(v, sympy.Max):
+            for arg in v.args:
+                yield from cast_max(arg)
+        elif isinstance(v, sympy.Mul) and len(v.args) == 2:
+            assert isinstance(v.args[0], (sympy.Integer, sympy.Float))
+            for v0 in cast_max(v.args[0]):
+                for v1 in cast_max(v.args[1]):
+                    yield v0 * v1
+        else:
+            yield v
+
+    shape = get_rank_variable_bounds(job.spec.workload, pmapping.nodes[-1].einsum)
+
     what_tiles_symbol: list[tuple[Union[Symbol, int], Union[Symbol, int]]] = []
     last_seen_loop_per_rank_var: dict[str, Union[Symbol, int]] = dict(shape)
+    keep_symbols = set()
     for node in pmapping.nodes:
         if not isinstance(node, Iteration):
             continue
@@ -1719,61 +1655,32 @@ def make_what_tiles_symbol(pmapping: Mapping, shape: dict[str, int]) -> list[tup
         if prev is not None:
             what_tiles_symbol.append((prev, node.stride))
         last_seen_loop_per_rank_var[node.rank_variable] = node.stride
+        
+        if node._fused:
+            keep_symbols.add(node.stride)
 
     for r, s in last_seen_loop_per_rank_var.items():
         if isinstance(s, Symbol):
             what_tiles_symbol.append((s, 1))
-    return what_tiles_symbol
-
-
-def make_keep_symbols(pmapping: Mapping) -> set[Symbol]:
-    keep_symbols = set()
-    for node in pmapping.nodes:
-        if isinstance(node, Iteration) and node._fused:
-            if isinstance(node.initial_tile_shape, Symbol):
-                keep_symbols.add(node.initial_tile_shape)
-            if isinstance(node.stride, Symbol):
-                keep_symbols.add(node.stride)
-    return keep_symbols
-
-
-def get_rank_var_to_fused_loops(pmapping: Mapping, shape: dict[str, int]) -> dict[str, list[Symbol]]:
-    rank_var_to_fused_loops: dict[str, list[Symbol]] = {}
-    for node in [n for n in pmapping.nodes if isinstance(n, Iteration) and n._fused]:
-        rank_var_to_fused_loops.setdefault(node.rank_variable, []).append(node.stride)
-
-    # Max fused loops per rank
-    for k, v in rank_var_to_fused_loops.items():
-        v.insert(0, shape[k])
-
-    return rank_var_to_fused_loops
-
-
-def _explore_tile_shapes_new(job: "Job"):
-    # We're going to convert the job into a list of symbols and objectives
-    pmapping = job.mapping
-    constraints = job.constraints
-    constraints.set_loop_indices(pmapping.nodes)
-    set_last_tile_shape_to_one(pmapping)
-    symbols, symbolic_df, per_memory_usage_df, utilization_df = run_model(job)
-    shape = get_rank_variable_bounds(job.spec.workload, pmapping.nodes[-1].einsum)
-    what_tiles_symbol = make_what_tiles_symbol(pmapping, shape)
-    keep_symbols = make_keep_symbols(pmapping)
-    rank_var_to_fused_loops = get_rank_var_to_fused_loops(pmapping, shape)
 
     objectives = []
-    for k, v in {**per_memory_usage_df, **utilization_df}.items():
+    for k, v in {**per_memory_occupancy_df, **utilization_df}.items():
         # If we only track for pmappings, we only care if it's valid. If we track for
         # all, we care about the value too.
-        only_care_if_valid = False
-        if k in job.memories_track_pmappings_only:
-            only_care_if_valid = True
+        only_care_if_valid = True
+        # if k in per_memory_occupancy_df:
+        #     if k in job.memories_track_pmappings_only:
+        #         only_care_if_valid = True
+        #     elif k in job.memories_track_all:
+        #         only_care_if_valid = False
+        #     else:
+        #         continue  # No need to track this memory!
 
-        # TODO: Update check to see if we may be sharing utilization with other
-        # pmappings in parallel/pipeline.
-        if k in utilization_df:
-            only_care_if_valid = True
-
+        # # TODO: Update check to see if we may be sharing utilization with other
+        # # pmappings in parallel/pipeline.
+        # if k in utilization_df:
+        #     name = k.split("\0")[0]
+        #     only_care_if_valid = True
 
         objectives.append(Objective(
             name=k,
@@ -1782,16 +1689,31 @@ def _explore_tile_shapes_new(job: "Job"):
             only_care_if_valid=only_care_if_valid,
             max_value=1,
         ))
-
+    
     for k, v in symbolic_df.items():
         if "Total" not in k:
             continue
-
+        
         objectives.append(Objective(
             name=k,
             formula=v,
             symbols=symbols,
         ))
+
+        # for i,sub_objective in enumerate(cast_max(v)):
+        #     objectives.append(Objective(
+        #         name=f"{k}_{i}",
+        #         formula=sub_objective,
+        #         symbols=symbols,
+        #     ))
+            
+    rank_var_to_fused_loops = {}
+    for node in [n for n in pmapping.nodes if isinstance(n, Iteration) and n._fused]:
+        rank_var_to_fused_loops.setdefault(node.rank_variable, []).append(node.stride)
+
+    # Max fused loops per rank
+    for k, v in rank_var_to_fused_loops.items():
+        v.insert(0, shape[k])
 
     rank2symbols = {}
     for node in pmapping.nodes:
@@ -1800,17 +1722,17 @@ def _explore_tile_shapes_new(job: "Job"):
                 rank2symbols.setdefault(node.rank_variable, []).append(node.stride)
 
     choices_enumerated = get_tile_shape_choices(
-        objectives=objectives,
-        symbols=symbols,
-        what_tiles_symbol=what_tiles_symbol,
-        job=job,
-        keep_symbols=keep_symbols,
+        objectives=objectives, 
+        symbols=symbols, 
+        what_tiles_symbol=what_tiles_symbol, 
+        job=job, 
+        keep_symbols=keep_symbols, 
         max_fused_loops_per_rank_check_groups=list(rank_var_to_fused_loops.values()), 
         max_fused_loops_per_rank=job.spec.mapper.ffm.max_fused_loops_per_rank)
 
     try:
         compiled_df = compile_dict(symbols, symbolic_df)
-        compiled_per_memory_usage_df = compile_dict(symbols, per_memory_usage_df)
+        compiled_per_memory_occupancy_df = compile_dict(symbols, per_memory_occupancy_df)
         compiled_utilization_df = compile_dict(symbols, utilization_df)
     except Exception as e:
         print('Compilation failed for this mapping:')
@@ -1823,20 +1745,12 @@ def _explore_tile_shapes_new(job: "Job"):
     df = {}
     for i, symbol in enumerate(symbols):
         df[symbol.name] = choices_enumerated[:, i]
+    # for i, node in enumerate(n for n in pmapping.nodes if isinstance(n, Iteration)):
+    #     if isinstance(node.tile_shape, (int, float)):
+    #         df[f"tile_shape{i}"] = node.tile_shape
+
     for key in compiled_df:
         df[key] = compiled_df[key](*choices_enumerated.T)
-
-    for n in job.mapping.nodes:
-        if not isinstance(n, Iteration) or not n._fused:
-            continue
-        stride = n.tile_pattern.stride
-        n_iterations = str(n.tile_pattern.calculated_n_iterations)
-        if n_iterations in df:
-            continue
-        outer = get_tiles(stride, what_tiles_symbol)
-        a = df[outer.name] if isinstance(outer, Symbol) else outer
-        b = df[stride.name] if isinstance(stride, Symbol) else stride
-        df[n_iterations] = np.round(a / b)
 
     df = pd.DataFrame(df, columns=df.keys())
     assert not df.isna().any().any()
@@ -1849,23 +1763,3 @@ def _explore_tile_shapes(job: "Job"):
     if EXPERIMENTAL_TILE_SHAPE_EXPLORATION:
         return _explore_tile_shapes_new(job)
     return _explore_tile_shapes_old(job)
-
-
-# def calculate_n_iterations(df: pd.DataFrame, jobs_with_similar_compatibilities: SameCompatibilityJobs):
-#     compatibility = jobs_with_similar_compatibilities.compatibility
-#     shape = jobs_with_similar_compatibilities.rank_variable_bounds
-#     for c in compatibility.tensors:
-#         for l in c.loops:
-#             tp = l.tile_pattern
-#             assert tp.initial_tile_shape is None, "Can't handle initial tile shape"
-            
-#     def get_outer(i: int, t: TensorReservation) -> Loop:
-#         found = shape[t.loops[i].rank_name]
-#         for l in t.loops:
-#             if l.rank_variable == i:
-#                 found = l
-#         return found.tile_pattern.stride
-            
-#     for i in range(compatibility.n_loops):
-#         outer = 
-

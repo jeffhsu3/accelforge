@@ -4,7 +4,7 @@ from tqdm import tqdm
 from fastfusion.accelerated_imports import pd
 from fastfusion.frontend.workload.workload import EinsumName
 from fastfusion.mapper.FFM._join_pmappings.sim import SIM
-from fastfusion.mapper.FFM._pmapping_group.df_convention import COMPRESSED_INDEX, col_used_in_pareto
+from fastfusion.mapper.FFM._pmapping_group.df_convention import COMPRESSED_INDEX, col_used_in_pareto, is_fused_loop_col, is_tensor_col
 from fastfusion.mapper.FFM._pmapping_group.pmapping_group import PmappingGroup
 from fastfusion.util.util import parallel, delayed
 
@@ -13,11 +13,11 @@ class DecompressData(NamedTuple):
     data: dict[EinsumName, dict[int, pd.DataFrame]]
 
 
-def _compress(einsum_name: EinsumName, pmappings: PmappingGroup, start_index: int) -> tuple["PmappingGroup", pd.DataFrame]:
-    data = pmappings.data
+def _compress(einsum_name: EinsumName, pmappings: SIM, start_index: int) -> tuple["PmappingGroup", pd.DataFrame]:
+    data = pmappings.mappings.data
     data.reset_index(drop=True, inplace=True)
     data.index += start_index
-    keep_cols = [c for c in data.columns if col_used_in_pareto(c)]
+    keep_cols = [c for c in data.columns if col_used_in_pareto(c) or is_fused_loop_col(c) or is_tensor_col(c)]
     compress_cols = [c for c in data.columns if c not in keep_cols]
     compressed_data = data[keep_cols].copy()
     decompress_data = data[compress_cols].copy()
@@ -32,7 +32,11 @@ def _compress_pmapping_list(einsum_name: EinsumName, pmappings: list[SIM]) -> tu
     jobs = []
 
     def job(start_index: int, pmappings: SIM):
-        compress, decompress = _compress(einsum_name, pmappings.mappings, start_index)
+        compress, decompress = _compress(
+            einsum_name,
+            pmappings,
+            start_index,
+        )
         compress = SIM(pmappings.compatibility, compress)
         compressed.append(compress)
         return compress, decompress, start_index

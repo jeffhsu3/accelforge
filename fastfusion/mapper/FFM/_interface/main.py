@@ -59,7 +59,7 @@ def join_pmappings(spec: Specification, pmappings: MultiEinsumPmappings) -> Pmap
         print(f"Einsum {einsum_name} has {total} pmappings with {n_compatibilities} compatibilities")
         if total == 0:
             raise ValueError(f"Einsum {einsum_name} has no pmappings")
-        
+
     compressed, decompress_data = compress_einsum2pmappings(pmappings.einsum2pmappings)
     joined = join_sims(
         compressed,

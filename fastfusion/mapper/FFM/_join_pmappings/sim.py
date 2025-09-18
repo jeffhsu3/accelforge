@@ -37,6 +37,9 @@ class SIM:
         live_tensors: set[str],
         live_tensors_with_right: set[str],
         aliased_tensors: dict[str, set[str]],
+        compatibility_a: Compatibility,
+        compatibility_b: Compatibility,
+        compatibility_joined: Compatibility,
         resource2capacity: dict[str, int] = None,
         drop_valid_reservations: bool = True,
         delay: bool = False,
@@ -44,9 +47,12 @@ class SIM:
         shared_loop_index = self.compatibility.shared_loop_index(
             right.compatibility.tensor_names | live_tensors
         )
-        compatibility = self.compatibility.merge_next(right.compatibility, live_tensors)
-        next_shared_loop_index = compatibility.shared_loop_index(live_tensors)
-        shared_tensors = self.compatibility.tensors & right.compatibility.tensors
+        next_shared_loop_index = compatibility_joined.shared_loop_index(live_tensors)
+        
+        # print(f'Merging:')
+        # print(f'\t{self.compatibility}')
+        # print(f'\t{right.compatibility}')
+        # print(f'\t-> {compatibility}')
 
         still_live_reservations = [
             r
@@ -67,20 +73,22 @@ class SIM:
             shared_loop_index,
             next_shared_loop_index,
             live_tensors_with_right,
-            shared_tensors,
             still_live_reservations,
             duplicated_aliased_tensors,
-            resource2capacity,
+            compatibility_a=compatibility_a,
+            compatibility_b=compatibility_b,
+            compatibility_joined=compatibility_joined,
+            resource2capacity=resource2capacity,
             drop_valid_reservations=drop_valid_reservations,
         )
 
         if not delay:
             mapping = mapping[0](*mapping[1], **mapping[2])
 
-        s = SIM(compatibility, mapping)
+        s = SIM(compatibility_joined, mapping)
         assert (
-            compatibility.max_above_loop_index == next_shared_loop_index + 1
-        ), f"{self.compatibility} {right.compatibility} {next_shared_loop_index + 1} -> {compatibility} {len(compatibility.loops)}"
+            compatibility_joined.max_above_loop_index == next_shared_loop_index + 1
+        ), f"{self.compatibility} {right.compatibility} {next_shared_loop_index + 1} -> {compatibility_joined} {len(compatibility_joined.loops)}"
         s.tensors.update(right.tensors)
         s.tensors.update(self.tensors)
         s.n_pre_prune_mappings = len(self.mappings.data) * len(right.mappings.data)
@@ -148,48 +156,60 @@ class SIM:
 
     @staticmethod
     def concat(
-        sims: Iterable["SIM"], allow_different_compatibilitys: bool = False
+        sims: Iterable["SIM"], allow_different_compatibilies: bool = False
     ) -> "SIM":
         sims = list(sims)
         assert len(sims) > 0, "Cannot concat empty list of SIMs"
-        if not allow_different_compatibilitys:
-            s = set(fzs([(k, v) for k, v in s.tensors.items()]) for s in sims)
-            assert (
-                len(s) == 1
-            ), f"Cannot concat SIMs with different tensors:\n\t" + "\n\t".join(
-                str(s2) for s2 in s
-            )
+        if not allow_different_compatibilies:
+            s = set(s.compatibility for s in sims)
+            if len(s) > 1:
+                live_tensors = {'V', 'AV', 'FFA', 'Q', 'I', 'QK_softmax', 'K', 'QK', 'Z'}
+                a = sims[0]
+                for b in sims[1:]:
+                    if a.compatibility != b.compatibility:
+                        break
+                SIM.combine_combineable((a, b), live_tensors)
+                assert a == b, f"Cannot concat SIMs with different compatibilies:\n\t{a}\n\t{b}"
+                assert len(s) == 1, f"Cannot concat SIMs with different compatibilies:\n\t" + "\n\t".join(
+                    str(s2) for s2 in s
+                )
         return SIM(sims[0].compatibility, PmappingGroup.concat([s.mappings for s in sims]))
 
     @staticmethod
     def _group(
         sims: list["SIM"],
         live_tensors: set[str],
-        keep_loops: bool = False,
-        every_possible_n_loops: bool = False,
         drop_tags: bool = False,
-    ) -> dict[Compatibility, list["SIM"]]:
+        clear_tile_patterns_and_reservation_indices: bool = False,
+        include_permutations: bool = False,
+    ) -> dict[Compatibility, list["SIM"]] | dict[Compatibility, list[tuple["SIM", list[int]]]]:
         """
         Clears dead tensors (may keep loops), then group SIMs based on
         compatibility.
-
-        If `every_possible_n_loops`, every possible loops of a compatibility
-        is generated and the SIM is included. Thus, a SIM may be in several
-        groups at once (by reference).
         """
         grouped = defaultdict(list)
+        
+        def clear_reservations(c: Compatibility):
+            if clear_tile_patterns_and_reservation_indices:
+                return c.clear_tile_patterns_and_reservation_indices()
+            return c
+
         for s in sims:
             compatibility = s.compatibility.clear_dead_tensors(
                 live_tensors,
-                keep_loops=keep_loops or every_possible_n_loops,
                 drop_tags=drop_tags,
             )
-            if every_possible_n_loops:
-                compatibility = compatibility.all_n_loops()
+
+            if include_permutations:
+                keys = compatibility.make_equivalent_permutations()
+                for t, loop_changes in keys:
+                    grouped[clear_reservations(t)].append((s, loop_changes))
             else:
-                compatibility = [compatibility]
-            for t in compatibility:
-                grouped[t].append(s)
+                grouped[clear_reservations(compatibility)].append(s)
+                
+        if clear_tile_patterns_and_reservation_indices:
+            for k in grouped:
+                assert len(k.extra_reservation_indices) == 0, f"Extra reservation indices are not empty: {k.extra_reservation_indices}"
 
         return grouped
 
@@ -197,7 +217,7 @@ class SIM:
     def combine_combineable(
         sims: list["SIM"],
         live_tensors: set[str],
-        allow_different_compatibilitys: bool = False,
+        allow_different_compatibilies: bool = False,
         drop_tags: bool = False,
         combine_reservations: bool = True,
         pbar_postfix: str = "",
@@ -211,9 +231,15 @@ class SIM:
         groups_with_one = [g[0] for g in groups if len(g) == 1]
         if len(groups_with_one) == len(groups):
             return groups_with_one + no_combine
+        
+        # for g in groups:
+        #     if len(g) > 1:
+        #         print(f"Group {g} has {len(g)} SIMs")
+        #         print(f'\t{g[0].compatibility}')
+        
         others = parallel(
             [
-                delayed(SIM.concat)(g, allow_different_compatibilitys)
+                delayed(SIM.concat)(g, allow_different_compatibilies)
                 for g in groups
                 if len(g) > 1
             ],
@@ -240,23 +266,17 @@ class SIM:
         raise ValueError(f"Invalid type {type(sims)}")
 
     @staticmethod
-    def group_left(
+    def group(
         sims: list["SIM"], live_tensors: set[str], drop_tags: bool = False
-    ) -> dict[tuple[Compatibility, ...], list["SIM"]]:
-        return SIM._group(sims, live_tensors, keep_loops=True, drop_tags=drop_tags)
-
-    @staticmethod
-    def group_right(
-        sims: list["SIM"],
-        live_tensors: set[str],
-        drop_tags: bool = False,
-    ) -> dict[tuple[Compatibility, ...], list["SIM"]]:
-        return SIM._group(
+    ) -> dict[tuple[Compatibility, ...], list[tuple["SIM", list[int]]]]:
+        x = SIM._group(
             sims,
             live_tensors,
-            every_possible_n_loops=True,
             drop_tags=drop_tags,
+            clear_tile_patterns_and_reservation_indices=True,
+            include_permutations=True,
         )
+        return x
 
     @staticmethod
     def remove_dead_tensors(sims: list["SIM"], live_tensors: set[str]):

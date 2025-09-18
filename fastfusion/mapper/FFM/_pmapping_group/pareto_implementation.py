@@ -8,7 +8,7 @@ from joblib import delayed
 from fastfusion.accelerated_imports import np
 from fastfusion.util.util import parallel
 
-from .df_convention import *
+from .df_convention import col_used_in_pareto, is_fused_loop_col
 
 
 def dominates(a: pd.Series, b: pd.Series) -> bool:
@@ -153,6 +153,9 @@ def makepareto(mappings: pd.DataFrame, columns: list[str] = None, parallelize: b
     # return makepareto_time_compare(mappings)
     if columns is None:
         columns = [c for c in mappings.columns if col_used_in_pareto(c)]
+        
+    split_by_cols = list(split_by_cols) + [c for c in mappings.columns if is_fused_loop_col(c)]
+        
     return makepareto_merge(mappings, columns, parallelize=parallelize, split_by_cols=split_by_cols)
     if len(mappings) <= 1:
         return mappings

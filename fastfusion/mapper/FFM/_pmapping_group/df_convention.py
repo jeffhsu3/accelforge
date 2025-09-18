@@ -29,7 +29,7 @@ def dict_cached(func):
     return wrapper
 
 
-def partition_col(col, prefix, expected_len=None):
+def partition_col(col, prefix, expected_len=None) -> list[str] | None:
     col = col.split("\0")
     if col[0] != prefix:
         return None
@@ -42,7 +42,7 @@ def partition_col(col, prefix, expected_len=None):
 
 
 @dict_cached
-def col2nameloop(x):
+def col2nameloop(x: str) -> tuple[str, int] | None:
     """ Format: reservation name level left """
     x = partition_col(x, "reservation", 4)
     if x is None:
@@ -51,27 +51,32 @@ def col2nameloop(x):
 
 
 @dict_cached
-def nameloop2col(name, nloops, left: bool = False):
+def nameloop2col(name: str, nloops: int, left: bool = False) -> str:
     """ Format: reservation name level left """
-    return f"reservation\0{name}\0{nloops}\0left" if left else "right"
+    return f"reservation\0{name}\0{nloops}\0" + ("left" if left else "right")
+
 
 @dict_cached
-def tensor2col(tensor):
+def tensor2col(tensor: str) -> str:
     """ Format: tensor tensor_name """
     return f"tensor\0{tensor}"
 
 
 @dict_cached
-def col2nametensor(col):
+def col2nametensor(col: str) -> str | None:
     """ Format: tensor tensor_name """
     x = partition_col(col, "tensor", 2)
     if x is None:
         return None
     return x[1]
 
+@dict_cached
+def is_tensor_col(c: str) -> bool:
+    return c.startswith("tensor\0")
+
 
 @dict_cached
-def col2nameloopleft(x):
+def col2nameloopleft(x: str) -> tuple[str, int, bool] | None:
     """ Format: reservation name level left """
     x = partition_col(x, "reservation", 4)
     if x is None:
@@ -79,17 +84,25 @@ def col2nameloopleft(x):
     return x[0], x[1], x[2] == "left"
 
 
-def is_reservation_col(x):
+def is_reservation_col(x: str) -> bool:
     return col2nameloop(x) is not None
 
 
 @dict_cached
-def is_left_col(x):
+def is_left_col(x: str) -> bool:
     """ Format: reservation name level left """
     x = partition_col(x, "reservation", 4)
     if x is None:
         return False
     return x[2] == "left"
+
+
+def make_fused_loop_col(s: str) -> str:
+    return f"fused_loop\0{s}"
+
+
+def is_fused_loop_col(c: str) -> bool:
+    return c.startswith("fused_loop\0")
 
 
 def add_to_col(df, target, source):
@@ -154,4 +167,3 @@ def col_used_in_pareto(c):
 
 # Shared index -1: Sum -1 resources, max everyone below
 # Shared index 0: Sum 0 resources, max everyone below
-

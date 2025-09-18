@@ -7,8 +7,8 @@ from typing import Iterable, Optional, Tuple, Union
 
 import sympy
 
-from fastfusion.frontend.mapping import Iteration, Nested, Pattern
-from fastfusion.mapper.FFM._join_pmappings.mappinginfo import TensorReservation
+from fastfusion.frontend.mapping import Iteration, Nested, TilePattern
+from fastfusion.mapper.FFM._join_pmappings.mappinginfo import Compatibility, Loop, TensorReservation
 from fastfusion.util import fzs
 
 from fastfusion.accelerated_imports import pd
@@ -121,8 +121,8 @@ class PmappingGroup:
         # Sort so we go from top to bottom. Needed in case we have to max 0->1
         # then 1->2
         for _, above, below in sorted(targets, key=lambda x: x[0]):
-            assert above in self.data.columns
-            assert below in self.data.columns
+            assert above in self.data.columns, f"Missing column {above}"
+            assert below in self.data.columns, f"Missing column {below}"
             max_to_col(self.data, below, above)
 
     @error_check_wrapper
@@ -139,7 +139,7 @@ class PmappingGroup:
         return self._data
 
     @error_check_wrapper
-    def _make_reservations(self) -> Tuple[dict[str, list], dict[str, list]]:
+    def _make_reservations(self):
         """
         Create a dictionary of reservations for each resource.
         The dictionary keys are the resource names and the values are lists
@@ -250,7 +250,7 @@ class PmappingGroup:
              / | --- 0             / | --- 0
             C  D                  C  D
                | --- 1             /   --- 1
-               E                  E  
+               E                  E
         """
         for resource in self.right_reservations:
             if shared_loop_index + 1 not in self.right_reservations[resource]:
@@ -290,9 +290,11 @@ class PmappingGroup:
         shared_loop_index: int,
         next_shared_loop_index: int,
         live_tensors: set[int],
-        shared_tensors: set[TensorReservation],
         still_live_reservations: set[TensorReservation],
         duplicated_aliased_tensors: set[TensorReservation],
+        compatibility_a: Compatibility,
+        compatibility_b: Compatibility,
+        compatibility_joined: Compatibility,
         resource2capacity: dict[str, int] = None,
         drop_valid_reservations: bool = True,
     ) -> "PmappingGroup":
@@ -315,6 +317,32 @@ class PmappingGroup:
         """
         self.free_to_loop_index(shared_loop_index, live_tensors=live_tensors)
         self.shift_bottom_reservation_left(shared_loop_index)
+        
+        shared_tensor_names = compatibility_a.tensor_names & compatibility_b.tensor_names
+        shared_tensors = [compatibility_a.get_tensor_by_name(s) for s in shared_tensor_names]
+        left_match, right_match = [], []
+        make_empty_result = False
+        def check_match(la: Loop, lb: Loop, param: str):
+            a, b = getattr(la.tile_pattern, param), getattr(lb.tile_pattern, param)
+            if isinstance(a, str) or isinstance(b, str):
+                left_match.append(a)
+                right_match.append(b)
+            elif a != b:
+                raise ValueError(f"Mismatch in {param}: {a} != {b}")
+
+        try:
+            for s in shared_tensor_names:
+                ta = compatibility_a.get_tensor_by_name(s)
+                tb = compatibility_b.get_tensor_by_name(s)
+                for la, lb in zip(ta.loops, tb.loops):
+                    check_match(la, lb, "initial_tile_shape")
+                    check_match(la, lb, "stride")
+
+            for la, lb in zip(compatibility_a.loops, compatibility_b.loops):
+                check_match(la, lb, "calculated_n_iterations")
+                    
+        except ValueError as e:
+            make_empty_result = True
 
         assert not right.left_reservations, f"{right.left_reservations} is not None"
 
@@ -325,14 +353,28 @@ class PmappingGroup:
         for resource, reservations in self.left_reservations.items():
             n_reservations = max(reservations, default=-1)
             assert n_reservations <= shared_loop_index + 1, f"{resource}: {reservations} > {shared_loop_index}"
-            
+
         max_nloops = max(
             shared_loop_index,
             self.get_max_loop_index(),
             right.get_max_loop_index()
         )
 
-        df = pd.merge(self.data, right.data, how="cross", suffixes=["", "_RIGHT_MERGE"])
+        sd, rd = self.data, right.data
+        if make_empty_result:
+            sd = sd.iloc[0:0]
+            rd = rd.iloc[0:0]
+
+        if left_match:
+            df = pd.merge(
+                sd, rd, how="inner", left_on=left_match, right_on=right_match, suffixes=["", "_RIGHT_MERGE"])
+        else:
+            df = pd.merge(sd, rd, how="cross", suffixes=["", "_RIGHT_MERGE"])
+
+        # Drop all fused loop columns that are not used anymore
+        remaining_symbols = compatibility_joined.symbols()
+        dropcols = [c for c in df.columns if is_fused_loop_col(c) and c not in remaining_symbols]
+        df = df.drop(columns=dropcols)
 
         # Make sure everything is done in increasing loop order so we don't have
         # read-after-write hazards
@@ -341,7 +383,7 @@ class PmappingGroup:
                 for resource in reservations_dict:
                     if nloops in reservations_dict[resource]:
                         yield resource
-            
+
             # For the RIGHT tree, RIGHT reservations: If there is no matching node in the left
             # tree, add the above-this-level reservation from the left tree. If there is a matching
             # node in the left tree, then we'll add this node to it in the next step.
@@ -377,6 +419,8 @@ class PmappingGroup:
         dropcols = [c for c in df.columns if c.endswith("_RIGHT_MERGE")]
         for source in dropcols:
             target = source[:-len("_RIGHT_MERGE")]
+            if is_tensor_col(target):
+                continue
             if not col_used_in_pareto(target):
                 raise ValueError(f"{target} is not used in pareto")
             if col2nameloop(target) is None:
@@ -422,7 +466,8 @@ class PmappingGroup:
             self.right_reservations.setdefault(resource, set()).add(t.above_loop_index)
 
         for t, negate in [(t, False) for t in alloc] + [(t, True) for t in free]:
-            size = -t.size if negate else t.size
+            size = self.data[tensor2col(t.name)]
+            size = -size if negate else size
             targets[t.above_loop_index, False] += size
             # Allocate at any levels below the above_loop_index level
             for level in self.right_reservations[resource]:
@@ -442,7 +487,12 @@ class PmappingGroup:
 
             # We're creating a new column, so copy allocations from any parents
             source = self.get_reservation_or_parent(resource, level-1)
-            self.data[target] = size + (self.data[source] if source else 0)
+            try:
+                self.data[target] = size + (self.data[source] if source else 0)
+            except:
+                source = self.get_reservation_or_parent(resource, level-1)
+                self.data[target] = size + (self.data[source] if source else 0)
+
 
     @error_check_wrapper
     def adjust_reservations(
@@ -619,7 +669,7 @@ class PmappingGroup:
     #     import pydot
     #     looptree = mappings2reservationtree(
     #         self.data.iloc[index][MAPPING_COLUMN],
-    #         self.data.iloc[index].get(STATS, None),
+    #         self.data.iloc[index].get(STATS, None),s
     #         still_live_tensors=live_tensors,
     #     )
     #     graph = pydot.Dot(graph_type="digraph", ranksep="0.2", nodesep="0.2")
@@ -637,25 +687,15 @@ def row2pmappings(row: pd.Series, einsum_names: list[str], rank_variable_bounds:
     for einsum_name in einsum_names:
         pmapping: Nested = copy.deepcopy(row[f"{einsum_name}\0{MAPPING_COLUMN}"])
         for node in pmapping.nodes:
-            def acc(s: sympy.Symbol):
-                return row[f"{einsum_name}\0{s.name}"]
-            if not isinstance(node, Iteration):
-                continue
-            if isinstance(node.tile_shape, sympy.Symbol):
-                node.tile_shape = acc(node.tile_shape)
-            if isinstance(node.loop_bound, sympy.Symbol):
-                node.loop_bound = acc(node.loop_bound)
-            if node.tile_pattern is not None:
-                if isinstance(node.tile_pattern, sympy.Symbol):
-                    node.tile_pattern = acc(node.tile_pattern)
-                else:
-                    tile_pattern: Pattern = node.tile_pattern
-                    if isinstance(tile_pattern.stride, sympy.Symbol):
-                        tile_pattern.stride = acc(tile_pattern.stride)
-                    if isinstance(tile_pattern.initial_tile_shape, sympy.Symbol):
-                        tile_pattern.initial_tile_shape = acc(tile_pattern.initial_tile_shape)
-                    if isinstance(tile_pattern.tile_shape, sympy.Symbol):
-                        tile_pattern.tile_shape = acc(tile_pattern.tile_shape)
+            def acc(s: str | None | int):
+                s = s.name if isinstance(s, sympy.Symbol) else s
+                return row[f"{einsum_name}\0{s}"] if isinstance(s, str) else s
+            if isinstance(node, Iteration):
+                tp: TilePattern = node.tile_pattern
+                node.tile_pattern = tp.update(
+                    initial_tile_shape=acc(tp.initial_tile_shape),
+                    stride=acc(tp.stride),
+                )
         pmappings.append(pmapping)
         pmapping.beautify_loops(rank_variable_bounds)
     return pmappings
