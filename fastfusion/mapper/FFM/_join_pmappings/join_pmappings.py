@@ -112,9 +112,10 @@ def get_memories_to_track(
             name_nloops = col2nameloop(col)
             if name_nloops is None or name_nloops[0] not in ignore:
                 keep_cols.append(col)
+        run_pareto = len(keep_cols) < len(data.columns)
         return SIM(
             s.compatibility,
-            PmappingGroup(data[keep_cols]),
+            PmappingGroup(data[keep_cols], skip_pareto=not run_pareto),
         )
         
     for a in sorted(always_below):

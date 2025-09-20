@@ -104,6 +104,9 @@ def make_fused_loop_col(s: str) -> str:
 def is_fused_loop_col(c: str) -> bool:
     return c.startswith("fused_loop<SEP>")
 
+def is_n_iterations_col(c: str) -> bool:
+    return c.startswith("fused_loop<SEP>n_iterations")
+
 
 def add_to_col(df, target, source):
     if target in df:

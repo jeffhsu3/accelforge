@@ -471,6 +471,10 @@ class PmappingGroup:
         result.max_right_to_left()
         result.make_pareto()
         result._check_reservations()
+        # if any(len(x) > 1e6 for x in [sd, rd, df, result.data]):
+        #     print(f'{len(sd)} * {len(rd)} -> {len(df)} -> {len(result.data)}')
+        #     if len(result.data) > 1e5:
+        #         print(f'Columns: {sorted(result.data.columns)}')
 
         return result
 
@@ -526,8 +530,8 @@ class PmappingGroup:
             ignore_reservations: set[str] = set(),
         ):
         alloc, free = list(alloc), list(free)
-        alloc = [t for t in alloc if t.name not in ignore_reservations]
-        free = [t for t in free if t.name not in ignore_reservations]
+        alloc = [t for t in alloc if t.resource_name not in ignore_reservations]
+        free = [t for t in free if t.resource_name not in ignore_reservations]
         all_resources = {t.resource_name for t in alloc} | {t.resource_name for t in free}
         # Handle each resource separately
         for resource in all_resources:
@@ -597,7 +601,7 @@ class PmappingGroup:
                 if l == 0 and drop_valid_reservations:
                     left_loops.discard(l)
                     dropcols.append(col)
-                    
+
         self._data = self.data.drop(columns=dropcols)
         self._make_reservations()
 
@@ -608,7 +612,6 @@ class PmappingGroup:
 
     def has_reservations(self):
         return any(col2nameloop(c) is not None for c in self.data.columns)
-
 
     # ============================================================================
     # Checking functions
@@ -626,7 +629,7 @@ class PmappingGroup:
                     if above is not None:
                         below = nameloop2col(resource, r, left=left)
                         targets.append((above, below))
-                
+
         for above, below in targets:
             if (self.data[below] < self.data[above]).any():
                 first_failing_index = (self.data[below] < self.data[above]).idxmax()
@@ -638,7 +641,7 @@ class PmappingGroup:
                 """
                 self.fail(first_failing_index, live_tensors)
                 raise ValueError(error)
-            
+
     # @error_check_wrapper
     # def check_reservations(self, live_tensors: set[int]):
     #     from fastfusion.visualization.reservationtree import mappings2reservationtree
@@ -656,7 +659,7 @@ class PmappingGroup:
     #             still_live_tensors=live_tensors
     #         )
     #         reservations = dict(looptree.get_reservations())
-            
+
     #         # If r doesn't have any columns, continue. It's a copy Einsum so it has no
     #         # stats.
     #         if r.empty:

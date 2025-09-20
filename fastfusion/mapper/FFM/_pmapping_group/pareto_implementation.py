@@ -8,7 +8,7 @@ from joblib import delayed
 from fastfusion.accelerated_imports import np
 from fastfusion.util.util import parallel
 
-from .df_convention import col_used_in_pareto, is_fused_loop_col
+from .df_convention import col_used_in_pareto, is_fused_loop_col, is_n_iterations_col
 
 
 def dominates(a: pd.Series, b: pd.Series) -> bool:
@@ -153,8 +153,10 @@ def makepareto(mappings: pd.DataFrame, columns: list[str] = None, parallelize: b
     # return makepareto_time_compare(mappings)
     if columns is None:
         columns = [c for c in mappings.columns if col_used_in_pareto(c)]
-        
-    split_by_cols = list(split_by_cols) + [c for c in mappings.columns if is_fused_loop_col(c)]
+    
+    # Number of iterations is derived from the tile shapes, so we don't need to use it,
+    # since any row with the same tile shapes will have the same number of iterations.
+    split_by_cols = list(split_by_cols) + [c for c in mappings.columns if is_fused_loop_col(c) and not is_n_iterations_col(c)]
         
     return makepareto_merge(mappings, columns, parallelize=parallelize, split_by_cols=split_by_cols)
     if len(mappings) <= 1:
