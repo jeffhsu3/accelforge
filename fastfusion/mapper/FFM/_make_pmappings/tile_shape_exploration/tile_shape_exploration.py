@@ -298,7 +298,7 @@ def generate_tile_shapes(
         utilization = {}
         utilization2 = {}
         for component_dim, utilization_model in utilization_df.items():
-            _, component, dim = component_dim.split('\0')
+            _, component, dim = component_dim.split('<SEP>')
             utilization[(component, dim)] = utilization_model(*listified_choices)
             utilization2[(component, dim)] = utilization_model(*listified_choices_2)
             util = np.minimum(utilization[(component, dim)], utilization2[(component, dim)])
@@ -401,7 +401,7 @@ def generate_tile_shapes(
         utilization = {}
         utilization2 = {}
         for component_dim, utilization_model in utilization_df.items():
-            _, component, dim = component_dim.split('\0')
+            _, component, dim = component_dim.split('<SEP>')
             utilization[(component, dim)] = utilization_model(*listified_choices)
             utilization2[(component, dim)] = utilization_model(*listified_choices2)
             util = np.minimum(utilization[(component, dim)], utilization2[(component, dim)])
@@ -548,7 +548,7 @@ def generate_tile_shapes(
             df[i] = choices_a[:,i]
 
         for component_dim, utilization_model in utilization_df.items():
-            _, component, dim = component_dim.split('\0')
+            _, component, dim = component_dim.split('<SEP>')
             utilization[(component, dim)] = utilization_model(*listified_choices)
             utilization2[(component, dim)] = utilization_model(*listified_choices_2)
             util = np.minimum(utilization[(component, dim)], utilization2[(component, dim)])
@@ -900,23 +900,23 @@ def run_model(job: Job):
                     df[nameloop2col(memory, n_loop)] = running_total
 
     if metrics & Metrics.LATENCY:
-        df[f'Total\0latency'] = overall_latency * spec.arch.global_cycle_period
-        df[f'latency\0compute'] = comp_latency * spec.arch.global_cycle_period
+        df[f'Total<SEP>latency'] = overall_latency * spec.arch.global_cycle_period
+        df[f'latency<SEP>compute'] = comp_latency * spec.arch.global_cycle_period
         # For first latency, we'll follow the convention of treating compute
         # as a component, similarly to memory (see below).
         for compute_level, stats in reuse.compute_stats.items():
-            df[f'first\0latency\0{compute_level}'] = stats.max_first_latency
+            df[f'first<SEP>latency<SEP>{compute_level}'] = stats.max_first_latency
         for component, latency in mem_latency.items():
-            df[f'latency\0{component}'] = latency * spec.arch.global_cycle_period
+            df[f'latency<SEP>{component}'] = latency * spec.arch.global_cycle_period
 
     if metrics & Metrics.ENERGY:
-        df[f'Total\0energy'] = sum(energy.values())
+        df[f'Total<SEP>energy'] = sum(energy.values())
         for (component, action), energy in energy.items():
-            df[f'energy\0{component}\0{action}'] = energy
+            df[f'energy<SEP>{component}<SEP>{action}'] = energy
 
     if metrics & Metrics.RESERVATIONS:
         for memory, occupancies in total_occupancy.items():
-            df[f'reservations\0{memory}'] = sum(occupancies.values())
+            df[f'reservations<SEP>{memory}'] = sum(occupancies.values())
 
     per_memory_usage_df = {}
     for memory, occupancies in total_occupancy.items():
@@ -925,7 +925,7 @@ def run_model(job: Job):
     utilization_df = {}
     for (component, einsum), per_dim_fanout in reuse.fanout.items():
         for dim, fanout in per_dim_fanout.items():
-            utilization_df[f'utilization\0{component}\0{dim}'] = \
+            utilization_df[f'utilization<SEP>{component}<SEP>{dim}'] = \
                 fanout / component_to_max_fanout[component][dim]
 
     return reuse.symbols, df, per_memory_usage_df, utilization_df

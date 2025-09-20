@@ -37,11 +37,12 @@ class SIM:
         live_tensors: set[str],
         live_tensors_with_right: set[str],
         aliased_tensors: dict[str, set[str]],
-        compatibility_a: Compatibility,
-        compatibility_b: Compatibility,
+        compatibility_left: Compatibility,
+        compatibility_right: Compatibility,
         compatibility_joined: Compatibility,
         resource2capacity: dict[str, int] = None,
         drop_valid_reservations: bool = True,
+        ignore_reservations: set[str] = set(),
         delay: bool = False,
     ) -> "SIM":
         shared_loop_index = self.compatibility.shared_loop_index(
@@ -75,11 +76,12 @@ class SIM:
             live_tensors_with_right,
             still_live_reservations,
             duplicated_aliased_tensors,
-            compatibility_a=compatibility_a,
-            compatibility_b=compatibility_b,
+            compatibility_left=compatibility_left,
+            compatibility_right=compatibility_right,
             compatibility_joined=compatibility_joined,
             resource2capacity=resource2capacity,
             drop_valid_reservations=drop_valid_reservations,
+            ignore_reservations=ignore_reservations,
         )
 
         if not delay:
@@ -203,13 +205,14 @@ class SIM:
             if include_permutations:
                 keys = compatibility.make_equivalent_permutations()
                 for t, loop_changes in keys:
+                    s.compatibility.permute(loop_changes)
                     grouped[clear_reservations(t)].append((s, loop_changes))
             else:
                 grouped[clear_reservations(compatibility)].append(s)
                 
         if clear_tile_patterns_and_reservation_indices:
             for k in grouped:
-                assert len(k.extra_reservation_indices) == 0, f"Extra reservation indices are not empty: {k.extra_reservation_indices}"
+                assert len(k.reservation_indices) == 0, f"Extra reservation indices are not empty: {k.reservation_indices}"
 
         return grouped
 

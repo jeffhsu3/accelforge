@@ -30,7 +30,7 @@ def dict_cached(func):
 
 
 def partition_col(col, prefix, expected_len=None) -> list[str] | None:
-    col = col.split("\0")
+    col = col.split("<SEP>")
     if col[0] != prefix:
         return None
     if expected_len is not None and len(col) != expected_len:
@@ -53,13 +53,13 @@ def col2nameloop(x: str) -> tuple[str, int] | None:
 @dict_cached
 def nameloop2col(name: str, nloops: int, left: bool = False) -> str:
     """ Format: reservation name level left """
-    return f"reservation\0{name}\0{nloops}\0" + ("left" if left else "right")
+    return f"reservation<SEP>{name}<SEP>{nloops}<SEP>" + ("left" if left else "right")
 
 
 @dict_cached
 def tensor2col(tensor: str) -> str:
     """ Format: tensor tensor_name """
-    return f"tensor\0{tensor}"
+    return f"tensor<SEP>{tensor}"
 
 
 @dict_cached
@@ -72,7 +72,7 @@ def col2nametensor(col: str) -> str | None:
 
 @dict_cached
 def is_tensor_col(c: str) -> bool:
-    return c.startswith("tensor\0")
+    return c.startswith("tensor<SEP>")
 
 
 @dict_cached
@@ -98,11 +98,11 @@ def is_left_col(x: str) -> bool:
 
 
 def make_fused_loop_col(s: str) -> str:
-    return f"fused_loop\0{s}"
+    return f"fused_loop<SEP>{s}"
 
 
 def is_fused_loop_col(c: str) -> bool:
-    return c.startswith("fused_loop\0")
+    return c.startswith("fused_loop<SEP>")
 
 
 def add_to_col(df, target, source):

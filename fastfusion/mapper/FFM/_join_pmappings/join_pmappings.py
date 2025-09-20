@@ -2,22 +2,14 @@ from collections import defaultdict
 import itertools
 import logging
 import time
+
 from fastfusion.accelerated_imports import pd
-from fastfusion.frontend import arch
 from fastfusion.frontend.specification import Specification
-from fastfusion.frontend.workload import Einsum
 from fastfusion.frontend.mapper.metrics import Metrics
-from fastfusion.mapper.FFM._join_pmappings.sim import SIM, Loop, Compatibility
+from fastfusion.mapper.FFM._join_pmappings.sim import SIM, Compatibility
 from fastfusion.mapper.FFM._pmapping_group import PmappingGroup
-from fastfusion.util import fzs, parallel, debugger_active
-
-
-def mapping2sims(einsum_to_result: Compatibility):
-    r = {}
-    for einsum_name, compat_dict in einsum_to_result.items():
-        r[einsum_name] = [paretofy(k, v) for k, v in compat_dict.items()]
-    return list(r.values())
-
+from fastfusion.mapper.FFM._pmapping_group.df_convention import col2nameloop
+from fastfusion.util import parallel, delayed
 
 def paretofy(k, v):
     return SIM(k, PmappingGroup(pd.DataFrame(v).fillna(0)))
@@ -80,6 +72,68 @@ def make_full_equivalent_rank_variables(pairwise_equivalent_rank_variables):
     return full_equivalent_rank_variables
 
 
+def get_memories_to_track(
+    sims: dict[str, list[SIM]],
+    resource2capacity: dict[str, int],
+) -> dict[str, list[SIM]]:
+
+    always_below = set(resource2capacity.keys())
+    total_sizes = {}
+
+    for _, einsum_sims in sims.items():
+        max_sizes = {}
+        for s in einsum_sims:
+            n_fused_loops = s.compatibility.n_loops
+            for col in s.mappings.data.columns:
+                name_nloops = col2nameloop(col)
+                if name_nloops is None:
+                    continue
+
+                name, nloops = name_nloops
+                if name in always_below and nloops < n_fused_loops:
+                    always_below.remove(name)
+                size = s.mappings.data[col].max()
+                max_sizes[name] = max(max_sizes.get(name, 0), size)
+
+        for name, size in max_sizes.items():
+            total_sizes[name] = total_sizes.get(name, 0) + size
+
+    ignore = set(
+        t for t, s in total_sizes.items() if resource2capacity[t] >= s
+    ) | always_below
+
+    if not ignore:
+        return sims
+
+    def remove_unneeded_columns(s: SIM):
+        data = s.mappings.data
+        keep_cols = []
+        for col in data.columns:
+            name_nloops = col2nameloop(col)
+            if name_nloops is None or name_nloops[0] not in ignore:
+                keep_cols.append(col)
+        return SIM(
+            s.compatibility,
+            PmappingGroup(data[keep_cols]),
+        )
+        
+    for a in sorted(always_below):
+        print(f'Not tracking {a} because it is never reserved for multiple pmappings.')
+    for t, s in sorted(total_sizes.items(), key=lambda x: x[1], reverse=True):
+        if resource2capacity[t] >= s:
+            print(f'Not tracking {t} because its size {resource2capacity[t]} is enough '
+                  f'for the sum of all reservations ({s})')
+            break
+
+    new_sims = {}
+    for einsum_name, einsum_sims in sims.items():
+        new_sims[einsum_name] = list(parallel(
+            [delayed(remove_unneeded_columns)(s) for s in einsum_sims],
+            pbar=f"Removing unneeded reservations for {einsum_name}",
+            return_as="generator",
+        ))
+    return new_sims, ignore
+
 
 def join_sims(
     sims: dict[str, list[SIM]],
@@ -102,15 +156,18 @@ def join_sims(
       memories lower in the hierarchy. e.g., memory 0 is the largest,
       memory 1 the next largest, and memory N is the smallest.
     """
+    
     metrics = spec.mapper.ffm.metrics
 
     drop_valid_reservations = not (Metrics.RESOURCE_USAGE & metrics)
-
+    ignore_reservations = set()
+    if drop_valid_reservations:
+        sims, ignore_reservations = get_memories_to_track(sims, resource2capacity)
 
     mixable_ranks = spec.workload.get_mixable_ranks()
 
     aliased_tensors = spec.workload.get_tensor_copies()
-
+    
     n_mappings = {}
     runtime = {}
     nbuckets = []
@@ -250,8 +307,8 @@ def join_sims(
             [s for lr in [left, right] for v in lr.values() for s, _ in v], live_tensors
         )
 
-        DO_PRINT = True
-        DELAY = False  # not debugger_active()
+        DO_PRINT = False
+        DELAY = True  # not debugger_active()
         # ======================================================================
         # Merge the left and right buckets.
         # ======================================================================
@@ -301,16 +358,17 @@ def join_sims(
                         live_tensors,
                         live_tensors_with_right,
                         aliased_tensors,
-                        compatibility_a=a.compatibility,
-                        compatibility_b=b.compatibility,
+                        compatibility_left=a.compatibility,
+                        compatibility_right=b.compatibility,
                         compatibility_joined=compatibility_joined,
                         resource2capacity=resource2capacity,
                         drop_valid_reservations=drop_valid_reservations,
+                        ignore_reservations=ignore_reservations,
                         delay=DELAY,
                     )
                 )
                 t1 = time.time()
-                print(f'Took {t1 - t0:.2f} seconds to generate {len(combined[-1].mappings.data)} mappings')
+                # print(f'Took {t1 - t0:.2f} seconds to generate {len(combined[-1].mappings.data)} mappings')
                 
                 if not DELAY:
                     cur_nmappings += len(a.mappings.data) * len(b.mappings.data)
@@ -347,9 +405,9 @@ def join_sims(
                     continue
                 prev_combined = combined
                 combined = SIM.group(combined, next_right_tensors, drop_tags=True)
-                next_keys = {c.clear_dead_tensors(cur_tensors).clear_extra_reservation_indices() for c in next_sims.sims}
+                next_keys = {c.clear_dead_tensors(cur_tensors).clear_tile_patterns_and_reservation_indices() for c in next_sims.sims}
                 for k in list(combined):
-                    k_cleared = k.clear_dead_tensors(next_right_tensors).clear_extra_reservation_indices()
+                    k_cleared = k.clear_dead_tensors(next_right_tensors).clear_tile_patterns_and_reservation_indices()
                     if k_cleared not in next_keys:
                         if DO_PRINT:
                             for b, _ in combined[k]:

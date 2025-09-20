@@ -21,7 +21,7 @@ def _compress(einsum_name: EinsumName, pmappings: SIM, start_index: int) -> tupl
     compress_cols = [c for c in data.columns if c not in keep_cols]
     compressed_data = data[keep_cols].copy()
     decompress_data = data[compress_cols].copy()
-    compressed_data[f"{einsum_name}\0{COMPRESSED_INDEX}"] = data.index
+    compressed_data[f"{einsum_name}<SEP>{COMPRESSED_INDEX}"] = data.index
     return PmappingGroup(compressed_data, skip_pareto=True), decompress_data
 
 
@@ -92,7 +92,7 @@ def decompress_pmappings(
         # end index so we know when to change to the next 
         decompressed_iter = reversed(decompress.items())
         start_index, chosen = float("inf"), None
-        for i in reversed(sorted(set(data[f"{einsum_name}\0{COMPRESSED_INDEX}"]))):
+        for i in reversed(sorted(set(data[f"{einsum_name}<SEP>{COMPRESSED_INDEX}"]))):
             while chosen is None or i < start_index:
                 start_index, chosen = next(decompressed_iter)
             cur_chosen = chosen[chosen.index == i]
@@ -101,7 +101,7 @@ def decompress_pmappings(
         data = pd.merge(
             data,
             pd.concat(decompress_sub_dfs),
-            left_on=f"{einsum_name}\0{COMPRESSED_INDEX}",
+            left_on=f"{einsum_name}<SEP>{COMPRESSED_INDEX}",
             right_index=True,
             how="left",
         )

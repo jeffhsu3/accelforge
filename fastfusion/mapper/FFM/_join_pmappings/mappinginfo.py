@@ -214,7 +214,8 @@ class Compatibility(Updatable):
     tensors: fzs[TensorReservation]
     splits: fzs[Split] = fzs()
     tags: Tags = Tags(fzs())
-    extra_reservation_indices: fzs[int] = fzs()
+    reservation_indices: fzs[int] = fzs()
+    check_reservation_indices: bool = True
 
     @property
     def n_loops(self) -> int:
@@ -225,11 +226,11 @@ class Compatibility(Updatable):
         return max([t.loops for t in self.tensors], key=len) if self.tensors else ()
 
     def _get_hash_tuple(self):
-        return self.n_loops, self.tensors, self.tags, self.extra_reservation_indices
-    
+        return self.n_loops, self.tensors, self.tags, self.reservation_indices
+
     def __hash__(self):
         return hash(self._get_hash_tuple())
-    
+
     def __eq__(self, other):
         return self._get_hash_tuple() == other._get_hash_tuple()
 
@@ -238,9 +239,17 @@ class Compatibility(Updatable):
         assert isinstance(self.tensors, fzs)
         assert isinstance(self.splits, fzs)
         assert isinstance(self.tags, Tags)
-        assert isinstance(self.extra_reservation_indices, fzs)
-        assert max(self.extra_reservation_indices, default=-1) < self.n_loops, \
-            f"Extra reservation indices {self.extra_reservation_indices} are greater than n_loops {self.n_loops}"
+        assert isinstance(self.reservation_indices, fzs)
+        assert max(self.reservation_indices, default=-1) <= self.n_loops, \
+            f"Extra reservation indices {self.reservation_indices} are greater than n_loops {self.n_loops}"
+        if self.check_reservation_indices:
+            p = f"are not in reservation indices {self.reservation_indices}"
+            assert all(i >= 0 for i in self.reservation_indices), \
+                f"Reservation indices {self.reservation_indices} are not all >= 0"
+            assert all(s.above_loop_index in self.reservation_indices for s in self.splits), \
+                f"Split above loop indices {self.splits} {p}"
+            assert all(len(s.loops) in self.reservation_indices for s in self.tensors), \
+                f"Tensor loops {self.tensors} {p}"
 
     def get_backing_levels(self) -> dict[str, int]:
         backings = {}
@@ -283,17 +292,15 @@ class Compatibility(Updatable):
         remaining_tensors = fzs(s for s in self.tensors if s.name in live_tensors)
         new_n_loops = max((len(s.loops) for s in remaining_tensors), default=0)
         new_splits = fzs(split for split in self.splits if split.above_loop_index < new_n_loops)
-        extra_reservation_indices = fzs(
-            len(s.loops) for s in self.tensors if s.name not in live_tensors
-        ) | self.extra_reservation_indices
-        extra_reservation_indices = fzs(i for i in extra_reservation_indices if i < new_n_loops)
+        reservation_indices = fzs({min(i, new_n_loops) for i in self.reservation_indices})
+        reservation_indices = fzs(x for x in reservation_indices if x >= 0)
 
         tags = self.tags if not drop_tags else Tags(fzs())
-        return Compatibility(
+        return self.update(
             tensors=remaining_tensors,
             splits=new_splits,
             tags=tags,
-            extra_reservation_indices=extra_reservation_indices,
+            reservation_indices=reservation_indices,
         )
 
     def __lt__(self, other):
@@ -323,9 +330,7 @@ class Compatibility(Updatable):
                 f"Can't merge. I have more loops than the next, so my dataflow can't "
                 f"be carried through a LoopTree to where it's needed."
             )
-        
-            
-        
+
         live_minus_mine = live_tensors - {s.name for s in self.tensors}
         tensors_a = self._and_tensors_with_names(live_tensors)
         tensors_b = right._and_tensors_with_names(live_minus_mine)
@@ -334,6 +339,7 @@ class Compatibility(Updatable):
         joined = Compatibility(
             tensors=tensors_a | tensors_b,
             tags=right.tags,
+            reservation_indices=self_freed.reservation_indices | right_freed.reservation_indices,
         )
         
         if mixable_ranks is not None and not joined._is_valid(mixable_ranks):
@@ -344,10 +350,11 @@ class Compatibility(Updatable):
     def has_tensor(self, *tensors: TensorReservation) -> bool:
         return all(any(s == t for s in self.tensors) for t in tensors)
 
-    def all_n_loops(self) -> list["Compatibility"]:
-        min_n_loops = max((len(s.loops) for s in self.tensors), default=0)
-        return [Compatibility(_n_loops_override=n_loops, tensors=self.tensors, tags=self.tags)
-                for n_loops in range(min_n_loops, self.n_loops+1)]
+    def _permute_stops(self):
+        stops = set(len(s.loops) for s in self.tensors)
+        stops |= self.reservation_indices
+        stops |= set(s.above_loop_index for s in self.splits)
+        return stops
 
     def permute(
         self,
@@ -359,11 +366,9 @@ class Compatibility(Updatable):
         if len(loop_changes) < len(self.loops):
             loop_changes = loop_changes + list(range(len(loop_changes), len(self.loops)))
         
-        reservation_levels = set(len(s.loops) for s in self.tensors)
-        reservation_levels |= self.extra_reservation_indices
-        reservation_levels |= set(s.above_loop_index for s in self.splits)
+        permute_stops = self._permute_stops()
         for i, c in enumerate(loop_changes):
-            for r in reservation_levels:
+            for r in permute_stops:
                 assert (i < r) == (c < r), \
                     f"Loop changes {loop_changes} cross reservation {r}"
         new_tensors = fzs(s.permute(loop_changes) for s in self.tensors)
@@ -373,12 +378,10 @@ class Compatibility(Updatable):
         # Get contiguous blocks of loops with no tensor reservation between them
         blocks = []
         current_block = []
-        reservation_levels = set(len(s.loops) for s in self.tensors)
-        reservation_levels |= self.extra_reservation_indices
-        reservation_levels |= set(s.above_loop_index for s in self.splits)
+        permute_stops = self._permute_stops()
         for i in range(self.n_loops):
             # Can't permute loops if there's a reservation between them
-            if any(s.above_loop_index == i for s in self.tensors) or i in reservation_levels:
+            if i in permute_stops:
                 blocks.append(current_block)
                 current_block = []
             current_block.append(i)
@@ -426,22 +429,8 @@ class Compatibility(Updatable):
 
     def populate_loops(self, mapping: Mapping):
         loops = [n for n in mapping.nodes if isinstance(n, Iteration)]
-
-        storage_indices = []
-        seen_loops = 0
-        for n in mapping.nodes:
-            if isinstance(n, Iteration):
-                seen_loops += 1
-            elif isinstance(n, TensorHolder):
-                storage_indices.append(seen_loops)
-                
-        storage_indices = {
-            n for n in storage_indices if n < self.n_loops
-        }
-
         return self.update(
             tensors=fzs(t.populate_loops(loops) for t in self.tensors),
-            extra_reservation_indices=fzs(storage_indices),
         )
 
     @classmethod
@@ -454,15 +443,16 @@ class Compatibility(Updatable):
 
         tensor_indices = []
         split_above_loop_indices = []
-        extra_reservation_indices = []
-        tensors_left = set(tensors)
+        reservation_indices = []
+        backing_remaining = set(tensors)
         n_seen_loops = 0
+        n_fused_loops = 0
         for i, n in enumerate(mapping.nodes):
             if isinstance(n, MappingReservation):
-                extra_reservation_indices.append(n_seen_loops)
-                if not (backing := set(n.purposes) & tensors_left):
+                reservation_indices.append(n_seen_loops)
+                if not (backing := set(n.purposes) & backing_remaining):
                     continue
-                tensors_left -= backing
+                backing_remaining -= backing
                 assert len(n.purposes) == 1, \
                     "Backing reservations should have only one purpose"
                 tensor_indices.append(i)
@@ -470,17 +460,14 @@ class Compatibility(Updatable):
                 split_above_loop_indices.append(n_seen_loops)
             elif isinstance(n, Iteration):
                 n_seen_loops += 1
+                n_fused_loops += bool(backing_remaining)
             elif isinstance(n, TensorHolder):
-                extra_reservation_indices.append(n_seen_loops)
+                reservation_indices.append(n_seen_loops)
 
-            if not tensors_left:
-                break
-            
-        extra_reservation_indices = {
-            n for n in extra_reservation_indices if n < n_seen_loops
-        }
+        reservation_indices = fzs(min(n, n_fused_loops) for n in reservation_indices)
+        reservation_indices = fzs(x for x in reservation_indices if x >= 0)
 
-        assert not tensors_left, f"Tensors {tensors_left} not found in mapping"
+        assert not backing_remaining, f"Tensors {backing_remaining} not found in mapping"
 
         def get_rank(rank_variable, tensor):
             rv = rank_variable_to_ranks[tensor][rank_variable]
@@ -510,7 +497,7 @@ class Compatibility(Updatable):
                 Split(split=n, above_loop_index=i)
                 for i in split_above_loop_indices
             ),
-            extra_reservation_indices=fzs(extra_reservation_indices),
+            reservation_indices=fzs(reservation_indices),
         )
 
     def symbols(self) -> list[str]:
@@ -532,14 +519,16 @@ class Compatibility(Updatable):
         splits = fzs(s for s in self.splits if s.above_loop_index not in loop_indices)
         
         def adjust(i: int) -> int:
-            return i - sum(x <= i for x in loop_indices)
+            return i - sum(x < i for x in loop_indices)
 
-        extra_reservation_indices = fzs(adjust(i) for i in self.extra_reservation_indices)
+        reservation_indices = fzs(adjust(i) for i in self.reservation_indices)
+        reservation_indices = fzs(x for x in reservation_indices if x >= 0)
+
         splits = fzs(s.update(above_loop_index=adjust(s.above_loop_index)) for s in self.splits)
         return Compatibility(
             tensors=tensors,
             splits=splits,
-            extra_reservation_indices=extra_reservation_indices,
+            reservation_indices=reservation_indices,
         )
 
     def prepend_symbols(self, prepend: str) -> "Compatibility":
@@ -548,9 +537,10 @@ class Compatibility(Updatable):
     def clear_tile_patterns_and_reservation_indices(self) -> "Compatibility":
         return self.update(
             tensors=fzs(t.clear_tile_patterns() for t in self.tensors),
-            extra_reservation_indices=fzs(),
+            reservation_indices=fzs(),
+            check_reservation_indices=False,
         )
-        
+
     def make_fused_loop_symbols(self) -> tuple[dict[str, str], "Compatibility"]:
         result = {}
         tensors = []
@@ -559,12 +549,7 @@ class Compatibility(Updatable):
             tensors.append(t)
             result.update(r)
 
-        return result, Compatibility(
-            tensors=fzs(tensors),
-            splits=self.splits,
-            tags=self.tags,
-            extra_reservation_indices=self.extra_reservation_indices,
-        )
+        return result, self.update(tensors=fzs(tensors))
         
     def add_n_iteration_symbols(self) -> "Compatibility":
         return self.update(tensors=fzs(t.add_n_iteration_symbols() for t in self.tensors))
@@ -572,7 +557,6 @@ class Compatibility(Updatable):
     def _is_valid(self, 
                  mixable_ranks: dict[RankName, set[RankName]]
         ) -> bool:
-
         # Mixable ranks: Ranks that may be co-iterated by a single loop.
         ranks_at_each_loop_index = []
         for i in range(self.n_loops):
@@ -586,10 +570,4 @@ class Compatibility(Updatable):
             for r1, r2 in itertools.combinations(ranks, 2):
                 if r1 not in mixable_ranks[r2]:
                     return False
-        
-        
-        
         return True
-    
-    def clear_extra_reservation_indices(self) -> "Compatibility":
-        return self.update(extra_reservation_indices=fzs())

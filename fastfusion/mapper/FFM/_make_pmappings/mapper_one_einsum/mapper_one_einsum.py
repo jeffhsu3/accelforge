@@ -158,14 +158,14 @@ def generate_pmappings_old(
         return einsum_name, [], {}, jobs_with_similar_compatibilities
 
     fused_loop_cols = [
-        f"{einsum_name}\0tile_shape{i}"
+        f"{einsum_name}<SEP>tile_shape{i}"
         for i in range(compatibility.n_loops)
     ]  # TODO: Make this work for extended Einsums
 
     tensor_cols = [tensor2col(tensor) for tensor in intermediate_tensors]
 
     results.columns = [
-        c if col_used_in_pareto(c) or c in tensor_cols else f"{einsum_name}\0{c}"
+        c if col_used_in_pareto(c) or c in tensor_cols else f"{einsum_name}<SEP>{c}"
         for c in results.columns
     ]
 
@@ -174,7 +174,7 @@ def generate_pmappings_old(
     results = makepareto(results, split_by_cols=fused_loop_cols)
     new_size = len(results)
     
-    jobs_passed_pareto = sorted(results[f"{einsum_name}\0{MAPPING_COLUMN}"].unique())
+    jobs_passed_pareto = sorted(results[f"{einsum_name}<SEP>{MAPPING_COLUMN}"].unique())
     pmapping_objects = {job.job_id: job.mapping for job in jobs_with_similar_compatibilities if job.job_id in jobs_passed_pareto}
     # print(f'Pareto pruned from {prev_size} to {new_size} pmappings ({new_size / prev_size * 100:.2f}%)')
 
@@ -260,7 +260,7 @@ def mapping2fused_loop_cols(mapping: Mapping, einsum_name: EinsumName):
             raise ValueError(
                 f"Can't find tile shape or tile pattern for loop {loop}"
             )
-        return [f"{einsum_name}\0{c}" if isinstance(c, str) else c for c in cols]
+        return [f"{einsum_name}<SEP>{c}" if isinstance(c, str) else c for c in cols]
 
 
 def get_fused_loop_indices(
@@ -276,9 +276,9 @@ def get_fused_loop_indices(
         col = loop.tile_pattern.calculated_n_iterations
         assert col is not None, f"Loop {loop} has no calculated n_iterations"
         if isinstance(col, str):
-            col = df[f"{einsum_name}\0{col}"]
+            col = df[f"{einsum_name}<SEP>{col}"]
         elif isinstance(col, sympy.Symbol):
-            col = df[f"{einsum_name}\0{col.name}"]
+            col = df[f"{einsum_name}<SEP>{col.name}"]
         result.append(col != 1)
     
     if return_as_int:
@@ -299,6 +299,7 @@ def generate_pmappings_new(
     jobs_with_similar_compatibilities: SameCompatibilityJobs
 ) -> tuple[EinsumName, list[SIM], dict[UUID, Mapping], SameCompatibilityJobs]:
     jwsc = jobs_with_similar_compatibilities
+    prev_jobs = copy.deepcopy(jwsc)
 
     # Ensure that all the symbols are the same
     symbols: set[tuple[tuple[RankVariableName, tuple[str, ...]]]] = set()
@@ -363,11 +364,11 @@ def generate_pmappings_new(
 
     tensor_cols = [tensor2col(tensor) for tensor in intermediate_tensors]
     df.columns = [
-        c if col_used_in_pareto(c) or c in tensor_cols else f"{einsum_name}\0{c}"
+        c if col_used_in_pareto(c) or c in tensor_cols else f"{einsum_name}<SEP>{c}"
         for c in df.columns
     ]
 
-    fused_loop_cols = [f"{einsum_name}\0{c}" for c in compatibility.symbols()]
+    fused_loop_cols = [f"{einsum_name}<SEP>{c}" for c in compatibility.symbols()]
 
     job0 = next(iter(jobs_with_similar_compatibilities))
 
@@ -375,7 +376,7 @@ def generate_pmappings_new(
     try:
         df = makepareto(df, split_by_cols=fused_loop_cols)
     except:
-        for job in jobs_with_similar_compatibilities:
+        for job in prev_jobs:
             result = explore_tile_shapes(job)
             job.compatibility = job.compatibility.populate_loops(job.mapping)
             # This changes the pmapping count to include superfluous permutations
@@ -391,7 +392,7 @@ def generate_pmappings_new(
             result.drop(columns=cols_to_drop, inplace=True)
             results.append(result)
 
-    jobs_passed_pareto = sorted(df[f"{einsum_name}\0{MAPPING_COLUMN}"].unique())
+    jobs_passed_pareto = sorted(df[f"{einsum_name}<SEP>{MAPPING_COLUMN}"].unique())
     pmapping_objects = {job.job_id: job.mapping for job in jobs_with_similar_compatibilities if job.job_id in jobs_passed_pareto}
     
     # Assert all jobs have the same symbols for compatibility n_iterations. If they
@@ -427,7 +428,7 @@ def generate_pmappings_new(
 
         symbol_renames, compatibility = compatibility.make_fused_loop_symbols()
         for k, v in symbol_renames.items():
-            mappings[v] = mappings[f"{einsum_name}\0{k}"]
+            mappings[v] = mappings[f"{einsum_name}<SEP>{k}"]
         shift_reservations_by_null_loop_indices(mappings, null_loop_indices)
         
         symbols = compatibility.symbols()
