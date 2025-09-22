@@ -46,15 +46,15 @@ def make_compatibility(
     rank_variable_bounds: dict[RankVariableName, int],
     stride_and_halo,
 ) -> Compatibility:
-    
+
     einsum = workload.einsums[mapping.nodes[-1].einsum]
     rank_variable_to_ranks = {
         t.name: t.rank_variable2ranks for t in einsum.tensor_accesses
     }
-    return Compatibility.from_mapping(mapping, intermediate_tensors, rank_variable_to_ranks)
-    
-    
-    
+    return Compatibility.from_mapping(
+        mapping, intermediate_tensors, rank_variable_to_ranks
+    )
+
     # einsum = workload.einsums[mapping.nodes[-1].einsum]
     # fused_slice = mapping.get_fused_slice(intermediate_tensors)
     # fused_loops: list[Iteration] = []
@@ -203,7 +203,9 @@ class Job:
     metrics: Metrics
     job_id: UUID
     rank_variable_bounds: dict[RankVariableName, int]
-    stride_and_halo: dict[TensorName, dict[tuple[RankName, RankVariableName], tuple[int, int]]] | None = None
+    stride_and_halo: dict[
+        TensorName, dict[tuple[RankName, RankVariableName], tuple[int, int]]
+    ] | None = None
     mapping: Mapping | None = None
     constraints: MappingConstraints | None = None
     intermediate_tensors: set[TensorName] | None = None
@@ -215,16 +217,18 @@ class Job:
     _compatibility: Compatibility | None = None
     memories_track_all: list[str] | None = None
     memories_track_pmappings_only: list[str] | None = None
-    time_limit: float | int = float('inf')
-    memory_limit: float | int = float('inf')
+    time_limit: float | int = float("inf")
+    memory_limit: float | int = float("inf")
     messages: list[str] = field(default_factory=list)
     pmapping_keep_rates: dict[str, float] = field(default_factory=dict)
-    tensor_to_relevancy: dict[TensorName, dict[RankVariableName, Relevant | PartiallyRelevant]] | None = None
+    tensor_to_relevancy: dict[
+        TensorName, dict[RankVariableName, Relevant | PartiallyRelevant]
+    ] | None = None
 
     total_pmappings: int = 1
     valid_pmappings: int = 1
     evaluated_pmappings: int = 0
-    
+
     _update_compatibility_with_tile_shapes_args: dict[str, Any] | None = None
 
     @property
@@ -232,33 +236,37 @@ class Job:
         if self._compatibility is None:
             self._make_compatibility_and_updater()
         return self._compatibility
-    
+
     @compatibility.setter
     def compatibility(self, compatibility: Compatibility):
         self._compatibility = compatibility
 
-    def update_compatibility_with_tile_shapes(self, tile_shapes: Sequence[Number], tensor2size: dict) -> Callable[[Sequence[Number], dict], Compatibility]:
+    def update_compatibility_with_tile_shapes(
+        self, tile_shapes: Sequence[Number], tensor2size: dict
+    ) -> Callable[[Sequence[Number], dict], Compatibility]:
         if self._update_compatibility_with_tile_shapes_args is None:
             self._make_compatibility_and_updater()
         return update_compatibility_with_tile_shapes(
             self._compatibility,
             tile_shapes=tile_shapes,
             tensor2size=tensor2size,
-            **self._update_compatibility_with_tile_shapes_args
+            **self._update_compatibility_with_tile_shapes_args,
         )
 
     def _make_compatibility_and_updater(self):
         from fastfusion.model.looptree.reuse.summarized.symbolic import (
             quick_insert_reservation_nodes,
         )
+
         with_reservations = quick_insert_reservation_nodes(self)
-        self._compatibility = \
-            make_compatibility(with_reservations,
-                               self.tagger,
-                               self.intermediate_tensors,
-                               self.spec.workload,
-                               self.rank_variable_bounds,
-                               self.stride_and_halo)
+        self._compatibility = make_compatibility(
+            with_reservations,
+            self.tagger,
+            self.intermediate_tensors,
+            self.spec.workload,
+            self.rank_variable_bounds,
+            self.stride_and_halo,
+        )
 
     @property
     def is_copy_operation(self) -> bool:
@@ -270,15 +278,15 @@ class Job:
         **kwargs,
     ) -> "Job":
         defaults = {
-            'spec': None,
-            'tagger': None,
-            'mapping': None,
-            'workload': None,
-            'architecture': None,
+            "spec": None,
+            "tagger": None,
+            "mapping": None,
+            "workload": None,
+            "architecture": None,
         }
         kwargs = {**defaults, **kwargs}
         return cls(**kwargs)
-    
+
     def pretty_str(self) -> str:
         constraints = self.constraints.get_all_constraints()
         node2constraints: dict[int, list[ConstraintLambda]] = {}
@@ -286,25 +294,27 @@ class Job:
             for target_index in constraint._target_node_indices:
                 l = node2constraints.setdefault(target_index, [])
                 l.append(constraint)
-                
+
         # Reservations are added after mapping generation so it messes up the indexing
         mapping = [n for n in self.mapping.nodes if not isinstance(n, ReservationNode)]
 
-        s = ''
-        s += '=' * 80 + '\n'
-        s += f'Mapper job with ID {self.job_id}\n'
-        s += f'Einsum name: {self.einsum_name}\n'
-        s += f'Rank variable bounds: {self.rank_variable_bounds}\n'
-        s += f'Compute node name: {self.flattened_arch[-1].name}\n'
-        s += f'Mapping:\n'
+        s = ""
+        s += "=" * 80 + "\n"
+        s += f"Mapper job with ID {self.job_id}\n"
+        s += f"Einsum name: {self.einsum_name}\n"
+        s += f"Rank variable bounds: {self.rank_variable_bounds}\n"
+        s += f"Compute node name: {self.flattened_arch[-1].name}\n"
+        s += f"Mapping:\n"
         for i, node in enumerate(mapping):
-            cur_constraints = sorted(constraints.index(c) for c in node2constraints.get(i, []))
-            s += f'\t{i} {node.compact_str()} constrained by {cur_constraints}\n'
+            cur_constraints = sorted(
+                constraints.index(c) for c in node2constraints.get(i, [])
+            )
+            s += f"\t{i} {node.compact_str()} constrained by {cur_constraints}\n"
         s += self.constraints.pretty_str()
         s += f"Messages:\n"
         for m in self.messages:
-            s += f'\t{m}\n'
-            
+            s += f"\t{m}\n"
+
         s += f"Total pmappings: {self.total_pmappings}\n"
         s += f"Valid pmappings: {self.valid_pmappings}\n"
         s += f"One in {expfmt(self.total_pmappings / self.valid_pmappings)} pmappings is valid\n"
@@ -312,23 +322,23 @@ class Job:
         s += f"One in {expfmt(self.evaluated_pmappings / self.total_pmappings)} pmappings was evaluated\n"
         s += f"Pmapping elimination reasons:\n"
         for cause, keep_rate in self.pmapping_keep_rates.items():
-            s += f'\t{cause} kept one in {expfmt(1/keep_rate)} pmappings\n'
-        s += '=' * 80 + '\n'
+            s += f"\t{cause} kept one in {expfmt(1/keep_rate)} pmappings\n"
+        s += "=" * 80 + "\n"
         return s
-    
+
     def set_total_pmappings(self, n_pmappings: int):
         self.total_pmappings = n_pmappings
-        
+
     def log_porp_pmappings_kept(
         self,
         cause: str,
         porp_kept: float,
-        out_of: int=None,
+        out_of: int = None,
     ):
         if out_of is not None:
             n_kept = porp_kept * out_of + (self.total_pmappings - out_of)
             porp_kept = n_kept / self.total_pmappings
-            
+
         self.pmapping_keep_rates.setdefault(cause, 1)
         self.pmapping_keep_rates[cause] *= porp_kept
 
@@ -365,7 +375,7 @@ class SameEinsumJobs(SameSpecJobs):
     def check_invariance(self):
         all_einsums = set(job.einsum_name for job in self)
         if len(all_einsums) > 1:
-            raise RuntimeError('broken invariance: not all Einsums are equal.')
+            raise RuntimeError("broken invariance: not all Einsums are equal.")
 
     @property
     def intermediate_tensors(self) -> set[TensorName]:
@@ -378,9 +388,11 @@ class SameEinsumJobs(SameSpecJobs):
     @property
     def rank_variable_bounds(self) -> dict[RankVariableName, int]:
         return first(self).rank_variable_bounds
-    
+
     @property
-    def stride_and_halo(self) -> dict[tuple[str, str], dict[tuple[str, str], tuple[int, int]]]:
+    def stride_and_halo(
+        self,
+    ) -> dict[tuple[str, str], dict[tuple[str, str], tuple[int, int]]]:
         return first(self).stride_and_halo
 
     @property
@@ -390,18 +402,22 @@ class SameEinsumJobs(SameSpecJobs):
 
 class SameCompatibilityJobs(SameEinsumJobs):
     """Jobs with the same compatibility before tile shape exploration."""
+
     def check_invariance(self):
         all_compatibilities = set(job.compatibility for job in self)
         if len(all_compatibilities) > 1:
-            raise RuntimeError('broken invariance: '
-                               'not all compatibilities are equal.')
+            raise RuntimeError(
+                "broken invariance: " "not all compatibilities are equal."
+            )
 
     @property
     def compatibility(self) -> Compatibility:
         return first(self).compatibility
 
     @property
-    def update_compatibility_with_tile_shapes(self) -> Callable[[Sequence[Number], dict], Compatibility]:
+    def update_compatibility_with_tile_shapes(
+        self,
+    ) -> Callable[[Sequence[Number], dict], Compatibility]:
         return first(self).update_compatibility_with_tile_shapes
 
     def split(self) -> list["SameCompatibilityJobs"]:

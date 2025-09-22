@@ -17,7 +17,7 @@ from fastfusion.frontend.mapping import (
 )
 from fastfusion.frontend.specification import Specification
 from fastfusion.frontend.workload._isl import get_rank_variable_bounds
-from fastfusion.frontend.workload._symbolic import get_rank_variable_relevancy, get_stride_and_halo_of_einsum
+from fastfusion.frontend.workload._symbolic import get_rank_variable_relevancy, get_stride_and_halo, get_stride_and_halo_of_einsum
 from fastfusion.frontend.workload.workload import (
     Einsum,
     EinsumName,
@@ -26,9 +26,6 @@ from fastfusion.frontend.workload.workload import (
 )
 from fastfusion.mapper.FFM._make_pmappings.mapper_one_einsum.dataflow_generator import (
     get_tensor_choices,
-)
-from fastfusion.mapper.FFM._make_pmappings.tile_shape_exploration import (
-    get_initial_delta_choices,
 )
 from fastfusion.mapper.FFM._make_pmappings.contraints.constraints import (
     MappingConstraints,
@@ -142,15 +139,6 @@ def timeloop_style_even(mapping: list[MappingNode]):
     return mapping
 
 
-def get_ranks_with_tile_pattern(producer_name: EinsumName, workload: Workload):
-    initial_choices = get_initial_delta_choices(producer_name, workload)
-    return {
-        rank_var
-        for rank_var in workload.einsums[producer_name].rank_variables
-        if len(initial_choices[rank_var]) > 1
-    }
-
-
 def max_fused_loops(mapping: Mapping, max_fused_loops: int):
     fused_loops = [
         i
@@ -185,6 +173,51 @@ def assert_proper_fusion_labeling(mapping: list[MappingNode], check_loops: bool 
         assert t._backing == new, f"Node {i} backing missing {new - t._backing} in {' '.join(m.compact_str() for m in mapping)}"
         tensors.update(new)
         tensors.update(t.tensors)
+
+
+def get_initial_delta_choices(einsum_name: str, workload: Workload):
+    stride_and_halo = get_stride_and_halo(workload)
+    einsum = workload.einsums[einsum_name]
+
+    choices = defaultdict(lambda: set([0]))
+    consumer_chains = []
+    stack = [[(None, einsum)]]
+    while stack:
+        cur_chain = stack.pop()
+        last_tensor, last_einsum = cur_chain[-1]
+        for tensor in last_einsum.output_tensors():
+            einsums_that_read_tensor = workload.einsums_that_read_tensor(tensor)
+
+            if len(einsums_that_read_tensor) == 0:
+                consumer_chains.append(cur_chain)
+
+            for next_einsum in einsums_that_read_tensor:
+                stack.append(cur_chain + [(tensor, next_einsum)])
+
+    for chain in consumer_chains:
+        for (_, producer), (tensor, consumer) in zip(list(reversed(chain))[1:],
+                                                     reversed(chain)):
+            rank_stride_and_halo = stride_and_halo[(consumer.name, tensor)]
+            if tensor is None:
+                break  # done
+
+            for cons_rank_var in consumer.rank_variables:
+                for prod_rank_var in producer.rank_variables:
+                    for cons_choice in choices[cons_rank_var]:
+                        if (prod_rank_var, cons_rank_var) not in rank_stride_and_halo:
+                            continue
+                        stride, halo = rank_stride_and_halo[(prod_rank_var, cons_rank_var)]
+                        choices[prod_rank_var].add(cons_choice*stride + halo)
+
+    return choices
+
+def get_ranks_with_tile_pattern(producer_name: EinsumName, workload: Workload):
+    initial_choices = get_initial_delta_choices(producer_name, workload)
+    return {
+        rank_var
+        for rank_var in workload.einsums[producer_name].rank_variables
+        if len(initial_choices[rank_var]) > 1
+    }
 
 def iterate_mappings_no_constraints(
     spec: Specification,

@@ -11,6 +11,7 @@ from fastfusion.mapper.FFM._pmapping_group import PmappingGroup
 from fastfusion.mapper.FFM._pmapping_group.df_convention import col2nameloop
 from fastfusion.util import parallel, delayed
 
+
 def paretofy(k, v):
     return SIM(k, PmappingGroup(pd.DataFrame(v).fillna(0)))
 
@@ -98,9 +99,10 @@ def get_memories_to_track(
         for name, size in max_sizes.items():
             total_sizes[name] = total_sizes.get(name, 0) + size
 
-    ignore = set(
-        t for t, s in total_sizes.items() if resource2capacity[t] >= s
-    ) | always_below
+    ignore = (
+        set(t for t, s in total_sizes.items() if resource2capacity[t] >= s)
+        | always_below
+    )
 
     if not ignore:
         return sims
@@ -117,22 +119,26 @@ def get_memories_to_track(
             s.compatibility,
             PmappingGroup(data[keep_cols], skip_pareto=not run_pareto),
         )
-        
+
     for a in sorted(always_below):
-        print(f'Not tracking {a} because it is never reserved for multiple pmappings.')
+        print(f"Not tracking {a} because it is never reserved for multiple pmappings.")
     for t, s in sorted(total_sizes.items(), key=lambda x: x[1], reverse=True):
         if resource2capacity[t] >= s:
-            print(f'Not tracking {t} because its size {resource2capacity[t]} is enough '
-                  f'for the sum of all reservations ({s})')
+            print(
+                f"Not tracking {t} because its size {resource2capacity[t]} is enough "
+                f"for the sum of all reservations ({s})"
+            )
             break
 
     new_sims = {}
     for einsum_name, einsum_sims in sims.items():
-        new_sims[einsum_name] = list(parallel(
-            [delayed(remove_unneeded_columns)(s) for s in einsum_sims],
-            pbar=f"Removing unneeded reservations for {einsum_name}",
-            return_as="generator",
-        ))
+        new_sims[einsum_name] = list(
+            parallel(
+                [delayed(remove_unneeded_columns)(s) for s in einsum_sims],
+                pbar=f"Removing unneeded reservations for {einsum_name}",
+                return_as="generator",
+            )
+        )
     return new_sims, ignore
 
 
@@ -157,7 +163,7 @@ def join_sims(
       memories lower in the hierarchy. e.g., memory 0 is the largest,
       memory 1 the next largest, and memory N is the smallest.
     """
-    
+
     metrics = spec.mapper.ffm.metrics
 
     drop_valid_reservations = not (Metrics.RESOURCE_USAGE & metrics)
@@ -168,7 +174,7 @@ def join_sims(
     mixable_ranks = spec.workload.get_mixable_ranks()
 
     aliased_tensors = spec.workload.get_tensor_copies()
-    
+
     n_mappings = {}
     runtime = {}
     nbuckets = []
@@ -207,23 +213,25 @@ def join_sims(
             sim_holder.sims = SIM.left_consolidate(
                 sim_holder.sims,
                 right_tensors,
-                parallelize=False, # We're not pareto pruning, so parallelization doesn't help.
+                parallelize=False,  # We're not pareto pruning, so parallelization doesn't help.
                 pbar=f"Inital consolidate {sim_holder.einsum_name} ({i+1}/{len(sims)})",
             )
             continue
-        
+
         # All other Einsums: Will be joined from the right. Remove dead tensors, right
         # consolidate, combine, group.
         t0 = time.time()
         left_tensors = set.union(set(), *[s.tensor_names for s in sims[:i]])
         live_tensors = right_tensors
         shared_tensors = left_tensors & sim_holder.tensor_names
-        
+
         if cur_tensors - (right_tensors | left_tensors):
             SIM.remove_dead_tensors(sim_holder.sims, right_tensors | left_tensors)
             for s in sim_holder.sims:
-                s.compatibility = s.compatibility.clear_dead_tensors(right_tensors | left_tensors)
-        
+                s.compatibility = s.compatibility.clear_dead_tensors(
+                    right_tensors | left_tensors
+                )
+
         sim_holder.sims = sorted(
             sim_holder.sims, key=lambda x: len(x.mappings.data), reverse=True
         )
@@ -231,7 +239,7 @@ def join_sims(
             sim_holder.sims,
             live_tensors,
             shared_tensors,
-            parallelize=False, # We're not pareto pruning, so parallelization doesn't help.
+            parallelize=False,  # We're not pareto pruning, so parallelization doesn't help.
             pbar=f"Inital consolidate {sim_holder.einsum_name} ({i+1}/{len(sims)})",
         )
         sim_holder.sims = SIM.combine_combineable(
@@ -243,9 +251,7 @@ def join_sims(
         n_mappings["Post Intra-Layer"] += sum(
             len(s.mappings.data) for s in sim_holder.sims
         )
-        sim_holder.sims = SIM.group(
-            sim_holder.sims, left_tensors, drop_tags=True
-        )
+        sim_holder.sims = SIM.group(sim_holder.sims, left_tensors, drop_tags=True)
         einsum, prev_einsum = sim_holder.einsum_name, sims[i - 1].einsum_name
         runtime[f"{prev_einsum} → {einsum}"] = time.time() - t0
         t0 = time.time()
@@ -316,12 +322,14 @@ def join_sims(
         combined: list[SIM] = []
         cur_nmappings = 0
         combined_ids: set[tuple[int, int, tuple[tuple[int, int], ...]]] = set()
-        
+
         for k in left:
             found = False
             if DO_PRINT:
-                print(f'Left key {k}')
-            for (a, perm_a), (b, perm_b) in itertools.product(left[k], right.get(k, [])):
+                print(f"Left key {k}")
+            for (a, perm_a), (b, perm_b) in itertools.product(
+                left[k], right.get(k, [])
+            ):
                 a: SIM
                 b: SIM
                 perm_a: list[int]
@@ -342,15 +350,15 @@ def join_sims(
                 compatibility_b = b.compatibility.permute(perm_b)
                 try:
                     compatibility_joined = compatibility_a.merge_next(
-                        compatibility_b, 
+                        compatibility_b,
                         live_tensors,
                         mixable_ranks,
                     )
-                except ValueError as e: # Incompatible!
+                except ValueError as e:  # Incompatible!
                     if DO_PRINT:
                         print(f"\tIncompatible: {e}")
                     continue
-                
+
                 t0 = time.time()
 
                 combined.append(
@@ -370,7 +378,7 @@ def join_sims(
                 )
                 t1 = time.time()
                 # print(f'Took {t1 - t0:.2f} seconds to generate {len(combined[-1].mappings.data)} mappings')
-                
+
                 if not DELAY:
                     cur_nmappings += len(a.mappings.data) * len(b.mappings.data)
                 if DO_PRINT:
@@ -390,8 +398,12 @@ def join_sims(
         # print_time("Bucket merging")
         def raise_no_match_error():
             estr = f"No match found for any group.\n"
-            estr += f"Left compatibility:\n\t" + "\n\t".join(str(c) for c in left.keys())
-            estr += f"\nRight compatibility:\n\t" + "\n\t".join(str(c) for c in right.keys())
+            estr += f"Left compatibility:\n\t" + "\n\t".join(
+                str(c) for c in left.keys()
+            )
+            estr += f"\nRight compatibility:\n\t" + "\n\t".join(
+                str(c) for c in right.keys()
+            )
             raise ValueError(estr)
 
         # ======================================================================
@@ -406,13 +418,22 @@ def join_sims(
                     continue
                 prev_combined = combined
                 combined = SIM.group(combined, next_right_tensors, drop_tags=True)
-                next_keys = {c.clear_dead_tensors(cur_tensors).clear_tile_patterns_and_reservation_indices() for c in next_sims.sims}
+                next_keys = {
+                    c.clear_dead_tensors(
+                        cur_tensors
+                    ).clear_tile_patterns_and_reservation_indices()
+                    for c in next_sims.sims
+                }
                 for k in list(combined):
-                    k_cleared = k.clear_dead_tensors(next_right_tensors).clear_tile_patterns_and_reservation_indices()
+                    k_cleared = k.clear_dead_tensors(
+                        next_right_tensors
+                    ).clear_tile_patterns_and_reservation_indices()
                     if k_cleared not in next_keys:
                         if DO_PRINT:
                             for b, _ in combined[k]:
-                                print(f"\tLOOKAHEAD to {next_sims.einsum_name}: No match for {b.compatibility}")
+                                print(
+                                    f"\tLOOKAHEAD to {next_sims.einsum_name}: No match for {b.compatibility}"
+                                )
                         del combined[k]
                 if not combined:
                     SIM.group(prev_combined, next_right_tensors, drop_tags=True)
@@ -445,7 +466,6 @@ def join_sims(
                 cur_nmappings += c.n_pre_prune_mappings
         print_time("Pmapping merging")
 
-
         prev_nmappings = cur_nmappings
         if not skip_invalid:
             left_nmappings = sum(len(s.mappings.data) for k in left.values() for s in k)
@@ -475,9 +495,15 @@ def join_sims(
         # for c in combined:
         #     print(f"\t\t{c.compatibility}")
         logging.info(f"\tNumber of mappings {for_einsum_text}: {nmappings}")
-        logging.info(f"\tMappings per group {for_einsum_text}: {nmappings / len(combined)}")
-        logging.info(f'\tLargest left: {max(len(s2.mappings.data) for s in left.values() for s2, _ in s)}')
-        logging.info(f'\tLargest right: {max(len(s2.mappings.data) for s in right.values() for s2, _ in s)}')
+        logging.info(
+            f"\tMappings per group {for_einsum_text}: {nmappings / len(combined)}"
+        )
+        logging.info(
+            f"\tLargest left: {max(len(s2.mappings.data) for s in left.values() for s2, _ in s)}"
+        )
+        logging.info(
+            f"\tLargest right: {max(len(s2.mappings.data) for s in right.values() for s2, _ in s)}"
+        )
 
         # ======================================================================
         # Update left for the next iteration.

@@ -42,14 +42,17 @@ class MultiEinsumPmappings:
             self.mapper_jobs.setdefault(einsum_name, []).extend(jobs)
         self.pmapping_objects.update(other.pmapping_objects)
         return self
-    
-    def filter(self, filter_lambda: Callable[[SIM], bool], einsum_names: list[EinsumName] | None = None):
+
+    def filter(
+        self,
+        filter_lambda: Callable[[SIM], bool],
+        einsum_names: list[EinsumName] | None = None,
+    ):
         if einsum_names is None:
             einsum_names = list(self.einsum2pmappings.keys())
         for einsum_name in einsum_names:
             self.einsum2pmappings[einsum_name] = [
-                pm for pm in self.einsum2pmappings[einsum_name]
-                if filter_lambda(pm)
+                pm for pm in self.einsum2pmappings[einsum_name] if filter_lambda(pm)
             ]
 
     def drop_einsums(self, *einsum_names: EinsumName):
@@ -57,7 +60,9 @@ class MultiEinsumPmappings:
             del self.einsum2pmappings[einsum_name]
             del self.pmapping_objects[einsum_name]
 
-    def pmapping_keep_rates(self, per_einsum: bool = False) -> dict[EinsumName, dict[str, float]] | dict[str, float]:
+    def pmapping_keep_rates(
+        self, per_einsum: bool = False
+    ) -> dict[EinsumName, dict[str, float]] | dict[str, float]:
         result = {}
         einsum2npmappings = self.total_pmappings(per_einsum=True)
 
@@ -101,7 +106,9 @@ class MultiEinsumPmappings:
             return result
         return sum(result.values())
 
-    def pareto_optimal_pmappings(self, per_einsum: bool = False) -> int | dict[EinsumName, int]:
+    def pareto_optimal_pmappings(
+        self, per_einsum: bool = False
+    ) -> int | dict[EinsumName, int]:
         result = {
             einsum_name: sum(len(p.mappings.data) for p in pmappings)
             for einsum_name, pmappings in self.einsum2pmappings.items()
@@ -110,7 +117,9 @@ class MultiEinsumPmappings:
             return result
         return sum(result.values())
 
-    def evaluated_pmappings(self, per_einsum: bool = False) -> int | dict[EinsumName, int]:
+    def evaluated_pmappings(
+        self, per_einsum: bool = False
+    ) -> int | dict[EinsumName, int]:
         result = {
             einsum_name: sum(job.evaluated_pmappings for job in jobs)
             for einsum_name, jobs in self.mapper_jobs.items()

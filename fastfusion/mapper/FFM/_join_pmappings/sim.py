@@ -160,17 +160,32 @@ class SIM:
         if not allow_different_compatibilies:
             s = set(s.compatibility for s in sims)
             if len(s) > 1:
-                live_tensors = {'V', 'AV', 'FFA', 'Q', 'I', 'QK_softmax', 'K', 'QK', 'Z'}
+                live_tensors = {
+                    "V",
+                    "AV",
+                    "FFA",
+                    "Q",
+                    "I",
+                    "QK_softmax",
+                    "K",
+                    "QK",
+                    "Z",
+                }
                 a = sims[0]
                 for b in sims[1:]:
                     if a.compatibility != b.compatibility:
                         break
                 SIM.combine_combineable((a, b), live_tensors)
-                assert a == b, f"Cannot concat SIMs with different compatibilies:\n\t{a}\n\t{b}"
-                assert len(s) == 1, f"Cannot concat SIMs with different compatibilies:\n\t" + "\n\t".join(
-                    str(s2) for s2 in s
+                assert (
+                    a == b
+                ), f"Cannot concat SIMs with different compatibilies:\n\t{a}\n\t{b}"
+                assert len(s) == 1, (
+                    f"Cannot concat SIMs with different compatibilies:\n\t"
+                    + "\n\t".join(str(s2) for s2 in s)
                 )
-        return SIM(sims[0].compatibility, PmappingGroup.concat([s.mappings for s in sims]))
+        return SIM(
+            sims[0].compatibility, PmappingGroup.concat([s.mappings for s in sims])
+        )
 
     @staticmethod
     def _group(
@@ -179,13 +194,15 @@ class SIM:
         drop_tags: bool = False,
         clear_tile_patterns_and_reservation_indices: bool = False,
         include_permutations: bool = False,
-    ) -> dict[Compatibility, list["SIM"]] | dict[Compatibility, list[tuple["SIM", list[int]]]]:
+    ) -> dict[Compatibility, list["SIM"]] | dict[
+        Compatibility, list[tuple["SIM", list[int]]]
+    ]:
         """
         Clears dead tensors (may keep loops), then group SIMs based on
         compatibility.
         """
         grouped = defaultdict(list)
-        
+
         def clear_reservations(c: Compatibility):
             if clear_tile_patterns_and_reservation_indices:
                 return c.clear_tile_patterns_and_reservation_indices()
@@ -204,10 +221,12 @@ class SIM:
                     grouped[clear_reservations(t)].append((s, loop_changes))
             else:
                 grouped[clear_reservations(compatibility)].append(s)
-                
+
         if clear_tile_patterns_and_reservation_indices:
             for k in grouped:
-                assert len(k.reservation_indices) == 0, f"Extra reservation indices are not empty: {k.reservation_indices}"
+                assert (
+                    len(k.reservation_indices) == 0
+                ), f"Extra reservation indices are not empty: {k.reservation_indices}"
 
         return grouped
 
@@ -229,7 +248,7 @@ class SIM:
         groups_with_one = [g[0] for g in groups if len(g) == 1]
         if len(groups_with_one) == len(groups):
             return groups_with_one + no_combine
-        
+
         others = parallel(
             [
                 delayed(SIM.concat)(g, allow_different_compatibilies)

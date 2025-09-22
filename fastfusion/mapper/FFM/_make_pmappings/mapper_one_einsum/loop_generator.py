@@ -1,12 +1,7 @@
 import itertools
 
 import fastfusion.frontend.arch as arch
-from fastfusion.frontend.mapping import (
-    MappingNode,
-    Temporal,
-    Spatial,
-    TensorHolder
-)
+from fastfusion.frontend.mapping import MappingNode, Temporal, Spatial, TensorHolder
 from fastfusion.frontend.workload.workload import (
     Einsum,
     RankVariableName,
@@ -153,10 +148,10 @@ def insert_temporal_loops(
         full_mapping = []
         for prev_tensor_holders, loop_order in zip(split_mapping, loop_orders):
             full_mapping.extend(prev_tensor_holders)
-            full_mapping.extend(
-                Temporal(rank_variable=r) for r in loop_order
-            )
-        tensor_holders = [node for node in full_mapping if isinstance(node, TensorHolder)]
+            full_mapping.extend(Temporal(rank_variable=r) for r in loop_order)
+        tensor_holders = [
+            node for node in full_mapping if isinstance(node, TensorHolder)
+        ]
         assert len(lowering_choices) == len(tensor_holders)
         for lowering_choice in itertools.product(*lowering_choices):
             for lower, node in zip(lowering_choice, tensor_holders):
@@ -179,7 +174,9 @@ def insert_spatial_loops(
         for i in range(len(mapping)):
             if not isinstance(mapping[i], TensorHolder):
                 continue
-            if arch_node_names.index(mapping[i].component) >= arch_node_names.index(node.name):
+            if arch_node_names.index(mapping[i].component) >= arch_node_names.index(
+                node.name
+            ):
                 insertion_point = i
                 break
         else:
