@@ -10,6 +10,7 @@ from pathlib import Path
 
 USER_CUSTOM_CONFIG_PATH_VAR = "FASTFUSION_CONFIG_PATH"
 
+
 def get_config():
     if USER_CUSTOM_CONFIG_PATH_VAR in os.environ:
         f = os.environ[USER_CUSTOM_CONFIG_PATH_VAR]
@@ -42,5 +43,6 @@ class Config(ParsableModel):
     @classmethod
     def from_yaml(cls, f: str) -> "Config":
         from fastfusion.util import yaml
+
         data = yaml.load_yaml(f)
         return cls(**data)

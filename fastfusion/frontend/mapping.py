@@ -214,10 +214,10 @@ class MappingNode(ParsableModel, ABC):
 
     _constraint_lambdas: List[Callable[[], bool]] = []
     """ Constraints that apply to this node. """
-    
+
     _must_be_here: bool = False
     """ Can the mapper move this node? """
-    
+
     _required: bool = False
     """ Must the mapper keep this node? """
 
@@ -278,12 +278,13 @@ class MappingNode(ParsableModel, ABC):
         return "white"
 
 
-
 class TilePattern(ParsableModel):
     stride: ParsesTo[Literal["symbol"] | sympy.Symbol | int | str] = "symbol"
     """ The stride of the pattern. """
 
-    initial_tile_shape: ParsesTo[Literal["symbol"] | sympy.Symbol | int | None | str] = "symbol"
+    initial_tile_shape: ParsesTo[
+        Literal["symbol"] | sympy.Symbol | int | None | str
+    ] = "symbol"
     """ The initial tile shape. """
 
     calculated_n_iterations: Literal["symbol"] | sympy.Symbol | int | None | str = None
@@ -308,18 +309,16 @@ class TilePattern(ParsableModel):
             s.append(f"stride={self.stride}")
         return " ".join(s)
 
-
     def update(self, **kwargs) -> "TilePattern":
         return type(self)(**{**self.model_dump(), **kwargs})
-
 
     def symbol2str(self) -> "TilePattern":
         def _symbol2str(x: sympy.Symbol | int | None) -> str | int | None:
             return x.name if isinstance(x, sympy.Symbol) else x
-        return type(self)(**{
-            x: _symbol2str(getattr(self, x))
-            for x in self._symbol_attrs()
-        })
+
+        return type(self)(
+            **{x: _symbol2str(getattr(self, x)) for x in self._symbol_attrs()}
+        )
 
     def symbols_as_strings(self) -> set[str]:
         symbols: set[str] = set()
@@ -337,16 +336,16 @@ class TilePattern(ParsableModel):
                 x = x.name
             return prepend + x if isinstance(x, str) else x
 
-        return self.update({
-            x: _prepend(getattr(self, x))
-            for x in self._symbol_attrs()
-        })
+        return self.update(
+            {x: _prepend(getattr(self, x)) for x in self._symbol_attrs()}
+        )
 
     def __eq__(self, other: "TilePattern") -> bool:
         return all(getattr(self, x) == getattr(other, x) for x in self._symbol_attrs())
 
     def __hash__(self) -> int:
         return hash((self.initial_tile_shape, self.stride))
+
 
 class Iteration(MappingNode):
     """
@@ -390,21 +389,25 @@ class Iteration(MappingNode):
         if isinstance(rv, (set, frozenset)):
             rv = ",".join(sorted(rv))
         return f"{rv} {self.tile_pattern}"
-        
+
     def merge(self, other: "Iteration", **kwargs) -> "Iteration":
         if not isinstance(other, Iteration):
             raise ValueError(f"Expected Iteration, got {type(other)}")
         if self.tile_pattern != other.tile_pattern:
-            raise ValueError(f"Tile patterns do not match: {self.tile_pattern} != {other.tile_pattern}")
+            raise ValueError(
+                f"Tile patterns do not match: {self.tile_pattern} != {other.tile_pattern}"
+            )
 
         my_rv, other_rv = self.rank_variable, other.rank_variable
         my_rv = my_rv if isinstance(my_rv, (set, frozenset)) else set((my_rv,))
-        other_rv = other_rv if isinstance(other_rv, (set, frozenset)) else set((other_rv,))
+        other_rv = (
+            other_rv if isinstance(other_rv, (set, frozenset)) else set((other_rv,))
+        )
         return type(self)(
             rank_variable=my_rv | other_rv,
             tile_pattern=self.tile_pattern,
             assume_perfect_factor=self.assume_perfect_factor,
-            **kwargs
+            **kwargs,
         )
 
     @property
@@ -442,7 +445,7 @@ class Temporal(Iteration):
 
     def __eq__(self, other: "Temporal") -> bool:
         return isinstance(other, Temporal) and super().__eq__(other)
-    
+
     def merge(self, other: "Temporal") -> "Temporal":
         if not isinstance(other, Temporal):
             raise ValueError(f"Expected Temporal, got {type(other)}")
@@ -450,17 +453,17 @@ class Temporal(Iteration):
 
 
 class Spatial(Iteration):
-    """ A spatial loop. """
+    """A spatial loop."""
 
     name: Union[int, str]
     """ The dimension the spatial is occuring over. """
-    
+
     component: str
     """ The hardware feature name hosting the iteration. """
-    
+
     component_object: Optional[arch.Leaf] = None
     """ The hardware feature hosting the Iteration. """
-    
+
     component_object: Optional[arch.Leaf] = None
 
     def compact_str(self) -> str:
@@ -484,33 +487,35 @@ class Spatial(Iteration):
         if self.name != other.name:
             raise ValueError(f"Names do not match: {self.name} != {other.name}")
         if self.component != other.component:
-            raise ValueError(f"Components do not match: {self.component} != {other.component}")
+            raise ValueError(
+                f"Components do not match: {self.component} != {other.component}"
+            )
         return super().merge(
-            other, 
-            name=self.name, 
-            component=self.component, 
-            component_object=self.component_object
+            other,
+            name=self.name,
+            component=self.component,
+            component_object=self.component_object,
         )
 
 
 class TensorHolder(MappingNode):
-    """ A node that represents a hardware Component holding a set of tensors. """
+    """A node that represents a hardware Component holding a set of tensors."""
 
     tensors: ParsableList[TensorName]
     """ The names of the tensors being held in this node. """
-    
+
     component: str
     """ The name of the component holding the tensors. """
-    
+
     component_object: Optional[arch.Component] = None
     """ The component object hosting the tensors. """
-    
+
     _must_keep_tensors: ParsableList[TensorName] = ParsableList()
     """ Which tensor(s) the Mapper must keep here. """
-    
+
     _backing: Set[TensorName] = set()
     """ Which tensor(s) are backed by this node. """
-    
+
     _lower: bool = True
     """ Whether the tensor names are compressed to lowercase. """
 
@@ -541,13 +546,14 @@ class TensorHolder(MappingNode):
     def _render_node_color(self) -> str:
         return "#D7FCD7"
 
-
     def merge(self, other: "TensorHolder") -> "TensorHolder":
         if not isinstance(other, TensorHolder):
             raise ValueError(f"Expected TensorHolder, got {type(other)}")
 
         if self.component != other.component:
-            raise ValueError(f"Components do not match: {self.component} != {other.component}")
+            raise ValueError(
+                f"Components do not match: {self.component} != {other.component}"
+            )
 
         new = type(self)(
             tensors=self.tensors + other.tensors,
@@ -558,6 +564,7 @@ class TensorHolder(MappingNode):
         new._backing = self._backing | other._backing
         new._lower = self._lower
         return new
+
 
 class Storage(TensorHolder):
     """
@@ -579,15 +586,15 @@ class ProcessingStage(TensorHolder):
 
 
 class Compute(MappingNode):
-    """ A node that represents a compute operation. These nodes are the leaves of the
+    """A node that represents a compute operation. These nodes are the leaves of the
     LoopTree."""
 
     einsum: str
     """ The Einsum being computed. """
-    
+
     compute: str
     """ The type of computation being performed. """
-    
+
     component_object: Optional[arch.Compute] = None
     """ The compute object performing the computation. """
 
@@ -1048,7 +1055,7 @@ class Nested(MappingNodeWithChildren):
                 int_x = int(x)
                 return int_x if int_x == x else x
             except:
-                pass    
+                pass
             return x
 
         for i, node in enumerate(self.nodes):
@@ -1073,8 +1080,9 @@ class Nested(MappingNodeWithChildren):
                 prev = node
         if prev is not None:
             result.append(prev)
-        
+
         return " ".join(node.compact_str() for node in result)
+
 
 class Pipeline(Split):
     """
@@ -1100,11 +1108,11 @@ class Sequential(Split):
 
 
 class Reservation(MappingNode):
-    """ A node that reserves a hardware resource for a specific task. """
+    """A node that reserves a hardware resource for a specific task."""
 
     purposes: ParsableList[str]
     """ The reasons for reserving the resource. """
-    
+
     resource: str
     """ The resource being reserved. """
 
@@ -1131,7 +1139,11 @@ class Reservation(MappingNode):
         raise ValueError(f"Reservation has multiple purposes: {self.purposes}")
 
     def __eq__(self, other: "Reservation") -> bool:
-        return isinstance(other, Reservation) and self.purposes == other.purposes and self.resource == other.resource
+        return (
+            isinstance(other, Reservation)
+            and self.purposes == other.purposes
+            and self.resource == other.resource
+        )
 
     def _render_node_color(self) -> str:
         return "#E8E8E8"  # Light gray
@@ -1156,7 +1168,7 @@ MappingNodeTypes: TypeAlias = Union[
 
 
 class Mapping(Nested):
-    """ A Mapping of a workload onto a hardware architecture. """
+    """A Mapping of a workload onto a hardware architecture."""
 
     version: Annotated[str, assert_version] = __version__
 

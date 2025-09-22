@@ -20,7 +20,9 @@ def rename_list_factory(rename_list: list | dict):
         return RenameList(rename_list)
 
     if not isinstance(rename_list, dict):
-        raise TypeError(f"Expected a list or dict, got {type(rename_list)}: {rename_list}")
+        raise TypeError(
+            f"Expected a list or dict, got {type(rename_list)}: {rename_list}"
+        )
 
     return RenameList(
         Rename(name=k, source=v, expected_count=None) for k, v in rename_list.items()
@@ -45,7 +47,7 @@ class EinsumRename(ParsableModel):
 
 
 class Renames(ParsableModel):
-    version:  Annotated[str, assert_version] = __version__
+    version: Annotated[str, assert_version] = __version__
     einsums: ParsableList[EinsumRename] = ParsableList()
 
     def model_post_init(self, __context__=None) -> None:

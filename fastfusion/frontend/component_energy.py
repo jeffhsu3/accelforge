@@ -5,6 +5,7 @@ from fastfusion.version import assert_version, __version__
 from fastfusion.util.basetypes import ParsableModel, ParsableList, ParsesTo
 from hwcomponents import get_energy
 
+
 class Subaction(ParsableModel):
     name: str
     attributes: ComponentAttributes = ComponentAttributes()
@@ -13,11 +14,12 @@ class Subaction(ParsableModel):
     model_name: Union[str, None] = None
     messages: list[str] = []
 
+
 class Action(ParsableModel):
     name: str
     arguments: ComponentAttributes = ComponentAttributes()
     energy: ParsesTo[Union[int, float]]
-    subactions: ParsableList['Subaction']
+    subactions: ParsableList["Subaction"]
 
     @staticmethod
     def from_models(
@@ -37,7 +39,7 @@ class Action(ParsableModel):
             definition = spec.components.components[class_name]
         except KeyError:
             pass
-                
+
         if arguments.energy is not None:
             entries = [
                 Subaction(
@@ -102,7 +104,9 @@ class Action(ParsableModel):
                         name=class_name,
                         attributes=attributes,
                         arguments=arguments,
-                        energy=energy * attributes.energy_scale * arguments.energy_scale,
+                        energy=energy
+                        * attributes.energy_scale
+                        * arguments.energy_scale,
                         model_name=estimation.model_name,
                         messages=estimation.messages,
                     )
@@ -117,6 +121,7 @@ class Action(ParsableModel):
             subactions=entries,
             energy=energy,
         )
+
 
 class EnergyEntry(ParsableModel):
     name: str
@@ -154,6 +159,7 @@ class EnergyEntry(ParsableModel):
                 )
             )
         return EnergyEntry(name=name, actions=actions, attributes=attributes)
+
 
 class ComponentEnergy(ParsableModel):
     version: Annotated[str, assert_version] = __version__

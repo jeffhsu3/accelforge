@@ -13,4 +13,3 @@ class Metrics(Flag):
     @classmethod
     def all_metrics(cls):
         return reduce(or_, iter(cls), cls.LATENCY)
-
