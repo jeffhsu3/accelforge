@@ -16,7 +16,9 @@ N_PARALLEL_PROCESSES = 24
 def using_parallel_processing():
     return PARALLELIZE and N_PARALLEL_PROCESSES > 1
 
-T = TypeVar('T')
+
+T = TypeVar("T")
+
 
 class fzs(frozenset[T], Generic[T]):
     def __repr__(self):
@@ -67,7 +69,7 @@ def defaultintersection(*args) -> set:
 
 def debugger_active():
     return not PARALLELIZE
-    return 'pydevd' in sys.modules or sys.gettrace() is not None
+    return "pydevd" in sys.modules or sys.gettrace() is not None
 
 
 def expfmt(x):
@@ -107,7 +109,7 @@ def parallel(
     return_as: str = None,
 ):
     jobs = list(jobs)
-    
+
     args = {}
     if return_as is not None:
         args["return_as"] = return_as
@@ -117,7 +119,7 @@ def parallel(
 
     if one_job_if_debugging and debugger_active():
         n_jobs = 1
-        
+
     if isinstance(jobs, dict):
         assert return_as == None, "return_as is not supported for dict jobs"
         r = zip(
@@ -134,8 +136,9 @@ def parallel(
         return [j[0](*j[1], **j[2]) for j in jobs]
 
     total_jobs = len(jobs)
-    
+
     pbar = tqdm(total=total_jobs, desc=pbar, leave=True) if pbar else None
+
     def yield_results():
         for result in Parallel(n_jobs=n_jobs, **args)(jobs):
             if pbar:
@@ -143,11 +146,12 @@ def parallel(
             yield result
         if pbar:
             pbar.close()
+
     if return_as in ["generator", "generator_unordered"]:
         return yield_results()
-    
+
     return list(yield_results())
+
 
 def symbol2str(x: str | sympy.Symbol) -> str:
     return x.name if isinstance(x, sympy.Symbol) else x
-
