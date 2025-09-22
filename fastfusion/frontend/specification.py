@@ -12,7 +12,7 @@ from fastfusion.frontend.component_energy import ComponentEnergy, EnergyEntry
 from fastfusion.frontend.mapping import Mapping
 import hwcomponents
 
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, Optional, Union, Self
 from fastfusion.util.basetypes import ParsableModel
 from pydantic import Field
 
@@ -62,7 +62,7 @@ class Specification(ParsableModel):
         self,
         symbol_table: Optional[Dict[str, Any]] = None,
         **kwargs,
-    ) -> tuple["Specification", dict[str, Any]]:
+    ) -> tuple[Self, dict[str, Any]]:
         """
         Parse all string expressions in the specification into concrete values.
 
@@ -88,7 +88,9 @@ class Specification(ParsableModel):
             symbol_table["variables"] = parsed_variables
             return super().parse_expressions(symbol_table, **kwargs)
 
-    def calculate_component_energy_area(self, energy: bool = True, area: bool = True):
+    def calculate_component_energy_area(
+        self, energy: bool = True, area: bool = True
+    ) -> None:
         """
         Populate per-component area and/or energy entries using installed
         component models.

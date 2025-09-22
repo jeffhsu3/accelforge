@@ -1,5 +1,5 @@
 import copy
-from typing import Callable, Union, Annotated
+from typing import Callable, Union, Annotated, Optional, Dict, Any
 from fastfusion.frontend.components import ComponentAttributes
 from fastfusion.version import assert_version, __version__
 from fastfusion.util.basetypes import ParsableModel, ParsableList, ParsesTo
@@ -128,10 +128,11 @@ class EnergyEntry(ParsableModel):
     attributes: ComponentAttributes = ComponentAttributes()
     actions: ParsableList[Action]
 
-    def find_action(self, name: str):
+    def find_action(self, name: str) -> Optional[Action]:
         for action in self.actions:
             if name == action.name:
                 return action
+        return None
 
     def __hash__(self) -> int:
         return id(self)
@@ -145,7 +146,7 @@ class EnergyEntry(ParsableModel):
         spec: "Specification",
         models: list,
         name: str,
-    ):
+    ) -> "EnergyEntry":
         actions = []
         for action_name, action_arguments in zip(action_names, arguments):
             actions.append(
@@ -168,7 +169,7 @@ class ComponentEnergy(ParsableModel):
     def isempty(self) -> bool:
         return len(self.entries) == 0
 
-    def to_dict(self):
+    def to_dict(self) -> Dict[tuple[str, str], float]:
         r = {}
         for t in self.entries:
             r[t.name] = {}
@@ -176,7 +177,7 @@ class ComponentEnergy(ParsableModel):
                 r[(t.name, a.name)] = a.energy
         return r
 
-    def find_action(self, component: str, action: str):
+    def find_action(self, component: str, action: str) -> Action:
         try:
             return self.entries[component].find_action(action)
         except KeyError:

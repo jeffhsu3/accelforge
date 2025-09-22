@@ -32,6 +32,7 @@ from typing import (
     get_args,
     get_origin,
     TYPE_CHECKING,
+    Self,
 )
 
 from fastfusion.util import yaml
@@ -47,6 +48,8 @@ T = TypeVar("T")
 M = TypeVar("M", bound=BaseModel)
 K = TypeVar("K")
 V = TypeVar("V")
+PM = TypeVar("PM", bound="ParsableModel")
+PL = TypeVar("PL", bound="ParsableList[Any]")
 
 Ts = TypeVarTuple("Ts")
 
@@ -597,7 +600,7 @@ class ParsableModel(ModelWithUnderscoreFields, Parsable["ParsableModel"], FromYA
         order: tuple[str, ...] = (),
         post_calls: tuple[PostCall[T], ...] = (),
         **kwargs,
-    ) -> tuple["ParsableModel", dict[str, Any]]:
+    ) -> tuple[Self, dict[str, Any]]:
         new = self.model_copy()
         symbol_table = symbol_table.copy() if symbol_table is not None else {}
         return new._parse_expressions(
@@ -649,7 +652,7 @@ class ParsableList(list[T], Parsable["ParsableList[T]"], Generic[T]):
         order: tuple[str, ...] = (),
         post_calls: tuple[PostCall[T], ...] = (),
         **kwargs,
-    ) -> tuple["ParsableModel", dict[str, Any]]:
+    ) -> tuple["ParsableList[T]", dict[str, Any]]:
         new = ParsableList[T](x for x in self)
         symbol_table = symbol_table.copy() if symbol_table is not None else {}
         order = order + tuple(x for x in range(len(new)) if x not in order)

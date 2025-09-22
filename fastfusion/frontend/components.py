@@ -1,4 +1,4 @@
-from typing import Annotated, Any, Dict, Optional, Union
+from typing import Annotated, Any, Dict, Iterator, Optional, Union
 
 from pydantic import ConfigDict
 from fastfusion.util.basetypes import (
@@ -83,7 +83,7 @@ class CompoundComponent(ParsableModel):
         action_name: str,
         attributes: ComponentAttributes,
         arguments: ComponentAttributes,
-    ):
+    ) -> Iterator[tuple[str, ComponentAttributes, ComponentAttributes, str]]:
         try:
             action: Action = self.actions[action_name]
         except KeyError:
@@ -106,7 +106,12 @@ class CompoundComponent(ParsableModel):
                 subaction_args = subaction.arguments.parse_expressions(
                     arguments.model_dump_non_none(), multiply_multipliers=True
                 )[0]
-                yield component.get_component_class(), component_attributes, subaction_args, subaction.name
+                yield (
+                    component.get_component_class(),
+                    component_attributes,
+                    subaction_args,
+                    subaction.name,
+                )
 
 
 # Components are only instantiated when they are called in the arch. The

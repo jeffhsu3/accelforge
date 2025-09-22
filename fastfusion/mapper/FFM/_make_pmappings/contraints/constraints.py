@@ -248,7 +248,7 @@ def get_constraints(
 
         for dim in m.spatial:
             dim = dim.name
-            if dim not in m.constraints.spatial:
+            if dim not in m.constraints.spatial or m.spatial[dim].fanout == 1:
                 continue
             loops = [
                 n

@@ -15,7 +15,7 @@ class Rename(ParsableModel):
     expected_count: int | None = None
 
 
-def rename_list_factory(rename_list: list | dict):
+def rename_list_factory(rename_list: list | dict) -> "RenameList":
     if isinstance(rename_list, list):
         return RenameList(rename_list)
 
@@ -38,7 +38,7 @@ class EinsumRename(ParsableModel):
     tensor_accesses: ParsableList[Rename] = ParsableList()
     rank_variables: ParsableList[Rename] = ParsableList()
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, **kwargs) -> None:
         if "tensor_accesses" in kwargs:
             kwargs["tensor_accesses"] = rename_list_factory(kwargs["tensor_accesses"])
         if "rank_variables" in kwargs:
