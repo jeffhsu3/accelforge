@@ -207,7 +207,7 @@ class ComputeStats:
         new.max_latency += other.max_latency
         # max_first_latency is only ever updated across loops ABOVE the loop
         # for which we calculated that first latency, so we should MAX
-        # new.max_first_latency = max_dict(self.max_first_latency, other.max_first_latency)
+        # new.max_first_latency = max_dict(self.max_first_latency, other.max_first_latency) # FIRST LATENCY
         return new
 
     def combine_temporal(self, other: "ComputeStats"):
@@ -216,7 +216,7 @@ class ComputeStats:
         self.max_latency += other.max_latency
         # max_first_latency is only ever updated across loops ABOVE the loop
         # for which we calculated that first latency, so we should MAX
-        # self.max_first_latency = max_dict(self.max_first_latency, other.max_first_latency)
+        # self.max_first_latency = max_dict(self.max_first_latency, other.max_first_latency) # FIRST LATENCY
 
     def combine_spatial(self, other: "ComputeStats"):
         self.total_ops += other.total_ops
@@ -224,7 +224,7 @@ class ComputeStats:
         self.max_latency = Max(self.max_latency, other.max_latency)
         # max_first_latency is only ever updated across loops ABOVE the loop
         # for which we calculated that first latency, so we should MAX
-        # self.max_first_latency = max_dict(self.max_first_latency, other.max_first_latency)
+        # self.max_first_latency = max_dict(self.max_first_latency, other.max_first_latency) # FIRST LATENCY
 
 
 @dataclass

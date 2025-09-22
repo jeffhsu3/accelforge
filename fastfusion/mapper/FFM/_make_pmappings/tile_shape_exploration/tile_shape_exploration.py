@@ -904,8 +904,8 @@ def run_model(job: Job):
         df[f'latency<SEP>compute'] = comp_latency * spec.arch.global_cycle_period
         # For first latency, we'll follow the convention of treating compute
         # as a component, similarly to memory (see below).
-        for compute_level, stats in reuse.compute_stats.items():
-            df[f'first<SEP>latency<SEP>{compute_level}'] = stats.max_first_latency
+        # for compute_level, stats in reuse.compute_stats.items(): # FIRST LATENCY
+        #     df[f'first<SEP>latency<SEP>{compute_level}'] = stats.max_first_latency
         for component, latency in mem_latency.items():
             df[f'latency<SEP>{component}'] = latency * spec.arch.global_cycle_period
 
@@ -1226,6 +1226,7 @@ class Objective:
         max_value: float=None,
         symbols: list[str]=None,
         only_care_if_valid: bool=False,
+        min_value: float=None,
     ):
         self.name: str = name
         self.formula: sympy.Expr = formula.simplify()
@@ -1235,6 +1236,7 @@ class Objective:
         self.only_care_if_valid: bool = only_care_if_valid
         if only_care_if_valid:
             assert self.max_value is not None
+        self.min_value: float = min_value
         
     def is_formula(self):
         return not isinstance(self.formula, (float, int))
@@ -1619,6 +1621,13 @@ def get_tile_shape_choices(
                     valid = result <= objective.max_value
                     if not isinstance(valid, np.ndarray):
                         valid = np.zeros(choices_enumerated.shape[0], dtype=bool) + valid
+                    if objective.min_value is not None:
+                        past_min = valid & (result >= objective.min_value)
+                        if past_min.sum() == 0:
+                            best = (result[valid]).max()
+                            past_min = valid & (result == best)
+                        valid = valid & past_min
+                        
                     porp = sum(valid) / max(1, choices_enumerated.shape[0])
                     job.log_porp_pmappings_kept(f"{objective.name}", sum(valid) / max(1, choices_enumerated.shape[0]))
                     choices_enumerated = choices_enumerated[valid]
