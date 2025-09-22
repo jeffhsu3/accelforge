@@ -517,13 +517,12 @@ def coalesce_symbols(
             # If there's only one symbol in the formula, we can try to replace it with
             # just the symbol.
             if len(formula.free_symbols & sym_enumerated_set) == 1:
-                formula, goal = _try_replace_single_term(
+                formula, new_goal = _try_replace_single_term(
                     formula, fzs(symbols_enumerated)
                 )
-                if goal is not None:
+                if new_goal is not None:
                     log_message("coalesce symbols", f"replacing single term: {formula}")
-                    update_symbol2goal(formula, goal, new_symbol2goal)
-                    continue
+                    update_symbol2goal(formula, new_goal, new_symbol2goal)
 
             # If we're a fraction and all of our symbols are in the denominator, replace
             # it with the reciprocal and change the goal
