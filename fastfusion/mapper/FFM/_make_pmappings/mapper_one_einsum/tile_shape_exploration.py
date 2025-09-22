@@ -599,7 +599,7 @@ def get_tile_shape_choices(
     objectives = objectives.copy()
 
     symbols_enumerated: list[Symbol] = []
-    choices_enumerated: np.ndarray = np.array([])
+    choices_enumerated: np.ndarray = None
 
     symbols_remaining = list(symbols)
 
@@ -857,6 +857,8 @@ def get_tile_shape_choices(
         print("\n\t" + f"\n\t".join(a + log))
 
     # Rearrange in tile shape order
+    if choices_enumerated is None:
+        return np.array([])
     return choices_enumerated[:, [symbols_enumerated.index(s) for s in symbols]]
 
 
