@@ -1,5 +1,5 @@
 from fastfusion.mapper.FFM.deprecate_maybe.tags import Tags
-from fastfusion.mapper.FFM._join_pmappings.mappinginfo import Compatibility
+from fastfusion.mapper.FFM._join_pmappings.compatibility import Compatibility
 
 
 ONE_SPLIT = "ONE_SPLIT"

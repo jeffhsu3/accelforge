@@ -9,7 +9,7 @@ from fastfusion.frontend.arch import TensorHolder
 from fastfusion.frontend.mapping import Iteration, Mapping, TilePattern
 from fastfusion.frontend.renames import RankVariableName, TensorName
 from fastfusion.frontend.workload.workload import EinsumName
-from fastfusion.mapper.FFM._join_pmappings.mappinginfo import (
+from fastfusion.mapper.FFM._join_pmappings.compatibility import (
     Compatibility,
     TensorReservation,
 )

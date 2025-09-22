@@ -4,7 +4,7 @@ import itertools
 from fastfusion.frontend import arch
 from fastfusion.frontend.specification import Specification
 from fastfusion.mapper.FFM._join_pmappings.join_pmappings import SIM
-from fastfusion.mapper.FFM._join_pmappings.mappinginfo import Loop, Compatibility
+from fastfusion.mapper.FFM._join_pmappings.compatibility import Loop, Compatibility
 from fastfusion.util import fzs
 from fastfusion.mapper.FFM._join_pmappings.join_pmappings import make_full_equivalent_rank_variables
 

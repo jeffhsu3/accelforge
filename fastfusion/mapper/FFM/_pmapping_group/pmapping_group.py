@@ -8,7 +8,7 @@ from typing import Iterable, Optional, Tuple, Union
 import sympy
 
 from fastfusion.frontend.mapping import Iteration, Nested, TilePattern
-from fastfusion.mapper.FFM._join_pmappings.mappinginfo import (
+from fastfusion.mapper.FFM._join_pmappings.compatibility import (
     Compatibility,
     Loop,
     TensorReservation,

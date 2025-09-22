@@ -20,7 +20,7 @@ from fastfusion.frontend.mapper.metrics import Metrics
 from fastfusion.mapper.FFM._make_pmappings.mapper_one_einsum import (
     get_single_einsum_jobs,
 )
-from fastfusion.mapper.FFM._join_pmappings.mappinginfo import Compatibility
+from fastfusion.mapper.FFM._join_pmappings.compatibility import Compatibility
 from fastfusion.mapper.FFM._join_pmappings.sim import SIM
 from fastfusion.mapper.FFM._make_pmappings.mapper_one_einsum.tile_shape_exploration import (
     EXPERIMENTAL_TILE_SHAPE_EXPLORATION,

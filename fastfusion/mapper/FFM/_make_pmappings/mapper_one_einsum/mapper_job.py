@@ -24,7 +24,7 @@ from fastfusion.frontend.workload.workload import (
 )
 
 from fastfusion.frontend.mapper import Metrics
-from fastfusion.mapper.FFM._join_pmappings.mappinginfo import (
+from fastfusion.mapper.FFM._join_pmappings.compatibility import (
     Compatibility,
     TensorReservation,
 )

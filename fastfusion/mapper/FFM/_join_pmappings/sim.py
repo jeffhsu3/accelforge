@@ -6,7 +6,7 @@ from joblib import delayed
 
 from fastfusion.mapper.FFM._pmapping_group import PmappingGroup
 
-from fastfusion.mapper.FFM._join_pmappings.mappinginfo import *
+from fastfusion.mapper.FFM._join_pmappings.compatibility import *
 from fastfusion.util import parallel
 
 
