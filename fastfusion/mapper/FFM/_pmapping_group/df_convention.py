@@ -57,6 +57,12 @@ def nameloop2col(name: str, nloops: int, left: bool = False) -> str:
 
 
 @dict_cached
+def firstlatency2col(name: str, nloops: int) -> str:
+    """Format: first latency name level"""
+    return f"first<SEP>latency<SEP>{name}<SEP>{nloops}"
+
+
+@dict_cached
 def tensor2col(tensor: str) -> str:
     """Format: tensor tensor_name"""
     return f"tensor<SEP>{tensor}"

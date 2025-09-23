@@ -44,7 +44,7 @@ from fastfusion.model.looptree.reuse.summarized.symbolic import (
 from fastfusion.model.looptree.energy import compute_energy_from_actions, gather_actions
 from fastfusion.model.looptree.latency import get_latency
 
-from fastfusion.mapper.FFM._pmapping_group import nameloop2col, tensor2col
+from fastfusion.mapper.FFM._pmapping_group import nameloop2col, tensor2col, firstlatency2col
 from fastfusion.frontend.mapper.metrics import Metrics
 from fastfusion.util.util import fzs
 
@@ -123,8 +123,9 @@ def run_model(job: Job):
         df[f"latency<SEP>compute"] = comp_latency * spec.arch.global_cycle_period
         # For first latency, we'll follow the convention of treating compute
         # as a component, similarly to memory (see below).
-        # for compute_level, stats in reuse.compute_stats.items(): # FIRST LATENCY
-        #     df[f'first<SEP>latency<SEP>{compute_level}'] = stats.max_first_latency
+        for compute_level, stats in reuse.compute_stats.items(): # FIRST LATENCY
+            for idx, max_first_latency in stats.max_first_latency.items():
+                df[firstlatency2col(compute_level, idx)] = max_first_latency
         for component, latency in mem_latency.items():
             df[f"latency<SEP>{component}"] = latency * spec.arch.global_cycle_period
 
