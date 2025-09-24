@@ -1,6 +1,10 @@
 import re
 from itertools import product
 
+import pydot
+
+from fastfusion.util.util import pydot_graph
+
 from fastfusion.util.basetypes import ParsableDict, ParsableList, ParsableModel
 from fastfusion.util.parse_expressions import ParseError
 from fastfusion.util.setexpressions import InvertibleSet, eval_set_expression
@@ -226,7 +230,7 @@ class Einsum(ParsableModel):
 
     def to_formatted_string(self, compress: bool = False) -> str:
         lhs_join = ",\n" if compress else " , "
-        rhs_join = "#215;\n" if compress else " #215; "
+        rhs_join = "  × " if compress else "  × "
         lhs = lhs_join.join(
             [t.to_formatted_string() for t in self.tensor_accesses if t.output]
         )
@@ -365,6 +369,36 @@ class Workload(ParsableModel):
     #     graph.config = config
 
     #     return md.Mermaid(graph)
+    
+    def render(self) -> str: # Render as Pydot
+        graph = pydot_graph()
+        
+        # Add all tensors as nodes (circles)
+        tensors = []
+        seen_tensor_names = set()
+        for einsum in self.einsums:
+            node = pydot.Node(f"Einsum_{einsum.name}", shape="box", label=f"<{einsum.to_formatted_string(compress=True)}>")
+            graph.add_node(node)
+            for tensor_access in einsum.tensor_accesses:
+                if tensor_access.name not in seen_tensor_names:
+                    tensors.append(tensor_access.name)
+                    seen_tensor_names.add(tensor_access.name)
+                    node = pydot.Node(f"Tensor_{tensor_access.name}", shape="oval", label=f"<{tensor_access.to_formatted_string()}>")
+                    graph.add_node(node)
+
+        # Add all einsums as nodes (rectangles)
+        for einsum in self.einsums:
+            # Add edges from tensors to einsums
+            for tensor_access in einsum.tensor_accesses:
+                if tensor_access.output:
+                    # Output tensor: einsum -> tensor
+                    edge = pydot.Edge(f"Einsum_{einsum.name}", f"Tensor_{tensor_access.name}")
+                    graph.add_edge(edge)
+                else:
+                    # Input tensor: tensor -> einsum
+                    edge = pydot.Edge(f"Tensor_{tensor_access.name}", f"Einsum_{einsum.name}")
+                    graph.add_edge(edge)
+        return graph.create_svg(prog="dot")
 
     def get_constraint_symbol_table(
         self,
