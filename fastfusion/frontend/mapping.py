@@ -39,6 +39,7 @@ from fastfusion.util.basetypes import (
     InferFromTag,
 )
 from fastfusion.frontend.workload.workload import RankVariableName, TensorName
+from fastfusion.util.util import pydot_graph
 from fastfusion.version import assert_version, __version__
 from fastfusion.frontend import arch
 
@@ -880,7 +881,7 @@ class Nested(MappingNodeWithChildren):
                         )
                     except ValueError:
                         pass
-                    return max_child_n_shared_loops
+                    return max_child_n_shared_loops + n_shared_loops
 
         raise ValueError("BUG")
 
@@ -1210,9 +1211,7 @@ class Mapping(Nested):
         return f"Root"
 
     def render(self) -> str:
-        graph = pydot.Dot(graph_type="digraph", rankdir="TD", ranksep=0.2)
-        graph.set_node_defaults(shape="box", fontname="Arial", fontsize="12")
-        graph.set_edge_defaults(fontname="Arial", fontsize="10")
+        graph = pydot_graph()
         # Enable HTML-like labels for color support
         graph.set_node_defaults(label="")
         for node in self._render_make_children():
@@ -1279,6 +1278,7 @@ class Mapping(Nested):
             print(
                 f"Merging with shared loops {highest_n_shared_loops}: {names_a} <--> {names_b}."
             )
+            print(pmappings[highest_shared_pmapping_index].get_n_shared_loops(pmappings[highest_shared_pmapping_index + 1]))
             pmappings[highest_shared_pmapping_index] = pmappings[
                 highest_shared_pmapping_index
             ].merge(

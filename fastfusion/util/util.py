@@ -2,6 +2,7 @@ import itertools
 from numbers import Number
 from typing import Generic, TypeVar
 
+import pydot
 import sympy
 
 from joblib import Parallel, delayed
@@ -10,7 +11,15 @@ import sys
 from tqdm import tqdm
 
 PARALLELIZE = True
-N_PARALLEL_PROCESSES = 24
+N_PARALLEL_PROCESSES = 32
+
+def set_n_parallel_jobs(n_jobs: int, print_message: bool = False):
+    global N_PARALLEL_PROCESSES
+    N_PARALLEL_PROCESSES = n_jobs
+    global PARALLELIZE
+    PARALLELIZE = n_jobs > 1
+    if print_message:
+        print(f"Using {n_jobs} parallel jobs")
 
 
 def using_parallel_processing():
@@ -155,3 +164,10 @@ def parallel(
 
 def symbol2str(x: str | sympy.Symbol) -> str:
     return x.name if isinstance(x, sympy.Symbol) else x
+
+
+def pydot_graph() -> pydot.Dot:
+    graph = pydot.Dot(graph_type="digraph", rankdir="TD", ranksep=0.2)
+    graph.set_node_defaults(shape="box", fontname="Arial", fontsize="12")
+    graph.set_edge_defaults(fontname="Arial", fontsize="10")
+    return graph
