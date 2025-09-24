@@ -538,7 +538,6 @@ class PmappingGroup:
             result.check_above_subset_below(live_tensors)
             result.check_reservations(live_tensors)
 
-        result._check_reservations()
 
         result.free_to_loop_index(next_shared_loop_index, live_tensors=live_tensors)
         if not CHECK_CORRECTNESS:
