@@ -1,3 +1,9 @@
+# Instructions
+
+1. Go to the docker directory
+2. Copy the three files into a directory on your system
+3. Run the commands in "Setting up Docker"
+4. From in the container, go to the notebooks/examples directory
 
 ## Setting up Docker
 1. Set the DOCKER_ARCH env variable:

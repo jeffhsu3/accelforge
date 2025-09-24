@@ -1,3 +1,19 @@
+# Each tensor is shaped by a set of ranks, denoted by capital letters
+# For example: Q is shaped by (B, M, H, E)
+# We'll use lower-case letters to index into the ranks
+# For example: Q[b, m, h, e] is the tensor Q at index (b, m, h, e)
+
+# When making a projection list, it's equivalent to the Einsum subscript notation, so:
+# Q projection [b, m, h, e] means that b indexes into B, m indexes into M...
+# When making a projection dict, it's equivalent to the Einsum subscript/superscript notation, so:
+# K projection { B: b, M: p, H: h, E: e } means that b indexes into B, p indexes into M...
+
+# Renames take a tensor name and turn them into a canonical name that we can use in
+# architecture constraints. For example, we want to use the words "input", "weight", and
+# "output" to refer to the tensors of an Einsum, but the Einsum QK has no clear "weight"
+# or "input" because both Q and K are inputs. So we rename K to be weight.
+
+
 workload:
   version: "0.5"
   shape:
@@ -16,6 +32,9 @@ workload:
 
   einsums:
   - name: I
+    # Copy operation means that we move the input tensor from one place to another
+    # without doing computation. This lets us copy the input tensor onto the accelerator
+    # once and then use it in the Q, K, and V operations.
     is_copy_operation: True
     tensor_accesses:
     - {name: I_in, projection: [b, m, d]}
@@ -78,6 +97,10 @@ workload:
     - {name: WFFB, projection: [c, j]}
     - {name: FFB, projection: [b, m, j], output: True}
 
+# Inputs(): Inputs to this Einsum
+# Intermediates(): Produced by some Einsum and consumed by some other Einsum
+# Outputs(): Outputs of this Einsum
+# Nothing(): Empty set
 
 renames:
   einsums:
