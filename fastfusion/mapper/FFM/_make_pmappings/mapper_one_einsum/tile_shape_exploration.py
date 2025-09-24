@@ -120,9 +120,9 @@ def run_model(
         for (component, action), energy in energy.items():
             df[f"energy<SEP>{component}<SEP>{action}"] = energy
 
-    if metrics & Metrics.RESERVATIONS:
-        for memory, occupancies in total_occupancy.items():
-            df[f"reservations<SEP>{memory}"] = sum(occupancies.values())
+    # if metrics & Metrics.RESERVATIONS:
+    #     for memory, occupancies in total_occupancy.items():
+    #         df[f"reservations<SEP>{memory}"] = sum(occupancies.values())
 
     per_memory_usage_df = {}
     for memory, occupancies in total_occupancy.items():
@@ -1029,7 +1029,10 @@ def _explore_tile_shapes_new(job: "Job"):
         b = df[stride.name] if isinstance(stride, Symbol) else stride
         df[n_iterations] = np.round(a / b)
 
-    df = pd.DataFrame(df, columns=df.keys())
+    try:
+        df = pd.DataFrame(df, columns=df.keys())
+    except ValueError as e:
+        df = pd.DataFrame(df, columns=df.keys(), index=[0])
     assert not df.isna().any().any()
     job.valid_pmappings = job.total_pmappings * prod(job.pmapping_keep_rates.values())
     return df

@@ -7,7 +7,6 @@ from operator import or_
 class Metrics(Flag):
     LATENCY = auto()
     ENERGY = auto()
-    RESERVATIONS = auto()
     RESOURCE_USAGE = auto()
 
     @classmethod
