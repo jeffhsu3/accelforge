@@ -1756,86 +1756,86 @@ def generate_tile_shapes(
         )
         return (new_rank, new_index, new_is_symbol, good_choices)
 
-    def _greedily_maximize_reuse(rank_var_and_choices_a, other_rank_var_and_choices):
-        rank_a, index_a, is_symbol_a, choices_a = rank_var_and_choices_a
+    # def _greedily_maximize_reuse(rank_var_and_choices_a, other_rank_var_and_choices):
+    #     rank_a, index_a, is_symbol_a, choices_a = rank_var_and_choices_a
 
-        # Check if completed loops are:
-        # - Above any storage node
-        # - Directly beneath beneath the last storage node for a memory
+    #     # Check if completed loops are:
+    #     # - Above any storage node
+    #     # - Directly beneath beneath the last storage node for a memory
 
-        completed_loops = index_a
-        outermost_completed_loop = min(completed_loops)
-        n = -1
-        nodes = job.mapping.nodes
-        for i, node in enumerate(job.mapping.nodes):
-            if not isinstance(node, Iteration):
-                continue
-            n += 1
+    #     completed_loops = index_a
+    #     outermost_completed_loop = min(completed_loops)
+    #     n = -1
+    #     nodes = job.mapping.nodes
+    #     for i, node in enumerate(job.mapping.nodes):
+    #         if not isinstance(node, Iteration):
+    #             continue
+    #         n += 1
 
-            if n != outermost_completed_loop:
-                continue
+    #         if n != outermost_completed_loop:
+    #             continue
 
-            if i == 0:  # Outermost loop!
-                break
+    #         if i == 0:  # Outermost loop!
+    #             break
 
-            next_tensor_holders = [
-                n for n in nodes[i:] if isinstance(n, mapping.Reservation)
-            ]
-            next_names = set([n.resource for n in next_tensor_holders])
+    #         next_tensor_holders = [
+    #             n for n in nodes[i:] if isinstance(n, mapping.Reservation)
+    #         ]
+    #         next_names = set([n.resource for n in next_tensor_holders])
 
-            if (
-                isinstance(nodes[i - 1], mapping.Reservation)
-                and next_names
-                and nodes[i - 1].resource not in next_names
-            ):
-                break
-            else:
-                return rank_var_and_choices_a
-        else:
-            raise RuntimeError("BUG")
+    #         if (
+    #             isinstance(nodes[i - 1], mapping.Reservation)
+    #             and next_names
+    #             and nodes[i - 1].resource not in next_names
+    #         ):
+    #             break
+    #         else:
+    #             return rank_var_and_choices_a
+    #     else:
+    #         raise RuntimeError("BUG")
 
-        (
-            corrected_choices,
-            corrected_choices_with_largest,
-            complete_indices,
-            indices,
-            is_symbols,
-        ) = get_corrected_choices(
-            choices_a, index_a, is_symbol_a, other_rank_var_and_choices
-        )
-        corrected_choices_2 = corrected_choices.copy()
+    #     (
+    #         corrected_choices,
+    #         corrected_choices_with_largest,
+    #         complete_indices,
+    #         indices,
+    #         is_symbols,
+    #     ) = get_corrected_choices(
+    #         choices_a, index_a, is_symbol_a, other_rank_var_and_choices
+    #     )
+    #     corrected_choices_2 = corrected_choices.copy()
 
-        listified_choices = sort_choices(corrected_choices, indices, is_symbols)
-        listified_choices_2 = sort_choices(corrected_choices_2, indices, is_symbols)
+    #     listified_choices = sort_choices(corrected_choices, indices, is_symbols)
+    #     listified_choices_2 = sort_choices(corrected_choices_2, indices, is_symbols)
 
-        # Get the spatial utilizations
-        df = {}
-        for i in range(choices_a.shape[1]):
-            df[i] = choices_a[:, i]
+    #     # Get the spatial utilizations
+    #     df = {}
+    #     for i in range(choices_a.shape[1]):
+    #         df[i] = choices_a[:, i]
 
-        for component_dim, utilization_model in utilization_df.items():
-            _, component, dim = component_dim.split("<SEP>")
-            utilization[(component, dim)] = utilization_model(*listified_choices)
-            utilization2[(component, dim)] = utilization_model(*listified_choices_2)
-            util = np.minimum(
-                utilization[(component, dim)], utilization2[(component, dim)]
-            )
-            df[(component, dim)] = util
+    #     for component_dim, utilization_model in utilization_df.items():
+    #         _, component, dim = component_dim.split("<SEP>")
+    #         utilization[(component, dim)] = utilization_model(*listified_choices)
+    #         utilization2[(component, dim)] = utilization_model(*listified_choices_2)
+    #         util = np.minimum(
+    #             utilization[(component, dim)], utilization2[(component, dim)]
+    #         )
+    #         df[(component, dim)] = util
 
-        import paretoset
+    #     import paretoset
 
-        return (
-            rank_a,
-            index_a,
-            is_symbol_a,
-            choices_a[
-                paretoset.paretoset(
-                    np.concatenate([x.reshape(-1, 1) for x in df.values()], axis=1),
-                    sense=["max"] * len(df),
-                ),
-                :,
-            ],
-        )
+    #     return (
+    #         rank_a,
+    #         index_a,
+    #         is_symbol_a,
+    #         choices_a[
+    #             paretoset.paretoset(
+    #                 np.concatenate([x.reshape(-1, 1) for x in df.values()], axis=1),
+    #                 sense=["max"] * len(df),
+    #             ),
+    #             :,
+    #         ],
+    #     )
 
     # First, combine spatial loops
     # loops = [x for x in job.mapping.nodes if isinstance(x, (Temporal, Spatial))]
@@ -1901,7 +1901,7 @@ def generate_tile_shapes(
 
         return best_reduction if _recursed else best_index
 
-    if not specification.mapper.ffm._greedily_maximize_reuse:
+    if True: # not specification.mapper.ffm._greedily_maximize_reuse:
         # Start combining from the loop with the fewest choices
         _, fewest_index = min(
             ((x[-1].shape[0], i) for i, x in enumerate(rank_var_and_choices))
@@ -1951,24 +1951,24 @@ def generate_tile_shapes(
             rank_var_and_choices.insert(
                 0, get_combined_choices(a, b, rank_var_and_choices, shape)
             )
-    else:
-        assert (
-            specification.mapper.ffm.force_memory_hierarchy_order
-        ), "Maximizing memory usage requires force_memory_hierarchy_order to be set"
-        # Start combining from the outside in
-        while len(rank_var_and_choices) > 1:
-            a, b = rank_var_and_choices.pop(-1), rank_var_and_choices.pop(-1)
-            rank_var_and_choices.append(
-                get_combined_choices(a, b, rank_var_and_choices, shape)
-            )
+    # else:
+    #     assert (
+    #         specification.mapper.ffm.force_memory_hierarchy_order
+    #     ), "Maximizing memory usage requires force_memory_hierarchy_order to be set"
+    #     # Start combining from the outside in
+    #     while len(rank_var_and_choices) > 1:
+    #         a, b = rank_var_and_choices.pop(-1), rank_var_and_choices.pop(-1)
+    #         rank_var_and_choices.append(
+    #             get_combined_choices(a, b, rank_var_and_choices, shape)
+    #         )
 
-            # If we've just finished processing all loops that affect a memory, then
-            # save only the ones with the pareto-largest tile shapes and spatial utilization
-            rank_var_and_choices.append(
-                _greedily_maximize_reuse(
-                    rank_var_and_choices.pop(-1), rank_var_and_choices
-                )
-            )
+    #         # If we've just finished processing all loops that affect a memory, then
+    #         # save only the ones with the pareto-largest tile shapes and spatial utilization
+    #         rank_var_and_choices.append(
+    #             _greedily_maximize_reuse(
+    #                 rank_var_and_choices.pop(-1), rank_var_and_choices
+    #             )
+    #         )
 
     combined_choices = rank_var_and_choices[0][-1]
     is_symbol = rank_var_and_choices[0][2]

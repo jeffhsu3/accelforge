@@ -42,16 +42,29 @@ class MappingFromRow:
 def make_pmappings(
     spec: Specification,
     einsum_names: list[EinsumName] | None = None,
-    tagger=None,
     can_combine_multiple_runs: bool = False,
 ) -> MultiEinsumPmappings:
+    """
+    Creates pmappings for a specification. Pmappings must be joined together using
+    `join_pmappings` to create a full mapping.
+
+    Args:
+        spec: The Specification to generate pmappings for.
+        einsum_names: The einsum names to generate pmappings for. If None, all einsums will be included.
+        can_combine_multiple_runs: Whether we would like to be able to combine multiple
+        make_pmappings runs. Haivng this as True allows you to do things like
+            `pmappings = make_pmappings(*args_a) | make_pmappings(*args_b)`
+        but slows down execution.
+
+    Returns:
+        A MultiEinsumPmappings object.
+    """
     parsed_spec, _ = spec.parse_expressions()
     parsed_spec.calculate_component_energy_area(area=False)
     flattened_arches = parsed_spec.get_flattened_architecture()
     sims, pmapping_objects, einsum2jobs = get_sims(
         parsed_spec,
         flattened_arches,
-        tagger=tagger,
         metrics=spec.mapper.ffm.metrics,
         einsum_names=einsum_names,
         can_combine_multiple_runs=can_combine_multiple_runs,
@@ -81,7 +94,7 @@ def row2mapping(
 
 def join_pmappings(
     spec: Specification, pmappings: MultiEinsumPmappings
-) -> PmappingGroup:
+) -> Mappings:
     for einsum_name, einsum_pmappings in pmappings.einsum2pmappings.items():
         total = sum(len(p.mappings.data) for p in einsum_pmappings)
         n_compatibilities = len(einsum_pmappings)

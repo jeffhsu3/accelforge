@@ -1,10 +1,10 @@
 arch:
   version: "0.5"
-  global_cycle_period: 1e-9
+  global_cycle_period: 1/1.05e9
   nodes:
   - !Memory
     name: MainMemory
-    attributes: 
+    attributes:
       _size: inf
       _bandwidth_reads_plus_writes_per_cycle: 614e9 / 1.05e9 # 614 GB/s. Chip runs at at 1.05GHz, so divide by 1.05 to get per-cycle bandwidth
       _datawidth: 8
@@ -30,7 +30,7 @@ arch:
     constraints:
       tensors:
         keep: ~MainMemory.tensors() | input | output
-        # no_refetch_from_above: All() if ~MainMemory.tensors() else Nothing()
+        no_refetch_from_above: Intermediates() if ~MainMemory.tensors() else Nothing()
 
   - !Memory
     name: LocalBuffer
@@ -46,13 +46,6 @@ arch:
       tensors:
         bypass: weight
         keep: input | output
-      # spatial:
-      #   - name: Z
-      #     min_utilization: 1
-      #     loop_bounds:
-      #     - expression: weight.rank_variables()
-      #       operator: ==
-      #       value: 1
 
   - !Compute
     name: scalar_unit
@@ -77,19 +70,19 @@ arch:
       tensors:
         bypass: ~weight
         keep: weight
-      # spatial:
-      # - name: X # Parallel rank
-      #   min_utilization: 1
-      #   loop_bounds:
-      #   - expression: input.rank_variables() | ~output.rank_variables()
-      #     operator: ==
-      #     value: 1
-      # - name: Y # Reduced rank. No iteration over outputs
-      #   min_utilization: 1
-      #   loop_bounds:
-      #   - expression: output.rank_variables() | ~input.rank_variables()
-      #     operator: ==
-      #     value: 1
+      spatial:
+      - name: X # Parallel rank
+        min_utilization: 1
+        loop_bounds:
+        - expression: input.rank_variables() | ~output.rank_variables()
+          operator: ==
+          value: 1
+      - name: Y # Reduced rank. No iteration over outputs
+        min_utilization: 1
+        loop_bounds:
+        - expression: output.rank_variables() | ~input.rank_variables()
+          operator: ==
+          value: 1
 
   - !Compute
     name: MAC

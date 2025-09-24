@@ -982,9 +982,18 @@ class Nested(MappingNodeWithChildren):
                         break
 
             if to_add is None:
-                raise ValueError(
-                    f"No matching loop found for {my_loop_group} and {other_loop_group}"
-                )
+                if len(my_loop_group) == 1 and len(other_loop_group) == 1:
+                    print(f'Warning. Matching loops {my_loop_group[0]} and {other_loop_group[0]}. Need rank variable translation here.')
+                    l = copy.deepcopy(my_loop_group.pop(0))
+                    l.rank_variable = l.rank_variable if isinstance(l.rank_variable, set) else set([l.rank_variable])
+                    rv2 = other_loop_group.pop(0).rank_variable
+                    rv2 = rv2 if isinstance(rv2, set) else set([rv2])
+                    l.rank_variable = l.rank_variable | rv2
+                    to_add = [l]
+                else:
+                    raise ValueError(
+                        f"No matching loop found for {my_loop_group} and {other_loop_group}"
+                    )
 
             zipped_groups.append(to_add)
 
@@ -1275,10 +1284,10 @@ class Mapping(Nested):
 
             names_a = einsum_names(pmappings[highest_shared_pmapping_index])
             names_b = einsum_names(pmappings[highest_shared_pmapping_index + 1])
-            print(
-                f"Merging with shared loops {highest_n_shared_loops}: {names_a} <--> {names_b}."
-            )
-            print(pmappings[highest_shared_pmapping_index].get_n_shared_loops(pmappings[highest_shared_pmapping_index + 1]))
+            # print(
+            #     f"Merging with shared loops {highest_n_shared_loops}: {names_a} <--> {names_b}."
+            # )
+            # print(pmappings[highest_shared_pmapping_index].get_n_shared_loops(pmappings[highest_shared_pmapping_index + 1]))
             pmappings[highest_shared_pmapping_index] = pmappings[
                 highest_shared_pmapping_index
             ].merge(
