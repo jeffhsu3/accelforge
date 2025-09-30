@@ -12,28 +12,6 @@ check_platform:
 	fi
 	@echo "Using platform: $$DOCKER_ARCH"
 
-clone_dependencies:
-	mkdir -p .dependencies
-	cd .dependencies && git clone git@github.com:Accelergy-Project/fastfusion.git
-	cd .dependencies && git clone --recurse-submodules git@github.com:Accelergy-Project/hwcomponents.git
-	cd .dependencies && git clone git@github.com:gilbertmike/combinatorics.git
-	chmod -R 777 .dependencies
-
-install_dependencies:
-	if [ ! -f /.dockerenv ]; then \
-		echo "Not in a container. Please run 'make run_docker' first."; \
-		exit 1; \
-	fi
-	pip3 install -e ./.dependencies/fastfusion --break-system-packages
-	pip3 install -e ./.dependencies/hwcomponents/models/* --break-system-packages
-	pip3 install -e ./.dependencies/combinatorics --break-system-packages
-	pip3 install -e ./.dependencies/hwcomponents --break-system-packages
-
-pull_dependencies:
-	cd .dependencies/fastfusion && git pull
-	cd .dependencies/hwcomponents && git pull
-	cd .dependencies/hwcomponents && git submodule update --init --recursive
-	cd .dependencies/combinatorics && git pull
 
 build_docker: check_platform
 	sudo chmod -R 777 .dependencies
@@ -42,3 +20,8 @@ build_docker: check_platform
 run_docker: check_platform
 	sudo chmod -R 777 .dependencies
 	DOCKER_ARCH=$$DOCKER_ARCH docker-compose up
+	
+install-dependencies:
+	git clone --recurse-submodules https://github.com/Accelergy-Project/hwcomponents.git
+	cd hwcomponents && make install-dependencies
+	cd hwcomponents && pip3 install .
