@@ -7,9 +7,11 @@ from datetime import datetime
 import time
 import csv
 
-from .paths import DATA_DIR
+from paths import DATA_DIR
 
 from zigzag import api
+
+ZIGZAG_ESTIMATED_MODEL_TPUT = 222 # evals/s
 
 workload_path = "workloads/zigzag/gemm_16k.yaml"
 accelerator_path = "architectures/zigzag/tpu_like_no_llb.yaml"
@@ -22,15 +24,15 @@ def run_experiment(result_fname, accelerator_fname):
     result_fname = DATA_DIR / result_fname
     with open(result_fname, 'w') as csvfile:
         writer = csv.writer(csvfile, delimiter=',')
-        writer.writerow(['lfp', 'mapper_time', 'energy', 'latency'])
+        writer.writerow(['lfp', 'mapper_time', 'evaluations', 'energy', 'latency'])
     
-        for lpf_limit in range(4, 10):
+        for lpf_limit in range(4, 11):
             start = time.time()
             energy, latency, cmes = api.get_hardware_performance_zigzag(
                 workload=workload_path,
                 accelerator=accelerator_fname,
                 mapping=mapping_path,
-                opt="energy",
+                opt="EDP",
                 dump_folder=dump_folder,
                 pickle_filename=pickle_filename,
                 lpf_limit=lpf_limit
@@ -42,7 +44,11 @@ def run_experiment(result_fname, accelerator_fname):
             print(f"Total energy = {energy:.2e} pJ")
             print(f"Total latency = {latency:.2e} cycles")
     
-            writer.writerow([lpf_limit, duration, energy/1e12, latency/1e9])
+            writer.writerow([lpf_limit,
+                             duration,
+                             duration*ZIGZAG_ESTIMATED_MODEL_TPUT,
+                             energy/1e12,
+                             latency/1e9])
 
 run_experiment("zigzag_gemm_16k.csv", "architectures/zigzag/tpu_like.yaml")
 run_experiment("zigzag_gemm_16k_no_llb.csv", "architectures/zigzag/tpu_like_no_llb.yaml")

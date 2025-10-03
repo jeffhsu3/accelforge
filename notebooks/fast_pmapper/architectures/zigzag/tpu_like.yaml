@@ -96,8 +96,8 @@ memories:
     served_dimensions: [D1, D2]
 
   GLB:
-    size: 8388608 # 1 MiB
-    r_cost: 2048  # 2 pJ/8b
+    size: 12582912 # 1.5 MiB
+    r_cost: 2048   # 2 pJ/8b
     w_cost: 1188   # 2.32 pJ/8b
     area: 0
     latency: 1

@@ -30,7 +30,7 @@ architecture:
     subclass: dummy_storage
     attributes:
       width: 4096
-      depth: 2048  # 1 MiB = 8 Mib  (Kind of a wide SRAM, probably heavily banked)
+      depth: 3072  # 1.5 MiB = 12 Mib  (Kind of a wide SRAM, probably heavily banked)
       datawidth: 8
       read_bandwidth: 1024
       write_bandwidth: 512
@@ -154,7 +154,8 @@ mapper:
   optimization_metrics: [ edp ]
   live_status: False
   num_threads: 1
-  search_size: 1000          # Max valid mappings per-thread
+  evaluated_size: 10000
+  search_size: 1000000000          # Max valid mappings per-thread
   victory_condition: 100000      # Exit once a mapping is better than this number of
   #                             # valid mappings in a row
   timeout: 100000              # Max invalid mappings in a row

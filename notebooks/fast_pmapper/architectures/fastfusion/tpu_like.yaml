@@ -47,6 +47,8 @@ arch:
     - {name: write, arguments: {energy: 2.32e-12, bits_per_action: 8}} # 2.32 pJ/8b
     - {name: leak, arguments: {energy: 0}}
     constraints:
+      tensors:
+        bypass: weight
       spatial:
       - name: Z
         min_utilization: 1 if len(All()) > 2 else 0
@@ -77,8 +79,8 @@ arch:
     - {name: leak, arguments: {energy: 0}}
     constraints:
       tensors:
-        keep: weight - GlobalBuffer.tensors()
-        bypass: ~weight | GlobalBuffer.tensors()
+        keep: weight
+        bypass: ~weight
       spatial:
       - name: X # Parallel rank
         min_utilization: 1
