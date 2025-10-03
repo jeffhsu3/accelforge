@@ -492,6 +492,28 @@ def coalesce_symbols(
             if formula in symbols_enumerated:
                 update_symbol2goal(formula, goal, new_symbol2goal)
                 continue
+            
+            # If it's a sum, remove any terms that are constant
+            if isinstance(formula, sympy.Add):
+                for term in formula.args:
+                    if len(term.free_symbols) == 0:
+                        formula = formula.subs(term, 0)
+                        log_message("coalesce symbols", f"dropping constant: {term}")
+                        continue
+                if len(formula.args) == 1:
+                    formula = formula.args[0]
+                    
+            # If it's a product, remove any terms that are constant
+            if isinstance(formula, sympy.Mul):
+                for term in formula.args:
+                    if len(term.free_symbols) == 0:
+                        formula = formula.subs(term, 1)
+                        if term < 0:
+                            goal = ~goal
+                        log_message("coalesce symbols", f"dropping constant: {term}")
+                        continue
+                if len(formula.args) == 1:
+                    formula = formula.args[0]
 
             # If it's a function of a non-enumerated symbol or a symbol that we can't
             # compare and the derivative of the formula WRT the symbol does not change
@@ -582,7 +604,6 @@ def coalesce_symbols(
 
     return symbol2goal
 
-
 def get_tile_shape_choices(
     objectives: list[Objective],
     symbols: list[Symbol],
@@ -617,10 +638,10 @@ def get_tile_shape_choices(
         times[s] += cur_time - prev_time
         prev_time = cur_time
 
-    log = job.messages
-
     def log_message(message: str, *args: str):
-        log.append(f"{time.time() - prev_time:.2f}s: {message} {' '.join(args)}")
+        t = time.time() - prev_time
+        s = "**" if t > 1 else ""
+        job.log_message(f"{s}{t:.2f}s: {message} {' '.join(args)}")
         # print(f"{time.time() - prev_time:.2f}s: {message} {' '.join(args)}")
         time_end(message)
 
@@ -645,11 +666,22 @@ def get_tile_shape_choices(
             **{str(k): v for k, v in padded_choices.items()},
         )
 
+    def grab_symbol(prev_symbol: Symbol = None):
+        try:
+            choice = get_tiles(prev_symbol, what_tiles_symbol)
+            if choice in symbols_remaining:
+                symbols_remaining.remove(choice)
+                return choice
+        except ValueError:
+            pass
+        return symbols_remaining.pop()
+
+    symbol = None
     while symbols_remaining:
         # ==============================================================================
         # Enumerate choices for a new symbol
         # ==============================================================================
-        symbol = symbols_remaining.pop()
+        symbol = grab_symbol(symbol)
 
         choices = []
         tiled_by = get_tiled_by(symbol, what_tiles_symbol)
@@ -803,7 +835,9 @@ def get_tile_shape_choices(
 
         paretoed_by_key = fzs((f, g.goal) for f, g in symbol2goal.items())
         if any(p.issubset(paretoed_by_key) for p in paretoed_by):
+            job.log_message("Skipping Pareto because we've already found a Pareto with these objectives.")
             continue
+        paretoed_by.append(paretoed_by_key)
 
         objective_values = {}
         for formula, goal in list(symbol2goal.items()):
@@ -843,7 +877,7 @@ def get_tile_shape_choices(
             job.log_porp_pmappings_kept(
                 f"Pareto", sum(keep) / choices_enumerated.shape[0]
             )
-            log_message("pareto", f"size={choices_enumerated.shape[0]}")
+            log_message("pareto", f"size {prev_size} -> {choices_enumerated.shape[0]}")
 
     # ==================================================================================
     # Return the choices
@@ -854,7 +888,7 @@ def get_tile_shape_choices(
             f"Total time: {t:.2f}s",
             f"Pmapping: {job.mapping.compact_str()}",
         ]
-        print("\n\t" + f"\n\t".join(a + log))
+        print("\n\t" + f"\n\t".join(a + job.messages))
 
     # Rearrange in tile shape order
     if choices_enumerated is None:
