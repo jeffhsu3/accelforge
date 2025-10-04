@@ -33,7 +33,7 @@ from enum import Enum
 from numbers import Number
 
 
-PARETO_PRUNE_DURING_PMAPPING_GENERATION = False
+PARETO_PRUNE_DURING_PMAPPING_GENERATION = True
 
 
 def run_model(
