@@ -29,8 +29,8 @@ arch:
     - {name: leak, arguments: {energy: 0}}
     constraints:
       tensors:
-        keep: ~MainMemory.tensors() | input | output
-        no_refetch_from_above: Intermediates() if ~MainMemory.tensors() else Nothing()
+        keep: ~MainMemory.tensors() # | input | output
+      #   no_refetch_from_above: Intermediates() if ~MainMemory.tensors() else Nothing()
 
   - !Memory
     name: LocalBuffer
@@ -49,6 +49,10 @@ arch:
       spatial:
       - name: Z # Parallel rank
         min_utilization: 1
+        loop_bounds:
+        - expression: weight.rank_variables()
+          operator: ==
+          value: 1
 
   - !Compute
     name: scalar_unit
@@ -90,6 +94,6 @@ arch:
   - !Compute
     name: MAC
     actions:
-    - {name: compute, arguments: {energy: 0.84e-12}}
+    - {name: compute, arguments: {energy: 0.084e-12}}
     - {name: leak, arguments: {energy: 0}}
     constraints: {misc: {enabled: len(All()) == 3}}

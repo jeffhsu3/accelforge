@@ -80,6 +80,6 @@ arch:
   - !Compute
     name: MAC
     actions:
-    - {name: compute, arguments: {energy: 0.84e-12}}
+    - {name: compute, arguments: {energy: 0.084e-12}}
     - {name: leak, arguments: {energy: 0}}
     constraints: {misc: {enabled: len(All()) == 3}}
