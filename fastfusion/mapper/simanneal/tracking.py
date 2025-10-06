@@ -38,12 +38,14 @@ class EvaluationsScoreTracker():
             if not self.print_stopped_text:
                 print(f'Stopping due to evaluations {self.evaluations} > {self.max_evaluations}')
                 self.print_stopped_text = True
+            raise StopIteration
             return True
         if self.stop_at_score is not None and self.score < self.stop_at_score:
             self.clean_history()
             if not self.print_stopped_text:
                 print(f'Stopping due to score {self.score} < {self.stop_at_score}')
                 self.print_stopped_text = True
+            raise StopIteration
             return True
         return False
     

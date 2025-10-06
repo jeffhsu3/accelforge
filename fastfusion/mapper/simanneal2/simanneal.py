@@ -2,7 +2,7 @@ import inspect
 import os
 import random
 from typing import Callable, Generator
-from fastfusion import arch
+from fastfusion import arch, util
 from fastfusion import Specification
 from fastfusion.frontend.mapper.metrics import Metrics
 from fastfusion.mapper.FFM._interface.pmappings import MultiEinsumPmappings
@@ -67,11 +67,13 @@ class SimAnnealMapping:
         # }
         self.mapspace_globals: MapspaceGlobals = mapspace_globals
         self.einsum2sim: dict[EinsumName, SIM] = {
-            e: min(s, key=lambda x: x.compatibility.n_loops) for e, s in mapspace_globals.einsum2sims.items()
+            e: random.choice(s) for e, s in mapspace_globals.einsum2sims.items()
         }
-        self.einsum2index: dict[EinsumName, int] = {}
+        self.einsum2index: dict[EinsumName, int] = {e: 0 for e in self.einsum2sim}
+        self.ensure_match(list(self.einsum2sim.keys())[0])
         for e in self.einsum2sim:
             self.randomize_index(e)
+        self._prev_score = None
 
     def mutate(self) -> None:
         # Pick a random einsum
@@ -85,6 +87,7 @@ class SimAnnealMapping:
         self.ensure_match(e)
 
     def randomize_index(self, e: EinsumName) -> None:
+        self._prev_score = None
         self.einsum2index[e] = random.randint(0, 10000000000000)
         self.mapspace_globals.tracker.add_evaluation(1, float("inf"))
 
@@ -148,7 +151,7 @@ class SimAnnealMapping:
                 sims = [s2 for s2 in sims if _matches(s2, s.compatibility)]
 
             if not sims:
-                print(f"No compatible SIMs found for {e}")
+                # print(f"No compatible SIMs found for {e}")
                 raise FailedMutation(f"No compatible SIMs found for {e}")
 
             new_einsum2sim[e] = random.choice(sims)
@@ -181,6 +184,9 @@ class SimAnnealMapping:
         )
 
     def get_score(self) -> float:
+        if self._prev_score is not None:
+            return self._prev_score
+
         items: list[tuple[EinsumName, SIM]] = list(self.einsum2sim.items())
         joined: SIM = items.pop(0)[1]
         for i, (e, s) in enumerate(items):
@@ -203,14 +209,14 @@ class SimAnnealMapping:
                         delay=False,
                     )
                 except ValueError as err:
-                    print(err)
+                    # print(err)
                     raise FailedMutation(f"No valid pmappings: {err}")
 
             # Try to merge using the index we already have set
             joined_new = _merge_next(joined, self._access_index(e))
             if len(joined_new.mappings.data) == 1:
                 joined = joined_new
-                print(' '.join(f'{k}={v}' for k, v in dict(joined.mappings.data.iloc[0]).items() if col2nameloop(k)))
+                # print(' '.join(f'{k}={v}' for k, v in dict(joined.mappings.data.iloc[0]).items() if col2nameloop(k)))
                 continue
             if len(joined_new.mappings.data) > 1:
                 raise ValueError(f"Got {len(joined_new.mappings.data)} pmappings for {e}")
@@ -237,23 +243,36 @@ class SimAnnealMapping:
                 # If it worked, set the index
                 self.einsum2index[e] = i
                 joined = joined_new
-                print(' '.join(f'{k}={v}' for k, v in dict(joined.mappings.data.iloc[0]).items() if col2nameloop(k)))
+                # print(' '.join(f'{k}={v}' for k, v in dict(joined.mappings.data.iloc[0]).items() if col2nameloop(k)))
                 continue
-            
+
             if len(joined_new.mappings.data) > 1:
                 raise ValueError(f"Got {len(joined_new.mappings.data)} pmappings for {e}")
-            
+
             raise FailedMutation(f"Got {len(joined_new.mappings.data)} pmappings for {e}")
-        
-        
+
         assert len(joined.mappings.data) == 1
-        return self.mapspace_globals.objective_function(joined.mappings.data.iloc[0])
-    
+        score = self.mapspace_globals.objective_function(joined.mappings.data.iloc[0])
+        self.mapspace_globals.tracker.add_evaluation(0, score)
+        self._prev_score = score
+        return score
+
     def copy(self) -> "SimAnnealMapping":
         s = SimAnnealMapping(self.mapspace_globals)
         s.einsum2sim = self.einsum2sim.copy()
         s.einsum2index = self.einsum2index.copy()
+        s._prev_score = self._prev_score
         return s
+
+
+def get_random_mapping(mapspace_globals: MapspaceGlobals) -> SimAnnealMapping:
+    while True:
+        try:
+            s = SimAnnealMapping(mapspace_globals)
+            s.get_score()
+            return s
+        except FailedMutation:
+            continue
 
 
 def join_sims(
@@ -261,6 +280,7 @@ def join_sims(
     spec: Specification,
     resource2capacity: dict[str, int],
     tracker: EvaluationsScoreTracker,
+    pop_size_per_thread: int,
 ) -> SIM:
     objective = spec.mapper.ffm.metrics
     if objective == Metrics.ENERGY:
@@ -271,7 +291,7 @@ def join_sims(
         objective_function = lambda x: x["Total<SEP>energy"] * x["Total<SEP>latency"]
     else:
         raise ValueError(f"Unknown objective {objective}")
-    print(f'Resource2capacity: {resource2capacity}')
+    # print(f'Resource2capacity: {resource2capacity}')
     mapspace_globals = MapspaceGlobals(
         einsum2sims=sims,
         resource2capacity=resource2capacity,
@@ -280,54 +300,69 @@ def join_sims(
         tracker=tracker,
     )
 
-    simanneal_mapping = SimAnnealMapping(mapspace_globals)
+    mappings = [get_random_mapping(mapspace_globals) for _ in range(pop_size_per_thread)]
+    print(f'Completed making initial population of {pop_size_per_thread} mappings')
 
     i = 0
     while True:
         if i > 1e6:
             break
         i += 1
-        prev = simanneal_mapping.copy()
-        try:
-            simanneal_mapping.mutate()
-            prev_score = prev.get_score()
-            new_score = simanneal_mapping.get_score()
-            if new_score >= prev_score:
-                simanneal_mapping = prev
-            else:
-                for einsum_name, sim in simanneal_mapping.einsum2sim.items():
-                    print(f"Einsum {einsum_name}, index {simanneal_mapping.einsum2index[einsum_name]}")
-                    for c in sim.compatibility.tensors:
-                        print(f'\t{c}')
+        for i, m in enumerate(list(mappings)):
+            try:
+                new = m.copy()
+                new.mutate()
+                if new.get_score() < m.get_score():
+                    mappings[i] = new
+            except FailedMutation:
+                continue
+
+            # else:
+            #     for einsum_name, sim in simanneal_mapping.einsum2sim.items():
+            #         print(f"Einsum {einsum_name}, index {simanneal_mapping.einsum2index[einsum_name]}")
+            #         for c in sim.compatibility.tensors:
+            #             print(f'\t{c}')
                         
-                    df = sim.mappings.data.iloc[simanneal_mapping.einsum2index[einsum_name] % len(sim.mappings.data)]
-                    for s in sim.compatibility.symbols():
-                        print(f'\t{s} = {df[s]}')
-                        
-            print(f"Iteration {i}: Score {new_score} (prev {prev_score})")
-        except FailedMutation:
-            simanneal_mapping = prev
-            continue
+            #         df = sim.mappings.data.iloc[simanneal_mapping.einsum2index[einsum_name] % len(sim.mappings.data)]
+            #         for s in sim.compatibility.symbols():
+            #             print(f'\t{s} = {df[s]}')
+            # print(f"Iteration {i}: Score {new_score} (prev {prev_score})")
     raise ValueError("No valid mapping found")
 
 
+def get_n_tile_shapes(sim: SIM) -> int:
+    df = sim.mappings.data
+    symbols = sim.compatibility.symbols()
+    cols = [c for c in df.columns if c in symbols]
+    if not cols:
+        return 1
+    return len(df.groupby(cols).size())
+
+
 def join_pmappings(
-    spec: Specification, pmappings: MultiEinsumPmappings
-) -> Mappings:
+    spec: Specification, 
+    pmappings: MultiEinsumPmappings,
+    max_evaluations: int = 1,
+    population_size=100,
+) -> EvaluationsScoreTracker:
     tracker = EvaluationsScoreTracker(
-        max_evaluations=float("inf"),
+        max_evaluations=max_evaluations / util.N_PARALLEL_PROCESSES,
         stop_at_score=None,
         print_period=1,
     )
+    
+    pop_size_per_thread = population_size // util.N_PARALLEL_PROCESSES
 
     # Multiply by the number of einsums
     tracker.multiply_scale_by(len(pmappings.einsum2pmappings))
 
     # Expected #pmappings before a Pareto-optimal one is found
+    # tracker.multiply_scale_by(pmappings._evaluated_pmappings_for_simanneal_baseline_compare() / pmappings.pareto_optimal_pmappings())
     tracker.multiply_scale_by(pmappings.evaluated_pmappings() / pmappings.pareto_optimal_pmappings())
 
     # Normalize to the speed of the intra-Einsum pmapper
     tracker.multiply_scale_by(1 / pmappings.evaluated_pmappings())
+
 
     for einsum_name, einsum_pmappings in pmappings.einsum2pmappings.items():
         total = sum(len(p.mappings.data) for p in einsum_pmappings)
@@ -341,8 +376,8 @@ def join_pmappings(
     print(f'TODO: Populate SIMs with all permutations')
 
     compressed, decompress_data = compress_einsum2pmappings(pmappings.einsum2pmappings)
-    
-    
+
+
     permuted = {}
     for einsum_name, einsum_sims in compressed.items():
         for s in einsum_sims:
@@ -351,27 +386,54 @@ def join_pmappings(
                     compatibility=c_perm,
                     mappings=s.mappings,
                 ))
+                
+    tile_shapes = [
+        get_n_tile_shapes(s) for sims in compressed.values() for s in sims
+    ]
     
-    joined = join_sims(
-        compressed,
-        spec,
-        pmappings.resource2capacity,
-        tracker,
+    average_tile_shapes = sum(tile_shapes) / len(tile_shapes)
+    print(f"Average tile shapes: {average_tile_shapes}")
+    tracker.multiply_scale_by(average_tile_shapes)
+    
+    def parallel_join(
+        permuted: dict[EinsumName, list[SIM]],
+        spec: Specification,
+        resource2capacity: dict[str, int],
+        tracker: EvaluationsScoreTracker,
+        pop_size_per_thread: int,
+    ) -> EvaluationsScoreTracker:
+        try:
+            join_sims(permuted, spec, resource2capacity, tracker, pop_size_per_thread)
+        except StopIteration:
+            pass
+        return tracker
+    
+    trackers = util.parallel(
+        joblib.delayed(parallel_join)(
+            permuted,
+            spec,
+            pmappings.resource2capacity,
+            tracker,
+            pop_size_per_thread,
+        ) for _ in range(util.N_PARALLEL_PROCESSES)
     )
-    joined = decompress_pmappings(joined, decompress_data)
+    
+    t0 = trackers[0]
+    for t in trackers[1:]:
+        t0.merge_with(t)
 
-    for einsum_name in pmappings.einsum2pmappings:
-        col = f"{einsum_name}<SEP>{MAPPING_COLUMN}"
-        joined.data[col] = joined.data[col].apply(
-            lambda x: pmappings.pmapping_objects[einsum_name][x]
-        )
+    # for einsum_name in pmappings.einsum2pmappings:
+    #     col = f"{einsum_name}<SEP>{MAPPING_COLUMN}"
+    #     joined.data[col] = joined.data[col].apply(
+    #         lambda x: pmappings.pmapping_objects[einsum_name][x]
+    #     )
 
-    rank_variable_bounds = get_rank_variable_bounds_for_all_einsums(spec)
-    joined.data[f"Total<SEP>{MAPPING_COLUMN}"] = joined.data.apply(
-        lambda row: MappingFromRow(row, spec, rank_variable_bounds), axis=1
-    )
-    # Fill nans with 0. We might get missing columns for some mapping entries if there
-    # are energy entries for some pmappings but not others (e.g., one pmapping accesses
-    # DRAM while another doesn't.)
-    joined._data = joined.data.fillna(0)
-    return Mappings(spec, list(pmappings.einsum2pmappings.keys()), joined.data)
+    # rank_variable_bounds = get_rank_variable_bounds_for_all_einsums(spec)
+    # joined.data[f"Total<SEP>{MAPPING_COLUMN}"] = joined.data.apply(
+    #     lambda row: MappingFromRow(row, spec, rank_variable_bounds), axis=1
+    # )
+    # # Fill nans with 0. We might get missing columns for some mapping entries if there
+    # # are energy entries for some pmappings but not others (e.g., one pmapping accesses
+    # # DRAM while another doesn't.)
+    # joined._data = joined.data.fillna(0)
+    return t0 # Mappings(spec, list(pmappings.einsum2pmappings.keys()), joined.data)
