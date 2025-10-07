@@ -80,12 +80,12 @@ class Spatial(ParsableModel):
         return type(self)(
             name=self.name,
             fanout=self.fanout,
-            reuse=eval_set_expression(
+            reuse=set(eval_set_expression(
                 self.reuse,
                 symbol_table,
                 expected_space_name="tensors",
                 location=location + ".reuse",
-            ),
+            ))
         )
 
 
