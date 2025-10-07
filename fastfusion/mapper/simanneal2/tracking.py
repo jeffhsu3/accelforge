@@ -14,6 +14,7 @@ class EvaluationsScoreTracker():
         self.score = float("inf")
         self.history = [(0, float("inf"))]
         self._scale_by = 1
+        self._scale_score_by = 1
         self.print_period = print_period
         self.prev_print_time = None
         self.print_stopped_text = False
@@ -22,7 +23,7 @@ class EvaluationsScoreTracker():
     
     def add_evaluation(self, n_evaluations: int, best_score: float):
         self.evaluations += n_evaluations * self._scale_by
-        self.score = min(self.score, best_score)
+        self.score = min(self.score, best_score * self._scale_score_by)
         # Same score as before, remove the last entry
         if len(self.history) > 2 and self.history[-2][1] == self.score:
             self.history.pop(-1)
@@ -46,9 +47,17 @@ class EvaluationsScoreTracker():
                 self.print_stopped_text = True
             return True
         return False
-    
+
+    def finished(self):
+        enough_evaluations = self.max_evaluations is not None and self.evaluations > self.max_evaluations
+        enough_score = self.stop_at_score is not None and self.score < self.stop_at_score
+        return enough_evaluations or enough_score
+
     def multiply_scale_by(self, scale_by: float):
         self._scale_by *= scale_by
+        
+    def multiply_score_by(self, scale_by: float):
+        self._scale_score_by *= scale_by
         
     def __repr__(self):
         return f"Evaluations: {self.evaluations}, Score: {self.score}"

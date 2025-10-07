@@ -272,6 +272,8 @@ def get_random_mapping(mapspace_globals: MapspaceGlobals) -> SimAnnealMapping:
             s.get_score()
             return s
         except FailedMutation:
+            if mapspace_globals.tracker.finished():
+                return None
             continue
 
 
@@ -300,8 +302,12 @@ def join_sims(
         tracker=tracker,
     )
 
-    mappings = [get_random_mapping(mapspace_globals) for _ in range(pop_size_per_thread)]
-    print(f'Completed making initial population of {pop_size_per_thread} mappings')
+    mappings = []
+    while len(mappings) < pop_size_per_thread:
+        mappings.append(get_random_mapping(mapspace_globals))
+        if tracker.finished():
+            return
+    print(f'Completed making initial population of {len(mappings)} mappings')
 
     i = 0
     while True:
@@ -314,6 +320,11 @@ def join_sims(
                 new.mutate()
                 if new.get_score() < m.get_score():
                     mappings[i] = new
+                    
+                # 0 evaluations because they've been accounted for in the mutation and
+                # score calculation functions
+                if tracker.finished():
+                    break
             except FailedMutation:
                 continue
 
@@ -327,7 +338,7 @@ def join_sims(
             #         for s in sim.compatibility.symbols():
             #             print(f'\t{s} = {df[s]}')
             # print(f"Iteration {i}: Score {new_score} (prev {prev_score})")
-    raise ValueError("No valid mapping found")
+    # raise ValueError("No valid mapping found")
 
 
 def get_n_tile_shapes(sim: SIM) -> int:
@@ -344,12 +355,16 @@ def join_pmappings(
     pmappings: MultiEinsumPmappings,
     max_evaluations: int = 1,
     population_size=100,
+    score_target: float | None = None,
 ) -> EvaluationsScoreTracker:
     tracker = EvaluationsScoreTracker(
         max_evaluations=max_evaluations / util.N_PARALLEL_PROCESSES,
         stop_at_score=None,
         print_period=1,
     )
+    
+    if score_target is not None:
+        tracker.multiply_score_by(1 / score_target)
     
     pop_size_per_thread = population_size // util.N_PARALLEL_PROCESSES
 
@@ -391,9 +406,9 @@ def join_pmappings(
         get_n_tile_shapes(s) for sims in compressed.values() for s in sims
     ]
     
-    average_tile_shapes = sum(tile_shapes) / len(tile_shapes)
-    print(f"Average tile shapes: {average_tile_shapes}")
-    tracker.multiply_scale_by(average_tile_shapes)
+    # average_tile_shapes = sum(tile_shapes) / len(tile_shapes)
+    # print(f"Average tile shapes: {average_tile_shapes}")
+    # tracker.multiply_scale_by(average_tile_shapes)
     
     def parallel_join(
         permuted: dict[EinsumName, list[SIM]],
@@ -402,10 +417,7 @@ def join_pmappings(
         tracker: EvaluationsScoreTracker,
         pop_size_per_thread: int,
     ) -> EvaluationsScoreTracker:
-        try:
-            join_sims(permuted, spec, resource2capacity, tracker, pop_size_per_thread)
-        except StopIteration:
-            pass
+        join_sims(permuted, spec, resource2capacity, tracker, pop_size_per_thread)
         return tracker
     
     trackers = util.parallel(
