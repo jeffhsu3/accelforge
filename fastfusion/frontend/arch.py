@@ -199,8 +199,8 @@ class ArchMemoryActionArguments(ComponentAttributes):
     """ Arguments for any `Memory` action. """
 
     bits_per_action: ParsesTo[Union[int, float]] = 1
-    """ The number of bits accessed in this action. For example, bits_per_action to 16
-    that each call to this action yields 16 bits. """
+    """ The number of bits accessed in this action. For example, setting bits_per_action
+    to 16 means that each call to this action yields 16 bits. """
 
 
 class ArchMemoryAction(SubcomponentAction):

@@ -25,3 +25,8 @@ install-dependencies:
 	git clone --recurse-submodules https://github.com/Accelergy-Project/hwcomponents.git
 	cd hwcomponents && make install-submodules
 	cd hwcomponents && pip3 install .
+
+docs:
+    # pip install sphinx-autobuild sphinx_autodoc_typehints sphinx-rtd-theme
+    LC_ALL=C.UTF-8 LANG=C.UTF-8 sphinx-apidoc -o docs fastfusion
+    LC_ALL=C.UTF-8 LANG=C.UTF-8 sphinx-autobuild docs docs/_build/html

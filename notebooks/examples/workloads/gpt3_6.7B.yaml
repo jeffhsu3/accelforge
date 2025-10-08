@@ -44,19 +44,19 @@ workload:
   - name: V
     tensor_accesses:
     - {name: I, projection: [b, m, d]}
-    - {name: WV, projection: [h, e, d]}
+    - {name: WV, projection: [h, e, d]} # , persistent: True, backing_size_scale: 12}
     - {name: V, projection: [b, m, h, e], output: True}
 
   - name: K
     tensor_accesses:
     - {name: I, projection: [b, m, d]}
-    - {name: WK, projection: [h, e, d]}
+    - {name: WK, projection: [h, e, d]} # , persistent: True, backing_size_scale: 12}
     - {name: K, projection: [b, m, h, e], output: True}
 
   - name: Q
     tensor_accesses:
     - {name: I, projection: [b, m, d]}
-    - {name: WQ, projection: [h, e, d]}
+    - {name: WQ, projection: [h, e, d]} # , persistent: True, backing_size_scale: 12}
     - {name: Q, projection: [b, m, h, e], output: True}
 
   - name: QK
@@ -82,19 +82,19 @@ workload:
   - name: Z
     tensor_accesses:
     - {name: AV, projection: [b, m, h, f]}  
-    - {name: WZ, projection: [h, f, g]}
+    - {name: WZ, projection: [h, f, g]} # , persistent: True, backing_size_scale: 12}
     - {name: Z, projection: [b, m, g], output: True}
 
   - name: FFA
     tensor_accesses:
     - {name: Z, projection: [b, m, g]}
-    - {name: WFFA, projection: [g, c]}
+    - {name: WFFA, projection: [g, c]} # , persistent: True, backing_size_scale: 12}
     - {name: FFA, projection: [b, m, c], output: True}
 
   - name: FFB
     tensor_accesses:
     - {name: FFA, projection: [b, m, c]}
-    - {name: WFFB, projection: [c, j]}
+    - {name: WFFB, projection: [c, j]} # , persistent: True, backing_size_scale: 12}
     - {name: FFB, projection: [b, m, j], output: True}
 
 # Inputs(): Inputs to this Einsum

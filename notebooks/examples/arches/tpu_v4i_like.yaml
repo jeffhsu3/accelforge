@@ -31,12 +31,12 @@ arch:
     - {name: leak, arguments: {energy: 0}}
     constraints:
       tensors:
-        keep: ~MainMemory.tensors() | input | output
+        keep: ~MainMemory.tensors()
         no_refetch_from_above: Intermediates() if ~MainMemory.tensors() else Nothing()
 
   - !Memory
     name: LocalBuffer
-    spatial: [{name: Z, fanout: 4}]
+    spatial: [{name: Z, fanout: 4, reuse: Nothing}]
     attributes:
       _size: 1024*1024*4*8 # 4MB
       _datawidth: 8
@@ -45,9 +45,7 @@ arch:
     - {name: write, arguments: {energy: 0.293e-12}}
     - {name: leak, arguments: {energy: 0}}
     constraints:
-      tensors:
-        bypass: weight
-        keep: input | output
+      tensors: {bypass: weight, keep: input | output}
 
   - !Compute
     name: scalar_unit
@@ -60,7 +58,9 @@ arch:
 
   - !Memory
     name: Register
-    spatial: [{name: X, fanout: 128}, {name: Y, fanout: 128}]
+    spatial:
+    - {name: X, fanout: 128, reuse: input}
+    - {name: Y, fanout: 128, reuse: output}
     attributes:
       _size: 8 # 8b
       _datawidth: 8
@@ -69,20 +69,18 @@ arch:
     - {name: write, arguments: {energy: 0}}
     - {name: leak, arguments: {energy: 0}}
     constraints:
-      tensors:
-        bypass: ~weight
-        keep: weight
+      tensors: {bypass: ~weight, keep: weight}
       spatial:
       - name: X # Parallel rank
         min_utilization: 1
         loop_bounds:
-        - expression: input.rank_variables() | ~output.rank_variables()
+        - expression: input.rank_variables()
           operator: ==
           value: 1
       - name: Y # Reduced rank. No iteration over outputs
         min_utilization: 1
         loop_bounds:
-        - expression: output.rank_variables() | ~input.rank_variables()
+        - expression: output.rank_variables()
           operator: ==
           value: 1
 

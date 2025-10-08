@@ -23,8 +23,8 @@ arch:
     attributes:
       _size: 1024*1024*128*8 # 128MB
       _datawidth: 8
-      _bandwidth_reads_per_cycle: 8 * 2000e9 / 1.05e9 # 2000 GB/s. Chip runs at at 1.05GHz, so divide by 1.05 to get per-cycle bandwidth
-      _bandwidth_writes_per_cycle: 8 * 1000e9 / 1.05e9 # 1000 GB/s. Chip runs at at 1.05GHz, so divide by 1.05 to get per-cycle bandwidth
+      # _bandwidth_reads_per_cycle: 8 * 2000e9 / 1.05e9 # 2000 GB/s. Chip runs at at 1.05GHz, so divide by 1.05 to get per-cycle bandwidth
+      # _bandwidth_writes_per_cycle: 8 * 1000e9 / 1.05e9 # 1000 GB/s. Chip runs at at 1.05GHz, so divide by 1.05 to get per-cycle bandwidth
     actions:
     - {name: read, arguments: {energy: 1.88e-12}}
     - {name: write, arguments: {energy: 2.36e-12}}
@@ -48,14 +48,13 @@ arch:
       tensors:
         bypass: weight
         keep: input | output
-      spatial:
-      - name: Z # Parallel rank
-        min_utilization: 1
-        loop_bounds:
-        - expression: weight.rank_variables()
-          operator: ==
-          value: 1
-
+      # spatial:
+      # - name: Z # Parallel rank
+      #   min_utilization: 1
+      #   loop_bounds:
+      #   - expression: weight.rank_variables()
+      #     operator: ==
+      #     value: 1
 
   - !Compute
     name: scalar_unit
@@ -69,8 +68,8 @@ arch:
   - !Memory
     name: Register
     spatial: 
-    - {name: X, fanout: 128, reuse: output}
-    - {name: Y, fanout: 128, reuse: input}
+    - {name: X, fanout: 128, reuse: input}
+    - {name: Y, fanout: 128, reuse: output}
     attributes:
       _size: 8 # 8b
       _datawidth: 8
@@ -84,13 +83,13 @@ arch:
         keep: weight
       spatial:
       - name: X # Parallel rank
-        min_utilization: 1
+        # min_utilization: 1
         loop_bounds:
         - expression: input.rank_variables() | ~output.rank_variables()
           operator: ==
           value: 1
       - name: Y # Reduced rank. No iteration over outputs
-        min_utilization: 1
+        # min_utilization: 1
         loop_bounds:
         - expression: output.rank_variables() | ~input.rank_variables()
           operator: ==

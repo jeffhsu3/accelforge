@@ -331,7 +331,7 @@ def join_sims(
         )
 
         DO_PRINT = False
-        DELAY = True  # not debugger_active()
+        DELAY = True
         # ======================================================================
         # Merge the left and right buckets.
         # ======================================================================
