@@ -185,6 +185,7 @@ class Shape(ParsableList):
 class Einsum(ParsableModel):
     """
     Represents a computation step in the workload as an Einsum.
+
     :param name:                The name of the einsum.
     :param tensor_accesses:     The tensors accessed by the einsum.
     :param shape:               Bounds of valid rank variable values.

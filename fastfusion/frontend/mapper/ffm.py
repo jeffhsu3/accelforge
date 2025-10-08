@@ -24,8 +24,8 @@ class FFM(ParsableModel):
         tensors, and the storage nodes for the same tensor always obey this ordering.
         """
 
-    max_fused_loops_per_rank: int = 1
-    """ The maximum number of fused loops in a pmapping for a given rank. """
+    max_fused_loops_per_rank_variable: int = 1
+    """ The maximum number of fused loops in a pmapping for a given rank variable. """
 
     max_fused_loops: float | int = float("inf")
     """ The maximum total number of fused loops in a pmapping. """

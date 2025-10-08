@@ -5,9 +5,8 @@ import pandas as pd
 from uuid import UUID
 
 import sympy
-from fastfusion.frontend.arch import TensorHolder
-from fastfusion.frontend.mapping import Iteration, Mapping, TilePattern
-from fastfusion.frontend.renames import RankVariableName, TensorName
+from fastfusion.frontend.mapping import Iteration, Mapping
+from fastfusion.frontend.renames import RankVariableName
 from fastfusion.frontend.workload.workload import EinsumName
 from fastfusion.mapper.FFM._join_pmappings.compatibility import (
     Compatibility,
@@ -18,6 +17,13 @@ from fastfusion.mapper.FFM._make_pmappings.mapper_one_einsum.tile_shape_explorat
     EXPERIMENTAL_TILE_SHAPE_EXPLORATION,
 )
 from fastfusion.mapper.FFM._pmapping_group import (
+    MAPPING_COLUMN,
+    PmappingGroup,
+    col2nameloop,
+    col_used_in_pareto,
+    is_reservation_col,
+    makepareto,
+    tensor2col,
     col2nameloop,
     is_reservation_col,
     nameloop2col,
@@ -28,20 +34,11 @@ from fastfusion.mapper.FFM._make_pmappings.mapper_one_einsum.tile_shape_explorat
     explore_tile_shapes,
 )
 from fastfusion.mapper.FFM._join_pmappings.sim import SIM
-from fastfusion.mapper.FFM._pmapping_group import (
-    MAPPING_COLUMN,
-    PmappingGroup,
-    col2nameloop,
-    col_used_in_pareto,
-    is_reservation_col,
-    makepareto,
-    tensor2col,
-)
 from fastfusion.mapper.FFM._make_pmappings.mapper_one_einsum.mapper_job import (
     Job,
     SameCompatibilityJobs,
 )
-from fastfusion.mapper.FFM._pmapping_group.df_convention import is_fused_loop_col
+from fastfusion.mapper.FFM._pmapping_group.df_convention import is_fused_loop_col, is_n_iterations_col
 from fastfusion.mapper.FFM.deprecate_maybe.tags import Tags
 
 
@@ -431,33 +428,15 @@ def generate_pmappings_new(
         for c in df.columns
     ]
 
-    fused_loop_cols = [f"{einsum_name}<SEP>{c}" for c in compatibility.symbols()]
+    fused_loop_cols = [
+        f"{einsum_name}<SEP>{c}" for c in compatibility.symbols()
+        if not is_n_iterations_col(c)
+    ]
 
     job0 = next(iter(jobs_with_similar_compatibilities))
 
     # Pareto prune
-    try:
-        df = makepareto(df, split_by_cols=fused_loop_cols)
-    except:
-        for job in prev_jobs:
-            result = explore_tile_shapes(job)
-            job.compatibility = job.compatibility.populate_loops(job.mapping)
-            # This changes the pmapping count to include superfluous permutations
-            # TODO: Add a multiplier for the permutations that we include in the fusion
-            # piece, which are NOT known to be superfluous
-            # job.total_pmappings *= get_n_permutations(job)
-            job.total_pmappings = scale_n_pmappings_by_permutations(job, job.total_pmappings)
-
-            result[MAPPING_COLUMN] = job.job_id
-            cols_to_drop = []
-            for col in result.columns:
-                if (
-                    is_reservation_col(col)
-                    and col2nameloop(col)[0] in job.memories_track_pmappings_only
-                ):
-                    cols_to_drop.append(col)
-            result.drop(columns=cols_to_drop, inplace=True)
-            results.append(result)
+    df = makepareto(df, split_by_cols=fused_loop_cols)
 
     jobs_passed_pareto = sorted(df[f"{einsum_name}<SEP>{MAPPING_COLUMN}"].unique())
     pmapping_objects = {
