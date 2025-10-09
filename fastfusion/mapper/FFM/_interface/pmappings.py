@@ -146,11 +146,8 @@ class MultiEinsumPmappings:
 
         total_pmappings = self.total_pmappings(per_einsum=True)
         valid_pmappings = self.valid_pmappings(per_einsum=True)
+        evaluated_pmappings = self.evaluated_pmappings(per_einsum=True)
         pareto_optimal_pmappings = self.pareto_optimal_pmappings(per_einsum=True)
-        evaluated_pmappings = {
-            e: sum(len(s) for s in self.einsum2pmappings[e])
-            for e in self.einsum2pmappings
-        }
 
         for x in (
             total_pmappings,
