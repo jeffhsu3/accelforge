@@ -30,7 +30,7 @@ class SIM:
 
     def copy(self) -> "SIM":
         return SIM(self.compatibility, self.mappings.copy())
-    
+
     def __len__(self) -> int:
         return len(self.mappings)
 
@@ -179,7 +179,7 @@ class SIM:
         c0 = sims[0].compatibility
         to_concat = [sims[0]] + [s.rename_compatibility(c0) for s in sims[1:]]
         return SIM(c0, PmappingGroup.concat([s.mappings for s in to_concat]))
-    
+
     def rename_compatibility(self, new_c: Compatibility) -> Compatibility:
         c, renamed = self.compatibility.rename_to_match(new_c)
         return SIM(c, self.mappings.rename(renamed))
@@ -191,17 +191,19 @@ class SIM:
         drop_tags: bool = False,
         clear_tile_patterns_and_reservation_indices: bool = False,
         include_permutations: bool = False,
-        clear_symbolic_tile_patterns: bool = False
-    ) -> dict[Compatibility, list["SIM"]] | dict[
-        Compatibility, list[tuple["SIM", list[int]]]
-    ]:
+        clear_symbolic_tile_patterns: bool = False,
+        try_permute_into_equivalent: bool = False,
+    ) -> (
+        dict[Compatibility, list["SIM"]]
+        | dict[Compatibility, list[tuple["SIM", list[int]]]]
+    ):
         """
         Clears dead tensors (may keep loops), then group SIMs based on
         compatibility.
         """
         grouped = defaultdict(list)
 
-        def clear_reservations(c: Compatibility):
+        def clear(c: Compatibility):
             if clear_symbolic_tile_patterns:
                 c = c.clear_symbolic_tile_patterns()
             if clear_tile_patterns_and_reservation_indices:
@@ -214,19 +216,40 @@ class SIM:
                 drop_tags=drop_tags,
             )
 
-            if include_permutations:
+            if include_permutations or try_permute_into_equivalent:
                 keys = compatibility.make_equivalent_permutations()
                 for t, loop_changes in keys:
+                    # Line below DOES NOT MUTATE. It's check that the permutation works.
                     s.compatibility.permute(loop_changes)
-                    grouped[clear_reservations(t)].append((s, loop_changes))
+                    grouped[clear(t)].append((s, loop_changes))
             else:
-                grouped[clear_reservations(compatibility)].append(s)
+                grouped[clear(compatibility)].append(s)
 
         if clear_tile_patterns_and_reservation_indices:
             for k in grouped:
                 assert (
                     len(k.reservation_indices) == 0
                 ), f"Extra reservation indices are not empty: {k.reservation_indices}"
+
+        if try_permute_into_equivalent:
+            assert not include_permutations
+            new_grouped = {}
+            sims_remaining = {id(s) for s in sims}
+            for c, g in sorted(grouped.items(), key=lambda x: len(x[1]), reverse=True):
+                if not sims_remaining:
+                    break
+                g = [
+                    (s, loop_changes)
+                    for s, loop_changes in g
+                    if id(s) in sims_remaining
+                ]
+                if g:
+                    sims_remaining -= {id(s) for s, _ in g}
+                    permuted = [
+                        SIM(s.compatibility.permute(lc), s.mappings) for s, lc in g
+                    ]
+                    new_grouped[c] = permuted
+            grouped = new_grouped
 
         return grouped
 
@@ -245,7 +268,15 @@ class SIM:
             has_reservations = [s.mappings.has_reservations() for s in sims]
             no_combine = [s for s, h in zip(sims, has_reservations) if h]
             sims = [s for s, h in zip(sims, has_reservations) if not h]
-        groups = list(SIM._group(sims, live_tensors, drop_tags=drop_tags, clear_symbolic_tile_patterns=True).values())
+        groups = list(
+            SIM._group(
+                sims,
+                live_tensors,
+                drop_tags=drop_tags,
+                clear_symbolic_tile_patterns=True,
+                try_permute_into_equivalent=True,
+            ).values()
+        )
         groups_with_one = [g[0] for g in groups if len(g) == 1]
         if len(groups_with_one) == len(groups):
             return groups_with_one + no_combine
