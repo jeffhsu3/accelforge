@@ -39,11 +39,13 @@ workload:
     tensor_accesses:
     - {name: I_in, projection: [b, m, d]}
     - {name: I, projection: [b, m, d], output: True}
-    renames: {weight: Nothing(), input: Inputs(), output: Outputs()}
-    map: Pass    # Alternatives: multiply, ReLU, etc.
-    reduce: Pass # Alternatives: Max, etc. Note: Pass means "give me whatever is the last value (mapping dependent)"
-    # reduce: None  with strict checking: if there is a reduce, an error is thrown.
+    operations:
+      map: Pass    # Alternatives: "mul", "relu", etc.
+      reduce: Pass # Alternatives: "max", etc. Note: Pass means "give me whatever is the last value (mapping dependent)"
+      # reduce: None  with strict checking: if there is a reduce, an error is thrown.
+      populate: Pass
     # Z_{m} = A_{m,d}; reduce=Pass    !=    Z_{m} = A_{m,d}; reduce=Any
+    renames: {weight: Nothing(), input: Inputs(), output: Outputs()}
 
   - name: V
     tensor_accesses:
