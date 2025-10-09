@@ -229,6 +229,7 @@ def iterate_mappings_no_constraints(
             rank_variable_bounds,
             ranks_with_tile_pattern,
             spec.workload,
+            spec.mapper.ffm.can_lower_first_memory,
         ):
             mapping = copy.deepcopy(mapping)
             insert_spatial_loops(mapping, einsum, arch_flattened)
@@ -368,6 +369,7 @@ def get_single_einsum_jobs(job: Job) -> SameEinsumJobs:
 
     jobs = SameEinsumJobs()
     for i, (mapping, constraints, symbol_table) in enumerate(mappings_constraints):
+        # print(mapping.compact_str())
         new_job = copy.copy(job)
         new_job.mapping = mapping
         new_job.constraints = constraints

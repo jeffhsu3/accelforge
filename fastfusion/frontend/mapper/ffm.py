@@ -37,6 +37,9 @@ class FFM(ParsableModel):
     """ The maximum total loops in a pmapping minus the number of ranks. For example,
         3 means that the number of loops can be up to (the number of ranks + 3). """
 
+    can_lower_first_memory: bool = False
+    """Whether the storage node of first memory can be lowered."""
+
     memory_limit: float | int = float("inf")
     """ The maximum memory limit for the mapper. """
 

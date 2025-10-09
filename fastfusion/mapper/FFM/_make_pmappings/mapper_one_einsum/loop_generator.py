@@ -22,6 +22,7 @@ def insert_temporal_loops(
     rank_variable_bounds: dict[RankVariableName, int],
     ranks_with_tile_pattern: set,
     workload: Workload,
+    can_lower_first_memory: bool,
 ):
     # First establish insertion points. Insertion points are:
     # - Below the last instance of the first memory
@@ -97,48 +98,54 @@ def insert_temporal_loops(
                             rvs -= tensor2partially_relevant_rank_vars[t2]
                         rank_variables -= rvs
 
-        # Test permutations of partially-relevant rank variables because we'll be
-        # lowering through them. Don't permute fully-relevant rank variables because
-        # we won't lower through them.
         partially_relevant_to_previous = set.union(
             set(), *(tensor2partially_relevant_rank_vars[t] for t in prev_tensors)
         )
-        partially_relevant_choices = list(
-            itertools.permutations(rank_variables & partially_relevant_to_previous)
-        )
-        irrelevant_choices = tuple(
-            sorted(rank_variables - partially_relevant_to_previous)
-        )
-        choices.append([x + irrelevant_choices for x in partially_relevant_choices])
+        partially_relevant_to_previous &= rank_variables
 
         # =============================================================================
-        # Choose whether to lower TensorHolder nodes through partially-relevant loops.
+        # Determine whether to lower TensorHolder nodes through partially-relevant loops.
         # =============================================================================
 
         # Option 1: Previous TensorHolder is backing and the loop(s) are
         # partially-relevant. We want to explore both lowering and non-lowering.
         # Partially-relevant loop becomes fused if we lower.
         prev_has_backing = any(s._backing for s in prev_tensor_holders)
-        if prev_has_backing and partially_relevant_to_previous:
-            lowering_choices.extend([[True, False]] * len(prev_tensor_holders))
-
-        # Option 2: No backing in previous. Lower all. No cost to lowering. Conditioned
-        # on option 1 being false.
+        prev_has_lowerable_backing = (
+            can_lower_first_memory
+            or any(s._backing and s.component != first_memory.name
+                   for s in prev_tensor_holders)
+        )
+        if prev_has_backing and prev_has_lowerable_backing and partially_relevant_to_previous:
+            can_lower = True
+            must_lower = False
+        # Option 2: No backing in previous. No cost to lowering. Lower all
         elif not prev_has_backing:
-            lowering_choices.extend([[True]] * len(prev_tensor_holders))
-
-        # Option 3: Fused, but all previous TensorHolder are for the first memory. Don't
-        # lower. We don't need to reduce memory usage for DRAM.
-        elif all(s.component == first_memory.name for s in prev_tensor_holders):
-            lowering_choices.extend([[False]] * len(prev_tensor_holders))
-
-        # Option 4: Previous TensorHolder is backing. Don't lower this; needs to be
-        # alive for the other Einsum(s).
-        elif prev_has_backing:
-            lowering_choices.extend([[False]] * len(prev_tensor_holders))
-
+            can_lower = True
+            must_lower = True
+        # Option 3: Previous TensorHolder is backing
+        # but not lowerable or there are no partially relevant rank vars.
         else:
-            raise RuntimeError("BUG")
+            assert prev_has_backing
+            can_lower = False
+            must_lower = False
+
+        # =============================================================================
+        # Create loop order and lowering choices
+        # =============================================================================
+
+        # Create canonical loop orders that avoids repeating reuse patterns.
+        choices.append(list(canonical_loop_orders(rank_variables,
+                                                  partially_relevant_to_previous,
+                                                  can_lower)))
+
+        # Create lowering choices
+        if can_lower and not must_lower:
+            lowering_choices.extend([[True, False]] * len(prev_tensor_holders))
+        elif can_lower and must_lower:
+            lowering_choices.extend([[True]] * len(prev_tensor_holders))
+        else:
+            lowering_choices.extend([[False]] * len(prev_tensor_holders))
 
     # ==================================================================================
     # Iterate over all possible mappings
@@ -194,3 +201,26 @@ def insert_spatial_loops(
                     mapping.append(s)
                 else:
                     mapping.insert(insertion_point, s)
+
+
+def canonical_loop_orders(
+    rank_variables: set[RankVariableName],
+    partially_relevant_to_previous: set[RankVariableName],
+    can_lower: bool,
+):
+    """Generate loop orders that result in unique reuse patterns."""
+    # Only the first partially-relevant rank variable matters is a meaningful
+    # choice because lowering only happens through at most one rank var.
+    if not partially_relevant_to_previous or not can_lower:
+        yield tuple(sorted(rank_variables))
+        return
+
+    for first_rank_var in partially_relevant_to_previous:
+        rest_of_partially_relevant = partially_relevant_to_previous - {first_rank_var}
+        rest_rank_vars = rank_variables - partially_relevant_to_previous
+        # Since order does not matter, we choose alphabetical order as canonical.
+        yield (
+            (first_rank_var,)
+            + tuple(sorted(rest_of_partially_relevant))
+            + tuple(sorted(rest_rank_vars))
+        )

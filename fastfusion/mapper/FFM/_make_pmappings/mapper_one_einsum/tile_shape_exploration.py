@@ -719,7 +719,7 @@ def get_tile_shape_choices(
             else:
                 inner_size = tiles
         
-        assert not (check_tiled_by and check_tiles)
+        assert (check_tiled_by and not check_tiles) or (not check_tiled_by and check_tiles)
         if check_tiled_by:
             if isinstance(tiled_by, int):
                 partitions = {tiled_by: choices_enumerated}
