@@ -35,16 +35,21 @@ workload:
     # Copy operation means that we move the input tensor from one place to another
     # without doing computation. This lets us copy the input tensor onto the accelerator
     # once and then use it in the Q, K, and V operations.
-    # is_copy_operation: True    # no longer needed with `map` and `reduce` support
+    is_copy_operation: True    # no longer needed with `map` and `reduce` support
     tensor_accesses:
     - {name: I_in, projection: [b, m, d]}
     - {name: I, projection: [b, m, d], output: True}
-    operations:
-      map: Pass    # Alternatives: "mul", "relu", etc.
-      reduce: Pass # Alternatives: "max", etc. Note: Pass means "give me whatever is the last value (mapping dependent)"
-      # reduce: None  with strict checking: if there is a reduce, an error is thrown.
-      populate: Pass
-    # Z_{m} = A_{m,d}; reduce=Pass    !=    Z_{m} = A_{m,d}; reduce=Any
+
+    # operations:
+    #   map: {operation} if output = f(inputs), None if output = inputs
+    #   reduce: {operation} if output = reduce(partial_outputA, partial_outputB, ...), None if not supported
+    #   populate: {operation} if initial_output = populate(), None if initial_output = first-generated partial output
+
+    # operations:
+    #   map: pass    # Alternatives: "mul", "relu", etc.
+    #   reduce: pass # Alternatives: "max", etc. Note: Pass means "give me whatever is the last value (mapping dependent)"
+    #   # reduce: None  with strict checking: if there is a reduce, an error is thrown.
+    #   populate: pass
     renames: {weight: Nothing(), input: Inputs(), output: Outputs()}
 
   - name: V
