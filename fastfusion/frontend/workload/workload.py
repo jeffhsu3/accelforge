@@ -58,6 +58,7 @@ class TensorAccess(ParsableModel):
     :type output:       bool
     :type factors:      list
     """
+
     name: TensorName
     projection: dict[str, str] | list[str]
     output: bool = False
@@ -175,6 +176,7 @@ class Shape(ParsableList):
     """
     Specifies valid values for the rank variables.
     """
+
     @property
     def rank_variables(self) -> set[str]:
         if not self:
@@ -195,11 +197,19 @@ class Einsum(ParsableModel):
     :type shape:                Shape[str]
     :type is_copy_operation:    bool
     """
+
     name: EinsumName
     tensor_accesses: ParsableList[TensorAccess]
     shape: Shape[str] = Shape()
     is_copy_operation: bool = False
     renames: RenameList[Rename] = RenameList()
+
+    def model_post_init(self, __context__=None) -> None:
+        if self.name == "Total":
+            raise ValueError(
+                f'Einsum name "Total" is reserved for totaling across Einsums.'
+                f"Use a different name for the Einsum."
+            )
 
     def __init__(self, *args, **kwargs):
         if "renames" in kwargs:
@@ -305,6 +315,7 @@ class Workload(ParsableModel):
     :type einsums:  ParsableList[Einsum]
     :type shape:    ParsableDict[RankVariableName, str]
     """
+
     version: Annotated[str, assert_version] = __version__
     einsums: ParsableList[Einsum] = ParsableList()
     shape: ParsableDict[RankVariableName, str] = ParsableDict()
@@ -408,21 +419,29 @@ class Workload(ParsableModel):
     #     graph.config = config
 
     #     return md.Mermaid(graph)
-    
-    def render(self) -> str: # Render as Pydot
+
+    def render(self) -> str:  # Render as Pydot
         graph = pydot_graph()
-        
+
         # Add all tensors as nodes (circles)
         tensors = []
         seen_tensor_names = set()
         for einsum in self.einsums:
-            node = pydot.Node(f"Einsum_{einsum.name}", shape="box", label=f"<{einsum.to_formatted_string(compress=True)}>")
+            node = pydot.Node(
+                f"Einsum_{einsum.name}",
+                shape="box",
+                label=f"<{einsum.to_formatted_string(compress=True)}>",
+            )
             graph.add_node(node)
             for tensor_access in einsum.tensor_accesses:
                 if tensor_access.name not in seen_tensor_names:
                     tensors.append(tensor_access.name)
                     seen_tensor_names.add(tensor_access.name)
-                    node = pydot.Node(f"Tensor_{tensor_access.name}", shape="oval", label=f"<{tensor_access.to_formatted_string()}>")
+                    node = pydot.Node(
+                        f"Tensor_{tensor_access.name}",
+                        shape="oval",
+                        label=f"<{tensor_access.to_formatted_string()}>",
+                    )
                     graph.add_node(node)
 
         # Add all einsums as nodes (rectangles)
@@ -431,11 +450,15 @@ class Workload(ParsableModel):
             for tensor_access in einsum.tensor_accesses:
                 if tensor_access.output:
                     # Output tensor: einsum -> tensor
-                    edge = pydot.Edge(f"Einsum_{einsum.name}", f"Tensor_{tensor_access.name}")
+                    edge = pydot.Edge(
+                        f"Einsum_{einsum.name}", f"Tensor_{tensor_access.name}"
+                    )
                     graph.add_edge(edge)
                 else:
                     # Input tensor: tensor -> einsum
-                    edge = pydot.Edge(f"Tensor_{tensor_access.name}", f"Einsum_{einsum.name}")
+                    edge = pydot.Edge(
+                        f"Tensor_{tensor_access.name}", f"Einsum_{einsum.name}"
+                    )
                     graph.add_edge(edge)
         return graph.create_svg(prog="dot")
 

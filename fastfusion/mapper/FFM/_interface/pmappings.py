@@ -119,7 +119,7 @@ class MultiEinsumPmappings:
         self, per_einsum: bool = False
     ) -> int | dict[EinsumName, int]:
         result = {
-            einsum_name: sum(len(p.mappings.data) for p in pmappings)
+            einsum_name: sum(len(p) for p in pmappings)
             for einsum_name, pmappings in self.einsum2pmappings.items()
         }
         if per_einsum:
@@ -136,3 +136,46 @@ class MultiEinsumPmappings:
         if per_einsum:
             return result
         return sum(result.values())
+
+    def n_pmapping_string(self) -> str:
+        if "Total" in self.einsum2pmappings:
+            raise ValueError(
+                f"Cannot print stats for a MultiEinsumPmappings object that has "
+                f"an Einsum named 'Total'. Use a different name for the Einsum."
+            )
+
+        total_pmappings = self.total_pmappings(per_einsum=True)
+        valid_pmappings = self.valid_pmappings(per_einsum=True)
+        pareto_optimal_pmappings = self.pareto_optimal_pmappings(per_einsum=True)
+        evaluated_pmappings = {
+            e: sum(len(s) for s in self.einsum2pmappings[e])
+            for e in self.einsum2pmappings
+        }
+
+        for x in (
+            total_pmappings,
+            valid_pmappings,
+            evaluated_pmappings,
+            pareto_optimal_pmappings,
+        ):
+            x["Total"] = sum(x.values())
+
+        s = []
+        for e in total_pmappings:
+            t = total_pmappings[e]
+            v = valid_pmappings[e]
+            ev = evaluated_pmappings[e]
+            p = pareto_optimal_pmappings[e]
+
+            def fmt(x, total: bool = True):
+                x = round(x)
+                def _f(y):
+                    y = round(y)
+                    return str(y) if y < 1000 else f"{y:.2e}".replace("e+", "e")
+                return f"{_f(x)} (1/{_f(round(t)/x)})" if total else _f(x)
+
+            s.append(
+                f"{e}: {fmt(t, False)} total, {fmt(v)} valid, {fmt(ev)} evaluated, "
+                f"{fmt(p)} Pareto-Optimal"
+            )
+        return "\n".join(s)

@@ -3,7 +3,7 @@ from enum import Enum
 from dataclasses import dataclass, replace
 import itertools
 from numbers import Number
-from typing import Any, Generator, NamedTuple, Union, TypeVar
+from typing import Literal, TypeVar
 
 from fastfusion.frontend.mapping import (
     Iteration,
@@ -40,6 +40,17 @@ class Updatable:
 #         return f'<{self.stride}, {self.initial}>'
 
 
+def _update_rename_dict(
+    renames: dict[str, str],
+    new_renames: dict[str, str],
+):
+    for mine, other in new_renames.items():
+        if mine not in renames:
+            renames[mine] = other
+        elif renames[mine] != other:
+            raise ValueError(f"Renaming {mine} to {other} conflicts with {renames[mine]}")
+
+
 @dataclass(frozen=True, order=True, eq=True)
 class Loop(Updatable):
     rank_name: RankName
@@ -74,12 +85,6 @@ class Loop(Updatable):
             return f"S-for R{self.rank_name} size {expfmt(self.tile_pattern)}"
         return f"for {self.rank_name} size {expfmt(self.tile_pattern)}"
 
-    def rename(self, rank_renaming: dict[str, str]) -> "Loop":
-        return replace(
-            self,
-            rank_name=fzs(rank_renaming[r] for r in self.rank_name),
-        )
-
     def to_yaml(self):
         return {"type": "loop", **self.__dict__}
 
@@ -100,10 +105,10 @@ class Loop(Updatable):
     def prepend_symbols(self, prepend: str) -> "Loop":
         return self.update(tile_pattern=self.tile_pattern.prepend_symbols(prepend))
 
-    def clear_tile_patterns(self) -> "Loop":
-        return self.update(tile_pattern=TilePattern())
+    def clear_symbolic_tile_patterns(self) -> "Loop":
+        return self.update(tile_pattern=self.tile_pattern.clear_symbols())
 
-    def make_fused_loop_symbols(self) -> tuple[dict[str, str], "Loop"]:
+    def make_fused_loop_symbols(self, prefix: str) -> tuple[dict[str, str], "Loop"]:
         r = {}
         new = self
 
@@ -111,17 +116,21 @@ class Loop(Updatable):
             g = getattr(self.tile_pattern, attr)
             if not isinstance(g, str):
                 return new
-            g2 = make_fused_loop_col(g)
+            g2 = make_fused_loop_col(f"{prefix}<SEP>{g}")
             r[g] = g2
             return new.update(tile_pattern=new.tile_pattern.update(**{attr: g2}))
 
-        new = replace("initial_tile_shape", new)
-        new = replace("stride", new)
-        new = replace("calculated_n_iterations", new)
+        for s in new.tile_pattern._symbol_attrs():
+            new = replace(s, new)
+
         return r, new
 
     def add_n_iteration_symbols(self) -> "Loop":
         return self.update(tile_pattern=self.tile_pattern.add_n_iteration_symbols())
+    
+    def rename_to_match(self, other: "Loop") -> tuple["Loop", dict[str, str]]:
+        new_tp, renames = self.tile_pattern.rename_to_match(other.tile_pattern)
+        return self.update(rank_name=other.rank_name, tile_pattern=new_tp), renames
 
 
 @dataclass(frozen=True, eq=True, order=True)
@@ -162,15 +171,6 @@ class TensorReservation(Updatable):
             loops=tuple(l.populate(loop) for l, loop in zip(self.loops, loops))
         )
 
-    def rename(
-        self, rank_renaming: dict[str, str], tensor_renaming: dict[str, str]
-    ) -> "TensorReservation":
-        return replace(
-            self,
-            name=tensor_renaming[self.name],
-            loops=tuple(l.rename(rank_renaming) for l in self.loops),
-        )
-
     @staticmethod
     def get_backing_tensors(
         all_tensors: set["TensorReservation"],
@@ -189,16 +189,16 @@ class TensorReservation(Updatable):
             loops=tuple(l.prepend_symbols(prepend) for l in self.loops),
         )
 
-    def clear_tile_patterns(self) -> "TensorReservation":
+    def clear_symbolic_tile_patterns(self) -> "TensorReservation":
         return self.update(
-            loops=tuple(l.clear_tile_patterns() for l in self.loops),
+            loops=tuple(l.clear_symbolic_tile_patterns() for l in self.loops),
         )
 
-    def make_fused_loop_symbols(self) -> tuple[dict[str, str], "TensorReservation"]:
+    def make_fused_loop_symbols(self, prefix: str) -> tuple[dict[str, str], "TensorReservation"]:
         result = {}
         loops = []
         for l in self.loops:
-            r, l = l.make_fused_loop_symbols()
+            r, l = l.make_fused_loop_symbols(prefix)
             result.update(r)
             loops.append(l)
         return result, self.update(loops=tuple(loops))
@@ -207,6 +207,15 @@ class TensorReservation(Updatable):
         return self.update(
             loops=tuple(l.add_n_iteration_symbols() for l in self.loops),
         )
+        
+    def rename_to_match(self, other: "TensorReservation") -> tuple["TensorReservation", dict[str, str]]:
+        renames = {}
+        new_loops = []
+        for l_mine, l_other in zip(self.loops, other.loops):
+            l_mine, new_renames = l_mine.rename_to_match(l_other)
+            _update_rename_dict(renames, new_renames)
+            new_loops.append(l_mine)
+        return self.update(loops=tuple(new_loops)), renames
 
 
 class SplitKind(Enum):
@@ -266,6 +275,7 @@ class Compatibility(Updatable):
                 len(s.loops) in self.reservation_indices for s in self.tensors
             ), f"Tensor loops {self.tensors} {p}"
 
+
     def get_backing_levels(self) -> dict[str, int]:
         backings = {}
         for t in self.tensors:
@@ -289,11 +299,27 @@ class Compatibility(Updatable):
 
     def __len__(self) -> int:
         return self.max_above_loop_index
+    
+    def rename_to_match(self, other: "Compatibility") -> tuple["Compatibility", dict[str, str]]:
+        renames = {}
+        assert self.clear_symbolic_tile_patterns() == other.clear_symbolic_tile_patterns()
+        tensors = []
+        for t in self.tensors:
+            other_t = other.get_tensor_by_name(t.name)
+            t, new_renames = t.rename_to_match(other_t)
+            tensors.append(t)
+            _update_rename_dict(renames, new_renames)
+
+        return Compatibility(
+            tensors=fzs(tensors),
+            splits=self.splits,
+            tags=self.tags,
+            reservation_indices=self.reservation_indices,
+        ), renames
 
     def clear_dead_tensors(
         self,
-        live_tensors: set[str],
-        keep_loops: bool = False,
+        live_tensors: set[str] | Literal["All"],
         drop_tags: bool = False,
     ) -> "Compatibility":
         """
@@ -304,6 +330,9 @@ class Compatibility(Updatable):
         If `keep_loops` is `True`, then all loops are kept.
         If `keep_tensors` is a set, tensors in the set are kept.
         """
+        if live_tensors == "All":
+            live_tensors = self.tensor_names
+
         remaining_tensors = fzs(s for s in self.tensors if s.name in live_tensors)
         new_n_loops = max((len(s.loops) for s in remaining_tensors), default=0)
         new_splits = fzs(
@@ -569,16 +598,21 @@ class Compatibility(Updatable):
 
     def clear_tile_patterns_and_reservation_indices(self) -> "Compatibility":
         return self.update(
-            tensors=fzs(t.clear_tile_patterns() for t in self.tensors),
+            tensors=fzs(t.clear_symbolic_tile_patterns() for t in self.tensors),
             reservation_indices=fzs(),
             check_reservation_indices=False,
         )
+        
+    def clear_symbolic_tile_patterns(self) -> "Compatibility":
+        return self.update(
+            tensors=fzs(t.clear_symbolic_tile_patterns() for t in self.tensors)
+        )
 
-    def make_fused_loop_symbols(self) -> tuple[dict[str, str], "Compatibility"]:
+    def make_fused_loop_symbols(self, prefix: str) -> tuple[dict[str, str], "Compatibility"]:
         result = {}
         tensors = []
         for t in self.tensors:
-            r, t = t.make_fused_loop_symbols()
+            r, t = t.make_fused_loop_symbols(prefix)
             tensors.append(t)
             result.update(r)
 

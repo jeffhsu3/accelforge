@@ -280,7 +280,7 @@ class MappingNode(ParsableModel, ABC):
 
 
 class TilePattern(ParsableModel):
-    stride: ParsesTo[Literal["symbol"] | sympy.Symbol | int | str] = "symbol"
+    stride: ParsesTo[Literal["symbol"] | sympy.Symbol | int | str | None] = "symbol"
     """ The stride of the pattern. """
 
     initial_tile_shape: ParsesTo[
@@ -346,6 +346,24 @@ class TilePattern(ParsableModel):
 
     def __hash__(self) -> int:
         return hash((self.initial_tile_shape, self.stride))
+    
+    def rename_to_match(self, other: "TilePattern") -> tuple["TilePattern", dict[str, str]]:
+        renames = {}
+        setattrs = {}
+        for x in self._symbol_attrs():
+            if getattr(self, x) != getattr(other, x):
+                renames[getattr(self, x)] = getattr(other, x)
+                setattrs[x] = getattr(other, x)
+        return self.update(**setattrs), renames
+    
+    def clear_symbols(self) -> "TilePattern":
+        def desymbol(x: str | sympy.Symbol | int | None) -> str | int | None:
+            if isinstance(x, (str, sympy.Symbol)):
+                return None
+            return x
+        return self.update(
+            **{x: desymbol(getattr(self, x)) for x in self._symbol_attrs()}
+        )
 
 
 class Iteration(MappingNode):

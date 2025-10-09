@@ -100,6 +100,9 @@ class PmappingGroup:
             self.check_above_subset_below()
 
         self._check_reservations()
+        
+        assert len(self.data.columns) == len(set(self.data.columns)), \
+            f"Duplicate columns: {self.data.columns}"
 
     def all_reservation_levels(self):
         return set().union(
@@ -107,6 +110,12 @@ class PmappingGroup:
             *self.left_reservations.values(),
             *self.right_reservations.values(),
         )
+        
+    def rename(self, renames: dict[str, str]) -> "PmappingGroup":
+        new = self.copy()
+        new.data.rename(columns=renames, inplace=True)
+        return new
+        
 
     @error_check_wrapper
     def fill_reservation_cols(self, columns: set | str):
@@ -746,6 +755,9 @@ class PmappingGroup:
             skip_pareto=True,
             n_pmappings=self.n_pmappings,
         )
+
+    def __len__(self) -> int:
+        return len(self._data)
 
     # @error_check_wrapper
     # def check_reservations(self, live_tensors: set[int]):

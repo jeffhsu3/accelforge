@@ -30,6 +30,9 @@ class SIM:
 
     def copy(self) -> "SIM":
         return SIM(self.compatibility, self.mappings.copy())
+    
+    def __len__(self) -> int:
+        return len(self.mappings)
 
     def merge_next(
         self,
@@ -158,24 +161,13 @@ class SIM:
         sims = list(sims)
         assert len(sims) > 0, "Cannot concat empty list of SIMs"
         if not allow_different_compatibilies:
-            s = set(s.compatibility for s in sims)
+            s = set(s.compatibility.clear_symbolic_tile_patterns() for s in sims)
             if len(s) > 1:
-                live_tensors = {
-                    "V",
-                    "AV",
-                    "FFA",
-                    "Q",
-                    "I",
-                    "QK_softmax",
-                    "K",
-                    "QK",
-                    "Z",
-                }
                 a = sims[0]
                 for b in sims[1:]:
                     if a.compatibility != b.compatibility:
                         break
-                SIM.combine_combineable((a, b), live_tensors)
+                SIM.combine_combineable((a, b), "All")
                 assert (
                     a == b
                 ), f"Cannot concat SIMs with different compatibilies:\n\t{a}\n\t{b}"
@@ -183,17 +175,23 @@ class SIM:
                     f"Cannot concat SIMs with different compatibilies:\n\t"
                     + "\n\t".join(str(s2) for s2 in s)
                 )
-        return SIM(
-            sims[0].compatibility, PmappingGroup.concat([s.mappings for s in sims])
-        )
+
+        c0 = sims[0].compatibility
+        to_concat = [sims[0]] + [s.rename_compatibility(c0) for s in sims[1:]]
+        return SIM(c0, PmappingGroup.concat([s.mappings for s in to_concat]))
+    
+    def rename_compatibility(self, new_c: Compatibility) -> Compatibility:
+        c, renamed = self.compatibility.rename_to_match(new_c)
+        return SIM(c, self.mappings.rename(renamed))
 
     @staticmethod
     def _group(
         sims: list["SIM"],
-        live_tensors: set[str],
+        live_tensors: set[str] | Literal["All"],
         drop_tags: bool = False,
         clear_tile_patterns_and_reservation_indices: bool = False,
         include_permutations: bool = False,
+        clear_symbolic_tile_patterns: bool = False
     ) -> dict[Compatibility, list["SIM"]] | dict[
         Compatibility, list[tuple["SIM", list[int]]]
     ]:
@@ -204,6 +202,8 @@ class SIM:
         grouped = defaultdict(list)
 
         def clear_reservations(c: Compatibility):
+            if clear_symbolic_tile_patterns:
+                c = c.clear_symbolic_tile_patterns()
             if clear_tile_patterns_and_reservation_indices:
                 return c.clear_tile_patterns_and_reservation_indices()
             return c
@@ -233,18 +233,19 @@ class SIM:
     @staticmethod
     def combine_combineable(
         sims: list["SIM"],
-        live_tensors: set[str],
+        live_tensors: set[str] | Literal["All"],
         allow_different_compatibilies: bool = False,
         drop_tags: bool = False,
         combine_reservations: bool = True,
         pbar_postfix: str = "",
     ) -> list["SIM"]:
+        sims = [s for s in sims if len(s.mappings.data) > 0]
         no_combine = []
         if not combine_reservations:
             has_reservations = [s.mappings.has_reservations() for s in sims]
             no_combine = [s for s, h in zip(sims, has_reservations) if h]
             sims = [s for s, h in zip(sims, has_reservations) if not h]
-        groups = list(SIM._group(sims, live_tensors, drop_tags=drop_tags).values())
+        groups = list(SIM._group(sims, live_tensors, drop_tags=drop_tags, clear_symbolic_tile_patterns=True).values())
         groups_with_one = [g[0] for g in groups if len(g) == 1]
         if len(groups_with_one) == len(groups):
             return groups_with_one + no_combine

@@ -488,7 +488,7 @@ def generate_pmappings_new(
 
         compatibility = compatibility.drop_loop_indices(null_loop_indices)
 
-        symbol_renames, compatibility = compatibility.make_fused_loop_symbols()
+        symbol_renames, compatibility = compatibility.make_fused_loop_symbols(einsum_name)
         for k, v in symbol_renames.items():
             mappings[v] = mappings[f"{einsum_name}<SEP>{k}"]
         shift_reservations_by_null_loop_indices(mappings, null_loop_indices)

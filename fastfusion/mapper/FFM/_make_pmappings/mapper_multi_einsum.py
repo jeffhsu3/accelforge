@@ -292,6 +292,14 @@ def get_sims(
         return_jobs.setdefault(einsum_name, []).extend(
             jobs_with_similar_compatibilities
         )
+
+    for einsum_name in list(sims.keys()):
+        sims[einsum_name] = SIM.combine_combineable(
+            sims[einsum_name],
+            "All",
+            pbar_postfix=f" for {einsum_name}",
+        )
+
     return sims, pmapping_objects, return_jobs
 
 

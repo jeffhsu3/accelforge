@@ -576,9 +576,9 @@ def check_max_fused_loops_per_rank(
     symbols_enumerated: list[Symbol],
     choices_enumerated: np.ndarray,
     max_fused_loops_per_rank_check_groups: list[list[Symbol]],
-    max_fused_loops_per_rank: Number,
+    max_fused_loops_per_rank_variable: Number,
 ):
-    if max_fused_loops_per_rank >= len(symbols_enumerated):
+    if max_fused_loops_per_rank_variable >= len(symbols_enumerated):
         return choices_enumerated
 
     def get_size(x: Union[Symbol, int]):
@@ -590,7 +590,7 @@ def check_max_fused_loops_per_rank(
         return not isinstance(x, Symbol) or x in symbols_enumerated
 
     for group in max_fused_loops_per_rank_check_groups:
-        if len(group) <= max_fused_loops_per_rank + 1:
+        if len(group) <= max_fused_loops_per_rank_variable + 1:
             continue
 
         n = 0
@@ -600,8 +600,8 @@ def check_max_fused_loops_per_rank(
                 continue
             n += get_size(a) != get_size(b)
         if isinstance(n, np.ndarray):
-            choices_enumerated = choices_enumerated[n <= max_fused_loops_per_rank]
-        elif n > max_fused_loops_per_rank:
+            choices_enumerated = choices_enumerated[n <= max_fused_loops_per_rank_variable]
+        elif n > max_fused_loops_per_rank_variable:
             choices_enumerated = choices_enumerated[0:0, :]
 
     return choices_enumerated
@@ -742,7 +742,7 @@ def get_tile_shape_choices(
     job: "Job",
     keep_symbols: list[Symbol] = (),
     max_fused_loops_per_rank_check_groups: list[list[Symbol]] = (),
-    max_fused_loops_per_rank: Number = float("inf"),
+    max_fused_loops_per_rank_variable: Number = float("inf"),
 ):
     objectives = [copy.deepcopy(o) for o in objectives]
 
@@ -847,12 +847,12 @@ def get_tile_shape_choices(
             symbols_enumerated,
             choices_enumerated,
             max_fused_loops_per_rank_check_groups,
-            max_fused_loops_per_rank,
+            max_fused_loops_per_rank_variable,
         )
         job.log_porp_pmappings_kept(
-            f"max_fused_loops_per_rank", choices_enumerated.shape[0] / prev_size
+            f"max_fused_loops_per_rank_variable", choices_enumerated.shape[0] / prev_size
         )
-        log_message("max_fused_loops_per_rank", f"size={choices_enumerated.shape[0]}")
+        log_message("max_fused_loops_per_rank_variable", f"size={choices_enumerated.shape[0]}")
 
         # ==============================================================================
         # Create initial Pareto-finding goals
@@ -1131,7 +1131,7 @@ def _explore_tile_shapes_new(job: "Job"):
         job=job,
         keep_symbols=keep_symbols,
         max_fused_loops_per_rank_check_groups=list(rank_var_to_fused_loops.values()),
-        max_fused_loops_per_rank=job.spec.mapper.ffm.max_fused_loops_per_rank,
+        max_fused_loops_per_rank_variable=job.spec.mapper.ffm.max_fused_loops_per_rank_variable,
     )
 
     try:
@@ -2018,7 +2018,7 @@ def collect_tiling_segments(
             tiling_segment = rank_var_to_tiling_segments.setdefault(
                 rank_var,
                 TilingSegment(
-                    rank_shape[rank_var], spec.mapper.ffm.max_fused_loops_per_rank
+                    rank_shape[rank_var], spec.mapper.ffm.max_fused_loops_per_rank_variable
                 ),
             )
 

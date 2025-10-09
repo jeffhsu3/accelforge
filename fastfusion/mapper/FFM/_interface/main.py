@@ -62,7 +62,8 @@ def _make_pmappings(
         for l in flattened_arch:
             if isinstance(l, arch.Memory):
                 resource2capacity[l.name] = l.attributes.size
-    return MultiEinsumPmappings(
+                
+    m = MultiEinsumPmappings(
         sims,
         pmapping_objects,
         resource2capacity,
@@ -70,12 +71,15 @@ def _make_pmappings(
         can_combine_multiple_runs=can_combine_multiple_runs,
     )
 
+    return m
+
 
 def make_pmappings(
     spec: Specification,
     einsum_names: list[EinsumName] | None = None,
     can_combine_multiple_runs: bool = False,
     cache_dir: str | None = None,
+    print_number_of_pmappings: bool = True,
 ) -> MultiEinsumPmappings:
     """
     Creates pmappings for a specification. Pmappings must be joined together using
@@ -89,6 +93,7 @@ def make_pmappings(
             `pmappings = make_pmappings(*args_a) | make_pmappings(*args_b)`
         but slows down execution.
         cache_dir: The directory to cache pmappings in. If None, no caching will be done.
+        print_number_of_pmappings: Whether to print the number of pmappings for each einsum.
 
     Returns:
         A MultiEinsumPmappings object.
@@ -101,15 +106,19 @@ def make_pmappings(
     )
     assert len(kwargs) == len(inspect.signature(_make_pmappings).parameters)
 
+
     if cache_dir is None:
-        return _make_pmappings(**kwargs)
+        result = _make_pmappings(**kwargs)
+    else:
+        @joblib.Memory(location=os.path.join(cache_dir), compress=True).cache
+        def _make_pmappings_cached(**kwargs) -> MultiEinsumPmappings:
+            return _make_pmappings(**kwargs)
+        result = _make_pmappings_cached(**kwargs)
 
-    @joblib.Memory(location=os.path.join(cache_dir), compress=True).cache
-    def _make_pmappings_cached(**kwargs) -> MultiEinsumPmappings:
-        return _make_pmappings(**kwargs)
+    if print_number_of_pmappings:
+        print(result.n_pmapping_string())
 
-    return _make_pmappings_cached(**kwargs)
-
+    return result
 
 
 def row2mapping(

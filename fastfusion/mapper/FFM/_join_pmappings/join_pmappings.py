@@ -170,8 +170,14 @@ def join_sims(
 
     drop_valid_reservations = not (Metrics.RESOURCE_USAGE & metrics)
     ignore_reservations = set()
-    
-    
+
+    for e, e_sims in sims.items():
+        for s in e_sims:
+            c = s.compatibility
+            for i in range(c.n_loops):
+                stride = set(t.loops[i].tile_pattern.stride for t in c.tensors if len(t.loops) > i)
+                assert len(stride) <= 1, f"Stride {stride} is not unique for {e}"
+
     if pmapping_row_filter_function is not None:
         n = sum(len(s.mappings.data) for sg in sims.values() for s in sg)
         sims = {e: [
@@ -183,7 +189,7 @@ def join_sims(
         ] for e in sims}
         new_n = sum(len(s.mappings.data) for sg in sims.values() for s in sg)
         print(f'Filtered {n} -> {new_n} ({new_n / n:.2%} kept) pmappings')
-    
+
     if drop_valid_reservations:
         sims, ignore_reservations = get_memories_to_track(sims, resource2capacity)
 
@@ -359,8 +365,6 @@ def join_sims(
                     continue
                 combined_ids.add(key_check)
                 found = True
-                if DO_PRINT:
-                    print(f"\t{a.compatibility}\n\t<-->\n\t{b.compatibility}")
 
                 compatibility_a = a.compatibility.permute(perm_a)
                 compatibility_b = b.compatibility.permute(perm_b)
@@ -370,9 +374,11 @@ def join_sims(
                         live_tensors,
                         mixable_ranks,
                     )
-                except ValueError as e:  # Incompatible!
                     if DO_PRINT:
-                        print(f"\tIncompatible: {e}")
+                        print(f"\t{a.compatibility}        <-->        {b.compatibility}")
+                except ValueError as e:  # Incompatible!
+                    # if DO_PRINT:
+                    #     print(f"\tIncompatible: {e}")
                     continue
 
                 t0 = time.time()
@@ -397,9 +403,10 @@ def join_sims(
                 if not DELAY:
                     cur_nmappings += len(a.mappings.data) * len(b.mappings.data)
                 if DO_PRINT:
-                    s = f"\t-->\n\t{combined[-1].compatibility}"
-                    s += f"({len(a.mappings.data)})x({len(b.mappings.data)})"
-                    print(s)
+                    # s = f"\t-->\n\t{combined[-1].compatibility}"
+                    # s += f"({len(a.mappings.data)})x({len(b.mappings.data)})"
+                    # print(s)
+                    pass
             if DO_PRINT and not found:
                 for a, _ in left[k]:
                     print(f"\tNo match for {a.compatibility}")
