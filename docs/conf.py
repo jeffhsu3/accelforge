@@ -25,6 +25,13 @@ exclude_patterns = []
 html_theme = 'sphinx_rtd_theme'
 html_static_path = ['_static']
 
+extensions = [
+    'sphinx.ext.autodoc',
+    'sphinx.ext.napoleon',  # handles Google/Numpy
+    'sphinx.ext.autosummary',
+    'sphinx.ext.viewcode',
+]
+
 autodoc_default_options = {
     'members': True,
     'undoc-members': False,

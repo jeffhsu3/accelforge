@@ -672,7 +672,7 @@ def get_tile_shape_choices(
         tiles = what_tiles_symbol.get_tiles(symbol, none_if_fail=True)
         check_tiled_by = tiled_by in symbols_enumerated or isinstance(tiled_by, int)
         check_tiles = tiles in symbols_enumerated or isinstance(tiles, int)
-        
+
         inner_size, outer_size = None, None
         if check_tiled_by:
             if check_tiles and isinstance(tiles, int):
@@ -686,7 +686,7 @@ def get_tile_shape_choices(
                 check_tiled_by = False
             else:
                 inner_size = tiles
-        
+
         assert (check_tiled_by and not check_tiles) or (not check_tiled_by and check_tiles)
         if check_tiled_by:
             if isinstance(tiled_by, int):
@@ -803,6 +803,13 @@ def get_tile_shape_choices(
                     )
                     complete = objective.formula.free_symbols.issubset(sym_enumerated_set)
                     valid = result <= objective.max_value
+                    if sum(valid) == 0:
+                        # print(f'No valid pmappings. Previous: {prev.sum()}. Best: {result[valid].max()}')
+                        eval_objective(
+                            objective.formula,
+                            choices_enumerated,
+                            minimize_formula=objective.formula,
+                        )
                     if not isinstance(valid, np.ndarray):
                         valid = (
                             np.zeros(choices_enumerated.shape[0], dtype=bool) + valid

@@ -302,11 +302,11 @@ class TilePattern(ParsableModel):
 
     def __str__(self) -> str:
         s = []
-        if self.calculated_n_iterations is not None:
+        if self.calculated_n_iterations not in (None, "symbol"):
             s.append(f"in [0..{self.calculated_n_iterations})")
-        if self.initial_tile_shape is not None:
+        if self.initial_tile_shape not in (None, "symbol"):
             s.append(f"initial={self.initial_tile_shape}")
-        if self.stride is not None:
+        if self.stride not in (None, "symbol"):
             s.append(f"stride={self.stride}")
         return " ".join(s)
 
@@ -534,7 +534,13 @@ class TensorHolder(MappingNode):
     """ Which tensor(s) are backed by this node. """
 
     _lower: bool = True
-    """ Whether the tensor names are compressed to lowercase. """
+    """ Whether this tensor holder can be lowered. """
+
+    _persistent: bool = False
+    """ 
+    Whether this tensor holder is persistent. If persistent, can't be tiled and must
+    be kept in backing storage for the full duration of the workload's execution.
+    """
 
     def compact_str(self) -> str:
         tname = ",".join(self.tensors)
