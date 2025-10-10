@@ -548,14 +548,18 @@ def coalesce_symbols(
                 if g in ["min", "max"]:
                     try:
                         diffed = sympy.diff(formula, s)
-                        if diffed > 0:
-                            if g == goal.goal:
-                                disagrees.append(s)
-                            continue
                         if diffed < 0:
-                            if g != goal.goal:
-                                disagrees.append(s)
-                            continue
+                            this_goal = (~goal).goal
+                            
+                        elif diffed > 0:
+                            this_goal = (~goal).goal
+                        else:
+                            raise TypeError # Can't tell if increasing or decreasing
+
+                        if g != this_goal:
+                            disagrees.append(s)
+                        continue
+
                     except TypeError:
                         diffed = None
                 break
