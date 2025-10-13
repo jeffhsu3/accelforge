@@ -398,7 +398,7 @@ def check_max_fused_loops_per_rank(
     symbols_enumerated: list[Symbol],
     choices_enumerated: np.ndarray,
     max_fused_loop_check_groups: list[tuple[Number, list[Symbol]]],
-    what_tiles_symbol: list[tuple[Union[Symbol, int], Union[Symbol, int]]],
+    what_tiles_symbol: SymbolValueRelations,
 ):
     def get_size(x: Union[Symbol, int]):
         if isinstance(x, Symbol) and x in symbols_enumerated:
@@ -409,14 +409,14 @@ def check_max_fused_loops_per_rank(
             return x
     
     def has_fanout(x: Union[Symbol, int]):
-        outer = get_size(what_tiles_symbol.get_tiled_by(x))
+        outer = get_size(what_tiles_symbol.get_inner_tiles(x))  # TODO: is this a bug?
         inner = get_size(x)
         return outer != inner
 
     def can_check(x: Union[Symbol, int]):
         if isinstance(x, Symbol) and x not in symbols_enumerated:
             return False
-        # tiles = what_tiles_symbol.get_tiles(x, none_if_fail=True)
+        # tiles = what_tiles_symbol.get_outer_tiles(x, none_if_fail=True)
         # if tiles is not None and isinstance(tiles, Symbol) and tiles not in symbols_enumerated:
         #     return False
         return True
@@ -653,7 +653,7 @@ def get_tile_shape_choices(
         # Continue with a symbol representing the parent tile of the last symbol
         # if possible. Otherwise (see return), just grab any symbol.
         try:
-            choice = what_tiles_symbol.get_tiles(prev_symbol)
+            choice = what_tiles_symbol.get_outer_tiles(prev_symbol)
             if choice in symbols_remaining:
                 symbols_remaining.remove(choice)
                 return choice
@@ -672,64 +672,89 @@ def get_tile_shape_choices(
         symbol = grab_symbol(symbol)
 
         choices = []
-        tiled_by = what_tiles_symbol.get_tiled_by(symbol, none_if_fail=True)
-        tiles = what_tiles_symbol.get_tiles(symbol, none_if_fail=True)
-        check_tiled_by = tiled_by in symbols_enumerated or isinstance(tiled_by, int)
-        check_tiles = tiles in symbols_enumerated or isinstance(tiles, int)
+        if what_tiles_symbol.is_stride(symbol):
+            inner_tiles = what_tiles_symbol.get_inner_tiles(symbol, none_if_fail=True)
+            outer_tiles = what_tiles_symbol.get_outer_tiles(symbol, none_if_fail=True)
 
-        inner_size, outer_size = None, None
-        if check_tiled_by:
-            if check_tiles and isinstance(tiles, int):
-                outer_size = tiles
-                check_tiles = False
+            if inner_tiles in symbols_enumerated:
+                inner_tiles_type = 'enumerated'
+                inner_size = None
+            elif isinstance(inner_tiles, int):
+                inner_tiles_type = 'set'
+                inner_size = inner_tiles
             else:
-                outer_size = what_tiles_symbol.get_max_size(symbol)
-        if check_tiles:
-            if check_tiled_by and isinstance(tiled_by, int):
-                inner_size = tiles
-                check_tiled_by = False
-            else:
-                inner_size = tiles
+                inner_tiles_type = 'unknown'
+                inner_size = 1
 
-        assert (check_tiled_by and not check_tiles) or (not check_tiled_by and check_tiles)
-        if check_tiled_by:
-            if isinstance(tiled_by, int):
-                partitions = {tiled_by: choices_enumerated}
+            if outer_tiles in symbols_enumerated:
+                outer_tiles_type = 'enumerated'
+                outer_size = None
+            elif isinstance(outer_tiles, int):
+                outer_tiles_type = 'set'
+                outer_size = outer_tiles
             else:
-                i = symbols_enumerated.index(tiled_by)
-                partitions = {
-                    v: choices_enumerated[np.where(choices_enumerated[:, i] == v)]
-                    for v in np.unique(choices_enumerated[:, i])
-                }
-            makeshapes = lambda v: (
-                np.array(list(get_possible_factor_sizes(math.ceil(outer_size / v), imperfect)))
-                * v
-            )
-        elif check_tiles:
-            if isinstance(tiles, int):
-                partitions = {tiles: choices_enumerated}
-            else:
-                i = symbols_enumerated.index(tiles)
-                partitions = {
-                    v: choices_enumerated[np.where(choices_enumerated[:, i] == v)]
-                    for v in np.unique(choices_enumerated[:, i])
-                }
-            if inner_size is not None:
-                makeshapes = lambda v: np.array(list(get_possible_factor_sizes(v, imperfect)))
-            else:
-                makeshapes = lambda v: np.zeros(1) + inner_size
+                outer_tiles_type = 'unknown'
+                outer_size = what_tiles_symbol.get_max_size(outer_tiles)
 
-        for v, partition in partitions.items():
-            try:
-                shapes = makeshapes(v)
-            except TypeError:
-                print(f'{v}, {what_tiles_symbol.get_max_size(symbol)}')
-                raise
-            # print(f'\tFor {s} with value {v}, the possible shapes are {shapes}')
-            choices.append(append_vector(partition, shapes))
+            if inner_tiles_type == 'enumerated' and outer_tiles_type == 'enumerated':
+                raise RuntimeError("BUG: both inner and outer tiles are enumerated")
+            if inner_tiles_type == 'unknown' and outer_tiles_type == 'unknown':
+                raise RuntimeError("BUG: both inner and outer tiles are unknown")
 
-        if not partitions:
-            return np.array([]).reshape(-1, len(symbols))
+            if inner_tiles_type in {'set', 'unknown'} and outer_tiles_type in {'set', 'unknown'}:
+                choices.append(append_vector(
+                    choices_enumerated,
+                    (
+                        np.array(list(get_possible_factor_sizes(math.ceil(outer_size / inner_size),
+                                                                imperfect)))
+                        * inner_size
+                    )
+                ))
+            elif inner_tiles_type == 'enumerated':
+                assert isinstance(outer_size, int)
+                i = symbols_enumerated.index(inner_tiles)
+                for inner_choice in np.unique(choices_enumerated[:, i]):
+                    partition = choices_enumerated[np.where(choices_enumerated[:, i] == inner_choice)]
+                    choices.append(append_vector(
+                        partition,
+                        (
+                            np.array(list(get_possible_factor_sizes(math.ceil(outer_size / inner_choice), imperfect)))
+                            * inner_choice
+                        )
+                    ))
+            else:
+                assert outer_tiles_type == 'enumerated'
+                assert isinstance(inner_size, int)
+                i = symbols_enumerated.index(outer_tiles)
+                for outer_choice in np.unique(choices_enumerated[:, i]):
+                    partition = choices_enumerated[np.where(choices_enumerated[:, i] == outer_choice)]
+                    choices.append(append_vector(
+                        partition,
+                        (
+                            np.array(list(get_possible_factor_sizes(math.ceil(outer_choice / inner_size), imperfect)))
+                            * inner_size
+                        )
+                    ))
+        elif what_tiles_symbol.is_initial_tile_shape(symbol):
+            stride = what_tiles_symbol.get_stride(symbol)
+            delta_choices = np.array(list(what_tiles_symbol.get_delta_choices(symbol)))
+
+            if not stride in symbols_enumerated and not isinstance(stride, int):
+                raise RuntimeError(f"BUG: stride {stride} of initial tile shape "
+                                   f"{symbol} is neither enumerated nor a specified value")
+
+            if isinstance(stride, int):
+                choices.append(append_vector(choices_enumerated, delta_choices + stride))
+            else:
+                i = symbols_enumerated.index(stride)
+                for stride_choice in np.unique(choices_enumerated[:, i]):
+                    partition = choices_enumerated[np.where(choices_enumerated[:, i] == stride_choice)]
+                    choices.append(append_vector(partition, delta_choices + stride_choice))
+        else:
+            raise RuntimeError(f"BUG: symbol {symbol} is neither stride nor initial tile shape")
+
+        # if not partitions:
+        #     return np.array([]).reshape(-1, len(symbols))
 
         prev_size = choices_enumerated.shape[0] if choices_enumerated is not None else 1
         choices_enumerated = np.concatenate(choices, axis=0)
@@ -770,13 +795,13 @@ def get_tile_shape_choices(
         # choices possible), or diff if we're perfect (since perfect constrains choices
         # so we can't just min).
         for s in symbols_enumerated:
-            tiles = what_tiles_symbol.get_tiles(s, none_if_fail=True)
+            tiles = what_tiles_symbol.get_outer_tiles(s, none_if_fail=True)
             if isinstance(tiles, Symbol) and tiles not in symbols_enumerated:
                 update_symbol2goal(s, Goal("min" if imperfect else "diff"))
 
         # Same for inner loops depending on us, but maximize if we're imperfect
         for s in symbols_enumerated:
-            tiled_by = what_tiles_symbol.get_tiled_by(s, none_if_fail=True)
+            tiled_by = what_tiles_symbol.get_inner_tiles(s, none_if_fail=True)
             if isinstance(tiled_by, Symbol) and tiled_by not in symbols_enumerated:
                 update_symbol2goal(tiled_by, Goal("max" if imperfect else "diff"))
 
@@ -977,7 +1002,7 @@ def _explore_tile_shapes_new(job: "Job"):
     set_last_tile_shape_to_one(pmapping)
     symbols, symbolic_df, per_memory_usage_df, utilization_df = run_model(job)
     shape = get_rank_variable_bounds(job.spec.workload, pmapping.nodes[-1].einsum)
-    what_tiles_symbol = SymbolValueRelations.from_pmapping_and_shape(pmapping, shape)
+    what_tiles_symbol = SymbolValueRelations.from_pmapping_and_shape(pmapping, shape, job.spec.workload)
     keep_symbols = make_keep_symbols(pmapping)
     rank_var_to_fused_loops = get_rank_var_to_fused_loops(pmapping, shape)
     all_fused_loops = set(sum(rank_var_to_fused_loops.values(), []))
@@ -1072,7 +1097,7 @@ def _explore_tile_shapes_new(job: "Job"):
         n_iterations = str(n.tile_pattern.calculated_n_iterations)
         if n_iterations in df:
             continue
-        outer = what_tiles_symbol.get_tiles(stride)
+        outer = what_tiles_symbol.get_outer_tiles(stride)
         a = df[outer.name] if isinstance(outer, Symbol) else outer
         b = df[stride.name] if isinstance(stride, Symbol) else stride
         df[n_iterations] = np.round(a / b)

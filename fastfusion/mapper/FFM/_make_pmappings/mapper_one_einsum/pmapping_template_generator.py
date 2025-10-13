@@ -364,8 +364,8 @@ def get_single_einsum_jobs(job: Job) -> SameEinsumJobs:
             )
     
     stride_and_halo = get_stride_and_halo_of_einsum(job.einsum_name,
-                                                                job.spec.workload,
-                                                                rank_variable_bounds)
+                                                    job.spec.workload,
+                                                    rank_variable_bounds)
 
     jobs = SameEinsumJobs()
     for i, (mapping, constraints, symbol_table) in enumerate(mappings_constraints):
