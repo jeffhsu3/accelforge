@@ -73,7 +73,8 @@ def label_fused_loops(mapping: List[MappingNode]):
 
     for i, node in enumerate(mapping):
         if isinstance(node, Iteration):
-            node._fused = i < last_backer
+            if node._fused is None:
+                node._fused = i < last_backer
     return mapping
 
 

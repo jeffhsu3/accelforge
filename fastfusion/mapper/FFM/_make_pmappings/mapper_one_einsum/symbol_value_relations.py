@@ -15,7 +15,7 @@ class SymbolValueRelations:
     def __init__(self):
         self.what_tiles_symbol: list[tuple[Symbol | int, Symbol | int]] = []
         self.stride_and_initial: list[tuple[Symbol | int, Symbol | int]] = []
-        self.delta_choices: list[Symbol, ]
+        self.delta_choices: list[tuple[Symbol, frozenset[int]]] = []
 
     def is_stride(self, symbol: Symbol) -> bool:
         """Check if `symbol` is a stride."""
@@ -44,9 +44,10 @@ class SymbolValueRelations:
 
     def get_delta_choices(self, symbol: Symbol) -> frozenset[int]:
         """Get the possible initial deltas for the rank variable represented by `symbol`."""
-        if symbol not in self.delta_choices:
-            raise ValueError(f"Symbol {symbol} not found in {self}")
-        return self.delta_choices[symbol]
+        for initial, choices in self.delta_choices:
+            if initial == symbol:
+                return choices
+        raise ValueError(f"Symbol {symbol} not found in {self}")
 
     def get_inner_tiles(self, symbol: Symbol, none_if_fail: bool=False) -> Symbol | int | None:
         """Get tiles within the tile represented by `symbol`."""
@@ -87,7 +88,7 @@ class SymbolValueRelations:
                 relation.what_tiles_symbol.append((prev, node.stride))
             last_seen_loop_per_rank_var[node.rank_variable] = node.stride
 
-            if node.initial_tile_shape != node.stride and isinstance(node.initial_tile_shape, Symbol):
+            if isinstance(node.initial_tile_shape, Symbol) and node.initial_tile_shape != node.stride:
                 relation.stride_and_initial.append((node.stride, node.initial_tile_shape))
                 relation.delta_choices.append((node.initial_tile_shape,
                                                frozenset(initial_delta_choices[node.rank_variable])))

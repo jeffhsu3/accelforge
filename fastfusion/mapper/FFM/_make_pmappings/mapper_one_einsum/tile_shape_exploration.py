@@ -697,7 +697,7 @@ def get_tile_shape_choices(
                 outer_size = what_tiles_symbol.get_max_size(outer_tiles)
 
             if inner_tiles_type == 'enumerated' and outer_tiles_type == 'enumerated':
-                raise RuntimeError("BUG: both inner and outer tiles are enumerated")
+                raise RuntimeError(f"BUG: both inner, {inner_tiles}, and outer, {outer_tiles}, tiles of {symbol} are enumerated")
             if inner_tiles_type == 'unknown' and outer_tiles_type == 'unknown':
                 raise RuntimeError("BUG: both inner and outer tiles are unknown")
 

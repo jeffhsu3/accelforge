@@ -556,6 +556,7 @@ def insert_reservation_nodes(mapping, info: AnalysisInfo):
             tracker = trackers.pop(tracker_idx)
             buffet = tracker.buffet
             node = Reservation(purposes=[buffet.tensor], resource=buffet.level)
+            node._backing = tracker.node._backing
 
             if (
                 buffet.tensor not in info.tensor_to_reservation_backer_id
@@ -580,6 +581,24 @@ def insert_reservation_nodes(mapping, info: AnalysisInfo):
 
         i += 1
         n_nodes = len(mapping)
+
+    label_fused_loops(mapping)
+
+
+def label_fused_loops(mapping: list[MappingNode]):
+    last_backer = None
+    for i, node in enumerate(mapping):
+        if isinstance(node, Reservation) and node._backing:
+            last_backer = i
+    if last_backer is None:
+        raise ValueError(
+            f"No backing TensorHolder found in mapping {", ".join(m.compact_str() for m in mapping)}"
+        )
+
+    for i, node in enumerate(mapping):
+        if isinstance(node, Iteration):
+            node._fused = i < last_backer
+    return mapping
 
 
 def analyze_node(node_idx, current_shape, info: AnalysisInfo) -> SummarizedAnalysisOutput:
@@ -1096,11 +1115,9 @@ def insert_sympy_symbols(mapping: list[MappingNode], job: Job):
 
         simple = len(stride_halos) <= 1 and next(iter(stride_halos)) == (1, 0)
 
-        # TODO: Check for 0 < shape < 1 for loop bound target
-        if node.stride == SYMBOL:
-            stride = sympy.symbols(f'stride{loop_idx}', positive=True, integer=True)
-            symbols.append(stride)
-            node.stride = stride
+        # NOTE: initial_tile_shape must be inserted into `symbols` before `stride`
+        # because of the order of tile shape exploration.
+        # TODO: there has to be a better way to do this.
         if simple: # Just use the stride!
             node.initial_tile_shape = None
         else:
@@ -1108,6 +1125,12 @@ def insert_sympy_symbols(mapping: list[MappingNode], job: Job):
                 initial_tile_shape = sympy.symbols(f'initial{loop_idx}', positive=True, integer=True)
                 symbols.append(initial_tile_shape)
                 node.initial_tile_shape = initial_tile_shape
+
+        # TODO: Check for 0 < shape < 1 for loop bound target
+        if node.stride == SYMBOL:
+            stride = sympy.symbols(f'stride{loop_idx}', positive=True, integer=True)
+            symbols.append(stride)
+            node.stride = stride
 
         assert node.calculated_n_iterations is None, \
             "Number of iterations is derived from the model. Do not set it!"

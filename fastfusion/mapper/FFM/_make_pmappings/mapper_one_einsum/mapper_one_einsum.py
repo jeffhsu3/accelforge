@@ -350,6 +350,19 @@ def scale_n_pmappings_by_permutations(job: Job, n_pmappings: int) -> int:
     return n_pmappings
 
 
+def assert_all_jobs_have_same_symbols(jobs_with_similar_compatibilities: SameCompatibilityJobs):
+    iteration2symbols = []
+    for j in jobs_with_similar_compatibilities:
+        for t in j.compatibility.tensors:
+            for i, l in enumerate(t.loops):
+                if len(iteration2symbols) <= i:
+                    iteration2symbols.append(set())
+                iteration2symbols[i].add(l.tile_pattern.calculated_n_iterations)
+    assert all(
+        len(s) == 1 for s in iteration2symbols
+    ), "All jobs must have the same symbols for compatibility n_iterations"
+
+
 def generate_pmappings_new(
     jobs_with_similar_compatibilities: SameCompatibilityJobs,
 ) -> tuple[EinsumName, list[SIM], dict[UUID, Mapping], SameCompatibilityJobs]:
@@ -444,18 +457,8 @@ def generate_pmappings_new(
         if job.job_id in jobs_passed_pareto
     }
 
-    # Assert all jobs have the same symbols for compatibility n_iterations. If they
-    # don't, this logic will break.
-    iteration2symbols = []
-    for j in jobs_with_similar_compatibilities:
-        for t in j.compatibility.tensors:
-            for i, l in enumerate(t.loops):
-                if len(iteration2symbols) <= i:
-                    iteration2symbols.append(set())
-                iteration2symbols[i].add(l.tile_pattern.calculated_n_iterations)
-    assert all(
-        len(s) == 1 for s in iteration2symbols
-    ), "All jobs must have the same symbols for compatibility n_iterations"
+    assert_all_jobs_have_same_symbols(jobs_with_similar_compatibilities)
+    # Otherwise, following logic fails
 
     df["fused_loop_indices"] = get_fused_loop_indices(
         df, job0.compatibility, einsum_name, return_as_int=True

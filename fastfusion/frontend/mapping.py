@@ -383,7 +383,7 @@ class Iteration(MappingNode):
     """ Whether the Mapper assumes perfect factorization is necessary to perform an
     operation. """
 
-    _fused: bool = False
+    _fused: bool = None
     """ Whether this Iteration is fused with another. """
 
     def __str__(self) -> str:
@@ -1147,6 +1147,9 @@ class Reservation(MappingNode):
 
     resource: str
     """ The resource being reserved. """
+
+    _backing: Set[str] = set()
+    """The set of purposes for which this reservation is backing."""
 
     def compact_str(self) -> str:
         return f'{",".join(self.purposes)} reserves {self.resource}'
