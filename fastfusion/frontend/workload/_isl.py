@@ -98,3 +98,9 @@ def get_tensor_size(workload: Workload, tensor: TensorName):
     data_space = get_tensor_data_space(workload, tensor)
     card_pwqp = data_space.card()
     return card_pwqp.eval(card_pwqp.domain().sample_point()).to_python()
+
+
+def get_operation_space_size(workload: Workload, einsum_name: str):
+    operation_space = get_einsum_operation_space(workload, einsum_name)
+    card_pwqp = operation_space.card()
+    return card_pwqp.eval(card_pwqp.domain().sample_point()).to_python()

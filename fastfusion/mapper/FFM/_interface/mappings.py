@@ -21,6 +21,7 @@ class Mappings:
         self.data = data
 
     def num_computes(self, einsum_name: EinsumName | None = None) -> int:
+        # TODO: this is not correct if there are recomputation.
         return get_num_computes(self.spec, einsum_name)
 
     def per_tensor_size(self) -> dict[TensorName, int]:

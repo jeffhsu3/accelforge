@@ -652,27 +652,26 @@ def get_tile_shape_choices(
     def grab_symbol(prev_symbol: Symbol = None):
         # Continue with a symbol representing the parent tile of the last symbol
         # if possible. Otherwise (see return), just grab any symbol.
-        try:
-            choice = what_tiles_symbol.get_outer_tiles(prev_symbol)
-            if choice in symbols_remaining:
-                symbols_remaining.remove(choice)
-                return choice
-        except ValueError:
-            pass
+        choice = what_tiles_symbol.get_outer_tiles(prev_symbol, none_if_fail=True)
+        if choice is not None and choice in symbols_remaining:
+            symbols_remaining.remove(choice)
+            return choice
 
         # TODO: Maybe start with a symbol that would result in more pruning up front?
         # Maximize the # of choices that can be resolved easily
         return symbols_remaining.pop()
 
+    last_stride_symbol = None   # track the last stride symbol to select next symbol
     symbol = None
     while symbols_remaining:
         # ==============================================================================
         # Enumerate choices for a new symbol
         # ==============================================================================
-        symbol = grab_symbol(symbol)
+        symbol = grab_symbol(last_stride_symbol)
 
         choices = []
         if what_tiles_symbol.is_stride(symbol):
+            last_stride_symbol = symbol
             inner_tiles = what_tiles_symbol.get_inner_tiles(symbol, none_if_fail=True)
             outer_tiles = what_tiles_symbol.get_outer_tiles(symbol, none_if_fail=True)
 
@@ -697,7 +696,10 @@ def get_tile_shape_choices(
                 outer_size = what_tiles_symbol.get_max_size(outer_tiles)
 
             if inner_tiles_type == 'enumerated' and outer_tiles_type == 'enumerated':
-                raise RuntimeError(f"BUG: both inner, {inner_tiles}, and outer, {outer_tiles}, tiles of {symbol} are enumerated")
+                raise RuntimeError(
+                    f"BUG: both inner, {inner_tiles}, and outer, {outer_tiles},"
+                    f"tiles of {symbol} are enumerated (thus far: {symbols_enumerated})"
+                )
             if inner_tiles_type == 'unknown' and outer_tiles_type == 'unknown':
                 raise RuntimeError("BUG: both inner and outer tiles are unknown")
 

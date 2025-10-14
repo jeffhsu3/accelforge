@@ -1120,11 +1120,10 @@ def insert_sympy_symbols(mapping: list[MappingNode], job: Job):
         # TODO: there has to be a better way to do this.
         if simple: # Just use the stride!
             node.initial_tile_shape = None
-        else:
-            if node.initial_tile_shape == SYMBOL:
-                initial_tile_shape = sympy.symbols(f'initial{loop_idx}', positive=True, integer=True)
-                symbols.append(initial_tile_shape)
-                node.initial_tile_shape = initial_tile_shape
+        elif node.initial_tile_shape == SYMBOL:
+            initial_tile_shape = sympy.symbols(f'initial{loop_idx}', positive=True, integer=True)
+            symbols.append(initial_tile_shape)
+            node.initial_tile_shape = initial_tile_shape
 
         # TODO: Check for 0 < shape < 1 for loop bound target
         if node.stride == SYMBOL:

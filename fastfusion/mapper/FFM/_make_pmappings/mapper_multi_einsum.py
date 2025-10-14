@@ -10,7 +10,7 @@ from joblib import delayed
 from fastfusion.frontend import arch
 from fastfusion.frontend.specification import Specification
 from fastfusion.frontend.mapping import Iteration, Mapping, TensorHolder
-from fastfusion.frontend.workload._isl import get_rank_variable_bounds
+from fastfusion.frontend.workload._isl import get_rank_variable_bounds, get_tensor_size, get_operation_space_size
 from fastfusion.frontend.workload.workload import EinsumName, TensorName
 
 from fastfusion.mapper.FFM._make_pmappings.mapper_one_einsum.mapper_one_einsum import (
@@ -52,28 +52,16 @@ def get_rank_variable_bounds_for_all_einsums(spec: Specification):
 
 
 def get_num_computes(spec: Specification, einsum_name: EinsumName | None = None) -> int:
-    rank_variable_bounds = get_rank_variable_bounds_for_all_einsums(spec)
     einsums = spec.workload.einsums
     einsums = [einsums[einsum_name]] if einsum_name is not None else einsums
-    return sum(prod(rank_variable_bounds[r] for r in e.rank_variables) for e in einsums)
+    return sum(get_operation_space_size(spec.workload, e) for e in einsums)
 
 
 def get_per_tensor_size(spec: Specification) -> dict[TensorName, int]:
-    rank_variable_bounds = get_rank_variable_bounds_for_all_einsums(spec)
-    sizes = {}
-    for t in spec.workload.tensor_names:
-        einsum = next(iter(spec.workload.einsums_with_tensor(t)))
-        size = 1
-        access = einsum.tensor_accesses[t]
-        for r in access.fully_relevant_rank_variables:
-            size *= rank_variable_bounds[r]
-        if access.partially_relevant_rank_variables:
-            raise ValueError(
-                f"Tensor {t} has partially relevant rank variables."
-                f"This function only works for fully-relevant rank variables."
-            )
-        sizes[t] = size
-    return sizes
+    return {
+        tensor: get_tensor_size(spec.workload, tensor)
+        for tensor in spec.workload.tensor_names
+    }
 
 
 def get_jobs(
