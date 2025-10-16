@@ -17,7 +17,11 @@ from fastfusion.frontend.mapping import (
 )
 from fastfusion.frontend.specification import Specification
 from fastfusion.frontend.workload._isl import get_rank_variable_bounds
-from fastfusion.frontend.workload._symbolic import get_rank_variable_relevancy, get_stride_and_halo, get_stride_and_halo_of_einsum
+from fastfusion.frontend.workload._symbolic import (
+    get_rank_variable_relevancy,
+    get_stride_and_halo,
+    get_stride_and_halo_of_einsum,
+)
 from fastfusion.frontend.workload.workload import (
     Einsum,
     EinsumName,
@@ -37,7 +41,7 @@ from fastfusion.mapper.FFM._make_pmappings.mapper_one_einsum.loop_generator impo
 )
 from fastfusion.mapper.FFM._make_pmappings.mapper_one_einsum.mapper_job import (
     Job,
-    SameEinsumJobs
+    SameEinsumJobs,
 )
 from fastfusion.util.basetypes import ParsableList
 from fastfusion.util.setexpressions import eval_set_expression
@@ -131,7 +135,7 @@ def timeloop_style_even(mapping: list[MappingNode]):
             continue
         node: TensorHolder
         seen = memory2indices[node.component]
-        mapping[i]._lower = False # Lowering might re-uneven the reservationsxs
+        mapping[i]._lower = False  # Lowering might re-uneven the reservationsxs
 
         if len(seen) <= 1:
             seen.append(i)
@@ -140,19 +144,24 @@ def timeloop_style_even(mapping: list[MappingNode]):
         i += 1
     return mapping
 
+
 def assert_proper_fusion_labeling(mapping: list[MappingNode], check_loops: bool = True):
     tensors = set()
     for i, t in enumerate(mapping):
         if not isinstance(t, TensorHolder):
             continue
-        
+
         new = set(t.tensors) - tensors
-        
+
         if new and check_loops:
             for j in range(i):
                 if isinstance(mapping[j], Iteration):
-                    assert mapping[j]._fused, f"Node {j} is not fused in {' '.join(m.compact_str() for m in mapping)}"
-        assert t._backing == new, f"Node {i} backing missing {new - t._backing} in {' '.join(m.compact_str() for m in mapping)}"
+                    assert mapping[
+                        j
+                    ]._fused, f"Node {j} is not fused in {' '.join(m.compact_str() for m in mapping)}"
+        assert (
+            t._backing == new
+        ), f"Node {i} backing missing {new - t._backing} in {' '.join(m.compact_str() for m in mapping)}"
         tensors.update(new)
         tensors.update(t.tensors)
 
@@ -177,8 +186,9 @@ def get_initial_delta_choices(einsum_name: str, workload: Workload):
                 stack.append(cur_chain + [(tensor, next_einsum)])
 
     for chain in consumer_chains:
-        for (_, producer), (tensor, consumer) in zip(list(reversed(chain))[1:],
-                                                     reversed(chain)):
+        for (_, producer), (tensor, consumer) in zip(
+            list(reversed(chain))[1:], reversed(chain)
+        ):
             rank_stride_and_halo = stride_and_halo[(consumer.name, tensor)]
             if tensor is None:
                 break  # done
@@ -188,10 +198,13 @@ def get_initial_delta_choices(einsum_name: str, workload: Workload):
                     for cons_choice in choices[cons_rank_var]:
                         if (prod_rank_var, cons_rank_var) not in rank_stride_and_halo:
                             continue
-                        stride, halo = rank_stride_and_halo[(prod_rank_var, cons_rank_var)]
-                        choices[prod_rank_var].add(cons_choice*stride + halo)
+                        stride, halo = rank_stride_and_halo[
+                            (prod_rank_var, cons_rank_var)
+                        ]
+                        choices[prod_rank_var].add(cons_choice * stride + halo)
 
     return choices
+
 
 def get_ranks_with_tile_pattern(producer_name: EinsumName, workload: Workload):
     initial_choices = get_initial_delta_choices(producer_name, workload)
@@ -200,6 +213,7 @@ def get_ranks_with_tile_pattern(producer_name: EinsumName, workload: Workload):
         for rank_var in workload.einsums[producer_name].rank_variables
         if len(initial_choices[rank_var]) > 1
     }
+
 
 def iterate_mappings_no_constraints(
     spec: Specification,
@@ -237,11 +251,12 @@ def iterate_mappings_no_constraints(
             mapping = unpack_loops_to_rank_variables(mapping)
             if spec.mapper.ffm.timeloop_style_even:
                 mapping = timeloop_style_even(mapping)
-                
+
             place_missing_temporal_loops(mapping, einsum)
             label_fused_loops(mapping)
             assert_proper_fusion_labeling(mapping)
             yield mapping, symbol_table
+
 
 def iterate_mappings_constraints(
     spec: Specification,
@@ -272,7 +287,13 @@ def iterate_mappings_constraints(
             mapping, constraints = get_constraints(
                 arch_flattened, mapping, symbol_table, einsum_name
             )
-            mapping.append(Compute(einsum=einsum_name, compute=compute_name, component_object=arch_flattened[-1]))
+            mapping.append(
+                Compute(
+                    einsum=einsum_name,
+                    compute=compute_name,
+                    component_object=arch_flattened[-1],
+                )
+            )
             mapping = Mapping(nodes=[copy.copy(n) for n in mapping])
             yield mapping, constraints, symbol_table
 
@@ -288,18 +309,18 @@ def parse_flattened_arch(
 
     tensor_names = job.spec.workload.einsums[job.einsum_name].tensor_names
 
-    def parse_tensor2bits(to_parse: dict[str, Any], location: str, symbol_table: dict[str, str]) -> dict[str, Any]:
+    def parse_tensor2bits(
+        to_parse: dict[str, Any], location: str, symbol_table: dict[str, str]
+    ) -> dict[str, Any]:
         result = {}
         if not isinstance(to_parse, dict):
-            raise ValueError(
-                f"Expected a dict, got {type(to_parse)}: {to_parse}"
-            )
+            raise ValueError(f"Expected a dict, got {type(to_parse)}: {to_parse}")
         for key, value in to_parse.items():
             key_parsed = eval_set_expression(
                 expression=key,
                 symbol_table=symbol_table,
                 expected_space_name="tensors",
-                location=f"{location} {key}"
+                location=f"{location} {key}",
             )
             for k2 in key_parsed:
                 if k2 in result and result[k2] != value:
@@ -308,7 +329,7 @@ def parse_flattened_arch(
                         f"{result[k2]} and {value}"
                     )
                 result[k2] = value
-                
+
         for tensor_name in tensor_names:
             if tensor_name not in result:
                 raise ValueError(
@@ -330,24 +351,28 @@ def parse_flattened_arch(
         node.attributes.datawidth = parse_tensor2bits(
             node.attributes.datawidth,
             location=f"datawidth of {node.name} for Einsum {job.einsum_name}",
-            symbol_table=symbol_table
+            symbol_table=symbol_table,
         )
         node.spatial = ParsableList(
             s._parse(
                 symbol_table=symbol_table,
-                location=f"Einsum {job.einsum_name} arch {node.name}.spatial.{s.name}"
-            ) for s in node.spatial
+                location=f"Einsum {job.einsum_name} arch {node.name}.spatial.{s.name}",
+            )
+            for s in node.spatial
         )
     return flattened_arch
+
 
 # =================================================================================================
 # Top level
 # =================================================================================================
 def get_single_einsum_jobs(job: Job) -> SameEinsumJobs:
     compute_name = job.flattened_arch[-1].name
-    
+
     job.tensor_to_relevancy = {
-        tensor: get_rank_variable_relevancy(job.spec.workload.einsums[job.einsum_name], tensor)
+        tensor: get_rank_variable_relevancy(
+            job.spec.workload.einsums[job.einsum_name], tensor
+        )
         for tensor in job.spec.workload.einsums[job.einsum_name].tensor_names
     }
 
@@ -360,13 +385,11 @@ def get_single_einsum_jobs(job: Job) -> SameEinsumJobs:
         ),
         desc=f"Generating pmapping templates for compute {compute_name} Einsum {job.einsum_name}",
     )
-    rank_variable_bounds = get_rank_variable_bounds(
-                job.spec.workload, job.einsum_name
-            )
-    
-    stride_and_halo = get_stride_and_halo_of_einsum(job.einsum_name,
-                                                    job.spec.workload,
-                                                    rank_variable_bounds)
+    rank_variable_bounds = get_rank_variable_bounds(job.spec.workload, job.einsum_name)
+
+    stride_and_halo = get_stride_and_halo_of_einsum(
+        job.einsum_name, job.spec.workload, rank_variable_bounds
+    )
 
     jobs = SameEinsumJobs()
     for i, (mapping, constraints, symbol_table) in enumerate(mappings_constraints):
@@ -382,4 +405,3 @@ def get_single_einsum_jobs(job: Job) -> SameEinsumJobs:
         jobs.append(new_job)
 
     return jobs
-

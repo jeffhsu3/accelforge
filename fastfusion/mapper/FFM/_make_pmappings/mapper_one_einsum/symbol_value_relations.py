@@ -49,7 +49,9 @@ class SymbolValueRelations:
                 return choices
         raise ValueError(f"Symbol {symbol} not found in {self}")
 
-    def get_inner_tiles(self, symbol: Symbol, none_if_fail: bool=False) -> Symbol | int | None:
+    def get_inner_tiles(
+        self, symbol: Symbol, none_if_fail: bool = False
+    ) -> Symbol | int | None:
         """Get tiles within the tile represented by `symbol`."""
         for tiled_by, what_tiles in self.what_tiles_symbol:
             if tiled_by == symbol:
@@ -58,7 +60,9 @@ class SymbolValueRelations:
             return None
         raise ValueError(f"Symbol {symbol} not found in {self}")
 
-    def get_outer_tiles(self, symbol: Symbol, none_if_fail: bool=False) -> Symbol | int | None:
+    def get_outer_tiles(
+        self, symbol: Symbol, none_if_fail: bool = False
+    ) -> Symbol | int | None:
         """Get the tile that contain the tile represented by `symbol`."""
         for tiled_by, what_tiles in self.what_tiles_symbol:
             if what_tiles == symbol:
@@ -73,8 +77,12 @@ class SymbolValueRelations:
         return symbol
 
     @staticmethod
-    def from_pmapping_and_shape(pmapping: Mapping, shape: dict[str, int], workload: Workload) -> "SymbolValueRelations":
-        initial_delta_choices = get_initial_delta_choices(pmapping.nodes[-1].einsum, workload)
+    def from_pmapping_and_shape(
+        pmapping: Mapping, shape: dict[str, int], workload: Workload
+    ) -> "SymbolValueRelations":
+        initial_delta_choices = get_initial_delta_choices(
+            pmapping.nodes[-1].einsum, workload
+        )
 
         relation = SymbolValueRelations()
         last_seen_loop_per_rank_var: dict[str, Symbol | int] = dict(shape)
@@ -88,10 +96,19 @@ class SymbolValueRelations:
                 relation.what_tiles_symbol.append((prev, node.stride))
             last_seen_loop_per_rank_var[node.rank_variable] = node.stride
 
-            if isinstance(node.initial_tile_shape, Symbol) and node.initial_tile_shape != node.stride:
-                relation.stride_and_initial.append((node.stride, node.initial_tile_shape))
-                relation.delta_choices.append((node.initial_tile_shape,
-                                               frozenset(initial_delta_choices[node.rank_variable])))
+            if (
+                isinstance(node.initial_tile_shape, Symbol)
+                and node.initial_tile_shape != node.stride
+            ):
+                relation.stride_and_initial.append(
+                    (node.stride, node.initial_tile_shape)
+                )
+                relation.delta_choices.append(
+                    (
+                        node.initial_tile_shape,
+                        frozenset(initial_delta_choices[node.rank_variable]),
+                    )
+                )
 
         for r, s in last_seen_loop_per_rank_var.items():
             if isinstance(s, Symbol):

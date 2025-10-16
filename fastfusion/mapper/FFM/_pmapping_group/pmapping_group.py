@@ -78,8 +78,9 @@ class PmappingGroup:
         self.valid_pmappings: float = valid_pmappings
 
         if next_shared_loop_index is not None:
-            assert no_drop_reservations_for is not None, \
-                "no_drop_reservations_for must be set if next_shared_loop_index is set"
+            assert (
+                no_drop_reservations_for is not None
+            ), "no_drop_reservations_for must be set if next_shared_loop_index is set"
             self.free_to_loop_index(loop_index=next_shared_loop_index)
             self.limit_capacity(
                 resource2capacity={},
@@ -105,9 +106,10 @@ class PmappingGroup:
             self.check_above_subset_below()
 
         self._check_reservations()
-        
-        assert len(self.data.columns) == len(set(self.data.columns)), \
-            f"Duplicate columns: {self.data.columns}"
+
+        assert len(self.data.columns) == len(
+            set(self.data.columns)
+        ), f"Duplicate columns: {self.data.columns}"
 
     def all_reservation_levels(self):
         return set().union(
@@ -115,12 +117,11 @@ class PmappingGroup:
             *self.left_reservations.values(),
             *self.right_reservations.values(),
         )
-        
+
     def rename(self, renames: dict[str, str]) -> "PmappingGroup":
         new = self.copy()
         new.data.rename(columns=renames, inplace=True)
         return new
-        
 
     @error_check_wrapper
     def fill_reservation_cols(self, columns: set | str):
@@ -349,7 +350,7 @@ class PmappingGroup:
                 default=-1,
             ),
         )
-        
+
     def get_min_loop_index(self):
         return min(
             min(
@@ -484,7 +485,7 @@ class PmappingGroup:
 
         # Make sure everything is done in increasing loop order so we don't have
         # read-after-write hazards
-        for nloops in range(max_nloops, min_nloops-1, -1):
+        for nloops in range(max_nloops, min_nloops - 1, -1):
 
             def iter_reservations(reservations_dict):
                 for resource in reservations_dict:
@@ -571,7 +572,6 @@ class PmappingGroup:
         if CHECK_CORRECTNESS:
             result.check_above_subset_below(live_tensors)
             result.check_reservations(live_tensors)
-
 
         result.free_to_loop_index(next_shared_loop_index, live_tensors=live_tensors)
         if not CHECK_CORRECTNESS:
@@ -675,7 +675,7 @@ class PmappingGroup:
             valid_pmappings=sum(p.valid_pmappings for p in paretos),
         )
         return p
-    
+
     def update(
         self,
         skip_pareto: bool,
@@ -690,7 +690,6 @@ class PmappingGroup:
         )
         args.update(kwargs)
         return PmappingGroup(**args)
-    
 
     def copy(self) -> "PmappingGroup":
         return self.update(
@@ -726,7 +725,12 @@ class PmappingGroup:
                     else self.data
                 )
             for l in list(right_loops):
-                if l == 0 and next_shared_loop_index == -1 and drop_valid_reservations and resource not in no_drop_reservations_for:
+                if (
+                    l == 0
+                    and next_shared_loop_index == -1
+                    and drop_valid_reservations
+                    and resource not in no_drop_reservations_for
+                ):
                     right_loops.discard(l)
                     dropcols.append(col)
 
@@ -740,7 +744,11 @@ class PmappingGroup:
                     if capacity is not None
                     else self.data
                 )
-                if l == 0 and drop_valid_reservations and resource not in no_drop_reservations_for:
+                if (
+                    l == 0
+                    and drop_valid_reservations
+                    and resource not in no_drop_reservations_for
+                ):
                     left_loops.discard(l)
                     dropcols.append(col)
 
@@ -784,10 +792,12 @@ class PmappingGroup:
                 self.fail(first_failing_index, live_tensors)
                 raise ValueError(error)
 
-    def filter_rows(self, pmapping_row_filter_function: Callable[[pd.Series], bool] | None = None) -> "PmappingGroup":
+    def filter_rows(
+        self, pmapping_row_filter_function: Callable[[pd.Series], bool] | None = None
+    ) -> "PmappingGroup":
         if pmapping_row_filter_function is None:
-            return self.copy() 
-        
+            return self.copy()
+
         # s = pmapping_row_filter_function(self._data)
         # if s.sum() > 0:
         #     print(f"Filter rate: {s.sum() / len(s):.2%}")

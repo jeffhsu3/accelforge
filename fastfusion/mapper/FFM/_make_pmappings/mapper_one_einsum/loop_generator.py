@@ -14,10 +14,12 @@ from fastfusion.frontend.workload.workload import (
 # Insert loops
 # =================================================================================================
 
+
 class LowerChoice(Enum):
     YES = 0
     NO = 1
     OPTIONAL = 2
+
 
 def insert_temporal_loops(
     mapping: list[TensorHolder],
@@ -51,7 +53,7 @@ def insert_temporal_loops(
     tensor2irrelevant_rank_vars = einsum.tensor2irrelevant_rank_variables
     tensor2rank_vars = einsum.tensor2rank_variables
 
-    intermediate_tensors = einsum.tensor_names & workload.intermediate_tensor_names
+    fusable_tensors = einsum.tensor_names & workload.fusable_tensor_names
     is_fused_loops = True
     seen_tensors = set()
     choices = []
@@ -78,9 +80,11 @@ def insert_temporal_loops(
         rank_variables = einsum.rank_variables
         # rank_variables = {r for r in rank_variables if rank_variable_bounds[r] > 1}
         seen_tensors |= set.union(*(set(t.tensors) for t in prev_tensor_holders), set())
-        is_fused_loops = is_fused_loops and len(intermediate_tensors - seen_tensors) > 0
+        is_fused_loops = is_fused_loops and len(fusable_tensors - seen_tensors) > 0
         prev_tensors = set.union(set(), *(set(t.tensors) for t in prev_tensor_holders))
-        next_persistent = set.union(set(), *(set(t.tensors) for t in next_tensor_holders if t._persistent))
+        next_persistent = set.union(
+            set(), *(set(t.tensors) for t in next_tensor_holders if t.persistent)
+        )
 
         # Can't have loops above persistent tensor holders
         if next_persistent:
@@ -92,7 +96,7 @@ def insert_temporal_loops(
 
         # No recomputation: If we haven't seen a tensor yet, must only iterate over
         # fully-relevant rank variables.
-        for t in intermediate_tensors - seen_tensors:
+        for t in fusable_tensors - seen_tensors:
             rank_variables &= tensor2fully_relevant_rank_vars[t]
 
         # Optimality-preserving optimizations: We can trivially lower non-backing
@@ -121,9 +125,9 @@ def insert_temporal_loops(
             set(), *(tensor2partially_relevant_rank_vars[t] for t in prev_tensors)
         )
         partially_relevant_to_previous &= rank_variables
-        
+
         permutable_partially_relevant = set()
-        
+
         # =============================================================================
         # Determine whether to lower TensorHolder nodes through partially-relevant loops.
         # =============================================================================
@@ -132,10 +136,12 @@ def insert_temporal_loops(
                 set(), *(tensor2partially_relevant_rank_vars[t] for t in s.tensors)
             )
             partially_relevant_to_previous &= rank_variables
-            lowerable_backing = can_lower_first_memory or s.component != first_memory.name
-    
+            lowerable_backing = (
+                can_lower_first_memory or s.component != first_memory.name
+            )
+
             # Persistent. Must be at the top of the mapping.
-            if s._persistent:
+            if s.persistent:
                 lowering_choices.append((False,))
             # Previous is backing and there's partially-relevant rank variables. May
             # want to lower to reduce memory footprint, or raise to reduce number of
@@ -159,9 +165,13 @@ def insert_temporal_loops(
         can_lower = any(any(c) for c in lowering_choices)
 
         # Create canonical loop orders that avoids repeating reuse patterns.
-        choices.append(list(canonical_loop_orders(rank_variables,
-                                                  permutable_partially_relevant,
-                                                  can_lower)))
+        choices.append(
+            list(
+                canonical_loop_orders(
+                    rank_variables, permutable_partially_relevant, can_lower
+                )
+            )
+        )
 
     # ==================================================================================
     # Iterate over all possible mappings

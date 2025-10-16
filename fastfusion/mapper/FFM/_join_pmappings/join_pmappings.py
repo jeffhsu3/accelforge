@@ -92,7 +92,7 @@ def get_memories_to_track(
                     always_below.remove(name)
                 size = s.mappings.data[col].max()
                 max_sizes[name] = max(max_sizes.get(name, 0), size)
-                
+
                 # nloops < 0 means that the reservation will live through all Einsums
                 if nloops < 0:
                     no_drop_reservations_for.add(name)
@@ -175,20 +175,27 @@ def join_sims(
         for s in e_sims:
             c = s.compatibility
             for i in range(c.n_loops):
-                stride = set(t.loops[i].tile_pattern.stride for t in c.tensors if len(t.loops) > i)
+                stride = set(
+                    t.loops[i].tile_pattern.stride
+                    for t in c.tensors
+                    if len(t.loops) > i
+                )
                 assert len(stride) <= 1, f"Stride {stride} is not unique for {e}"
 
     if pmapping_row_filter_function is not None:
         n = sum(len(s.mappings.data) for sg in sims.values() for s in sg)
-        sims = {e: [
-            SIM(
-                s.compatibility,
-                s.mappings.filter_rows(pmapping_row_filter_function)
-            )
-            for s in sims[e]
-        ] for e in sims}
+        sims = {
+            e: [
+                SIM(
+                    s.compatibility,
+                    s.mappings.filter_rows(pmapping_row_filter_function),
+                )
+                for s in sims[e]
+            ]
+            for e in sims
+        }
         new_n = sum(len(s.mappings.data) for sg in sims.values() for s in sg)
-        print(f'Filtered {n} -> {new_n} ({new_n / n:.2%} kept) pmappings')
+        print(f"Filtered {n} -> {new_n} ({new_n / n:.2%} kept) pmappings")
 
     if drop_valid_reservations:
         sims, no_drop_reservations_for = get_memories_to_track(sims, resource2capacity)
@@ -375,7 +382,9 @@ def join_sims(
                         mixable_ranks,
                     )
                     if DO_PRINT:
-                        print(f"\t{a.compatibility}        <-->        {b.compatibility}")
+                        print(
+                            f"\t{a.compatibility}        <-->        {b.compatibility}"
+                        )
                 except ValueError as e:  # Incompatible!
                     # if DO_PRINT:
                     #     print(f"\tIncompatible: {e}")

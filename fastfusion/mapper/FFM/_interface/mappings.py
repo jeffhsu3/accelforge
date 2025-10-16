@@ -30,7 +30,7 @@ class Mappings:
 
     def per_tensor_size(self) -> dict[TensorName, int]:
         return get_per_tensor_size(self.spec)
-    
+
     def _update(self, **kwargs):
         data = dict(
             spec=self.spec,
@@ -117,7 +117,9 @@ class Mappings:
         for col in self._get_cols(key):
             col_renames[col] = "<SEP>".join(c for c in col.split("<SEP>") if c != key)
 
-        return self._update(data=self.data[list(col_renames.keys())].rename(columns=col_renames))
+        return self._update(
+            data=self.data[list(col_renames.keys())].rename(columns=col_renames)
+        )
 
     def drop(self, *keys: str) -> "Mappings":
         assert len(set(self.data.columns)) == len(

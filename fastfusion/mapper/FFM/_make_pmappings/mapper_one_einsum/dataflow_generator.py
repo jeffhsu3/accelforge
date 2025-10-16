@@ -48,7 +48,9 @@ def get_tensor_choices(
     tensors = spec.workload.einsums[einsum_name].tensor_names
     is_copy_op = spec.workload.einsums[einsum_name].is_copy_operation
     persistent_tensors = {
-        t.name for t in spec.workload.einsums[einsum_name].tensor_accesses if t.persistent
+        t.name
+        for t in spec.workload.einsums[einsum_name].tensor_accesses
+        if t.persistent
     }
 
     for choice, symbol_table in make_tensor_choices_all_levels(
@@ -56,7 +58,7 @@ def get_tensor_choices(
         symbol_table=symbol_table,
         is_copy_op=is_copy_op,
         persistent_tensors=persistent_tensors,
-        seen_tensors=set()
+        seen_tensors=set(),
     ):
         all_tensor_holders = [v2 for v in choice.values() for v2 in v]
 
@@ -181,7 +183,7 @@ def valid_tensor_holder_order(
 
             s1, s2 = m0.component, m1.component
             s1_idx, s2_idx = node_names.index(s1), node_names.index(s2)
-            s1_persistent, s2_persistent = m0._persistent, m1._persistent
+            s1_persistent, s2_persistent = m0.persistent, m1.persistent
             either_persistent = s1_persistent or s2_persistent
 
             assert len(m0.tensors) == 1
@@ -238,13 +240,11 @@ def valid_tensor_holder_order(
             either_backing = m0._backing & m1._backing
             if i == j or i == j - 1:
                 if s1_idx < s2_idx and not (
-                    (set(m0._must_keep_tensors) & set(m1.tensors))
-                    or either_backing
+                    (set(m0._must_keep_tensors) & set(m1.tensors)) or either_backing
                 ):
                     return False
                 if s2_idx < s1_idx and not (
-                    (set(m1._must_keep_tensors) & set(m0.tensors))
-                    or either_backing
+                    (set(m1._must_keep_tensors) & set(m0.tensors)) or either_backing
                 ):
                     return False
 

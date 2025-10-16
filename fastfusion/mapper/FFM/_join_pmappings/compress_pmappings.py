@@ -33,9 +33,10 @@ def _compress(
     compressed_data = data[keep_cols].copy()
     decompress_data = data[compress_cols].copy()
     compressed_data[f"{einsum_name}<SEP>{COMPRESSED_INDEX}"] = data.index
-    return pmappings.mappings.update(
-        data=compressed_data, skip_pareto=True
-    ), decompress_data
+    return (
+        pmappings.mappings.update(data=compressed_data, skip_pareto=True),
+        decompress_data,
+    )
 
 
 def _compress_pmapping_list(

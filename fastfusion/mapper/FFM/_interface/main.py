@@ -42,6 +42,7 @@ class MappingFromRow:
     def render(self) -> str:
         return self().render()
 
+
 def _make_pmappings(
     spec: Specification,
     einsum_names: list[EinsumName] | None = None,
@@ -105,13 +106,14 @@ def make_pmappings(
     )
     assert len(kwargs) == len(inspect.signature(_make_pmappings).parameters)
 
-
     if cache_dir is None:
         result = _make_pmappings(**kwargs)
     else:
+
         @joblib.Memory(location=os.path.join(cache_dir), compress=True).cache
         def _make_pmappings_cached(**kwargs) -> MultiEinsumPmappings:
             return _make_pmappings(**kwargs)
+
         result = _make_pmappings_cached(**kwargs)
 
     if print_number_of_pmappings:
@@ -131,8 +133,8 @@ def row2mapping(
 
 def join_pmappings(
     spec: Specification,
-    pmappings: MultiEinsumPmappings, 
-    pmapping_row_filter_function: Callable[[pd.Series], bool] | None = None
+    pmappings: MultiEinsumPmappings,
+    pmapping_row_filter_function: Callable[[pd.Series], bool] | None = None,
 ) -> Mappings:
     for einsum_name, einsum_pmappings in pmappings.einsum2pmappings.items():
         total = sum(len(p.mappings.data) for p in einsum_pmappings)
@@ -168,7 +170,7 @@ def join_pmappings(
     # DRAM while another doesn't.)
     return Mappings(
         spec,
-        list(pmappings.einsum2pmappings.keys()), 
+        list(pmappings.einsum2pmappings.keys()),
         joined.data,
         total_mappings=joined.total_pmappings,
         valid_mappings=joined.valid_pmappings,

@@ -44,7 +44,7 @@ SymbolTable: TypeAlias = dict[str, InvertibleSet]
 
 
 class TensorAccess(ParsableModel):
-    """ Information about how an Einsum accesses a tensor. """
+    """Information about how an Einsum accesses a tensor."""
 
     name: TensorName
     """ The name of the tensor. """
@@ -65,7 +65,7 @@ class TensorAccess(ParsableModel):
     name: X, projection: {A: a, B2: b, C: a+b} means X[A=a, B2=b, C=a+b]
     """
 
-    output: bool = False 
+    output: bool = False
     """ Whether the tensor is an output. """
 
     persistent: bool = False
@@ -188,7 +188,7 @@ class Shape(ParsableList):
 
 
 class Einsum(ParsableModel):
-    """ Represents a computation step in the workload as an Einsum. """
+    """Represents a computation step in the workload as an Einsum."""
 
     name: EinsumName
     """ The name of the Einsum. """
@@ -200,8 +200,14 @@ class Einsum(ParsableModel):
     """ Whether the Einsum is a copy operation. """
     renames: RenameList[Rename] = RenameList()
     """ Renames of the Einsum. """
-    n_repetitions: int = 1
-    """ Number of times to repeat the Einsum. """
+    n_instances: int = 1
+    """
+    Number of times to repeat the Einsum. Multiplied by `Workload.n_instances` to get
+    the total number of Einsum instances. Energy, latency, and other summable metrics
+    are multiplied by this value. Persistent reservations are also multiplied by this
+    value, but non-persistent reservations are not, as they are assumed to be freed
+    between each instance.
+    """
 
     def model_post_init(self, __context__=None) -> None:
         if self.name == "Total":
@@ -304,21 +310,30 @@ class Einsum(ParsableModel):
 
 
 class Workload(ParsableModel):
-    """
-    The workload specification as a cascade of Einsums.
-    :param version: The FastFusion version the input is compliant with.
-    :param einsums: Computation stepsin the workload expressed as einsums.
-    :param shape:   Mapping from rank variable name to bounds of valid rank
-                    variable values.
-    :type version:  Annotated[str, assert_version]
-    :type einsums:  ParsableList[Einsum]
-    :type shape:    ParsableDict[RankVariableName, str]
-    """
+    """The workload specification as a cascade of Einsums."""
 
     version: Annotated[str, assert_version] = __version__
+    """ The version of the workload specification. """
+
     einsums: ParsableList[Einsum] = ParsableList()
+    """ Einsums in the workload. """
+
     shape: ParsableDict[RankVariableName, str] = ParsableDict()
-    n_repetitions: int = 1
+    """ Bounds of valid rank variable values. This is a dictionary of rank variable
+    names to bounds of valid rank variable values. The bounds are specified as a string
+    in the ISL format. For example, "0 <= a < 10" means that the rank variable `a` must
+    be between 0 and 10, including 0 but not 10. Bounds are included for all Einsums
+    that include that rank variable.
+    """
+
+    n_instances: int = 1
+    """
+    Number of times to repeat the workload. Multiplied by `Einsum.n_instances` to get
+    the total number of Einsum instances. Energy, latency, and other summable metrics
+    are multiplied by this value. Persistent reservations are also multiplied by this
+    value, but non-persistent reservations are not, as they are assumed to be freed
+    between each instance.
+    """
 
     def model_post_init(self, __context__=None) -> None:
         self._validate()
@@ -368,13 +383,20 @@ class Workload(ParsableModel):
         global_shape = [self.shape[r] for r in einsum.rank_variables if r in self.shape]
         return " and ".join(term for term in einsum_shape + global_shape)
 
+    def _check_consistent_persistent(self):
+        for tensor in self.tensor_names:
+            persistents = {e.persistent for e in self.einsums_with_tensor(tensor)}
+            if len(persistents) > 1:
+                raise ValueError(
+                    f"Tensor {tensor} is used in multiple Einsums with different "
+                    f"persistent values. Persistent values must be consistent across "
+                    f"all Einsums that use the tensor."
+                )
+
     @property
-    def intermediate_tensor_names(self) -> set[TensorName]:
-        return {
-            t
-            for t in self.tensor_names
-            if self.einsums_that_read_tensor(t) and self.einsums_that_write_tensor(t)
-        }
+    def fusable_tensor_names(self) -> set[TensorName]:
+        self._check_consistent_persistent()
+        return {t for t in self.tensor_names if len(self.einsums_with_tensor(t)) > 1}
 
     @property
     def tensor_names(self) -> set[TensorName]:

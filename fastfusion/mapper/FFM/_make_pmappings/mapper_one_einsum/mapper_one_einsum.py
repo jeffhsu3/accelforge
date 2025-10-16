@@ -12,7 +12,9 @@ from fastfusion.mapper.FFM._join_pmappings.compatibility import (
     Compatibility,
     TensorReservation,
 )
-from fastfusion.mapper.FFM._make_pmappings.mapper_one_einsum import tile_shape_exploration
+from fastfusion.mapper.FFM._make_pmappings.mapper_one_einsum import (
+    tile_shape_exploration,
+)
 from fastfusion.mapper.FFM._make_pmappings.mapper_one_einsum.tile_shape_exploration import (
     EXPERIMENTAL_TILE_SHAPE_EXPLORATION,
 )
@@ -38,7 +40,10 @@ from fastfusion.mapper.FFM._make_pmappings.mapper_one_einsum.mapper_job import (
     Job,
     SameCompatibilityJobs,
 )
-from fastfusion.mapper.FFM._pmapping_group.df_convention import is_fused_loop_col, is_n_iterations_col
+from fastfusion.mapper.FFM._pmapping_group.df_convention import (
+    is_fused_loop_col,
+    is_n_iterations_col,
+)
 
 
 def shift_reservations_by_null_loop_indices(
@@ -129,7 +134,7 @@ def generate_pmappings_old(
         results.append(result)
 
     compatibility = jobs_with_similar_compatibilities.compatibility
-    intermediate_tensors = jobs_with_similar_compatibilities.intermediate_tensors
+    fusable_tensors = jobs_with_similar_compatibilities.fusable_tensors
     einsum_name = jobs_with_similar_compatibilities.einsum_name
     compatibility_updater = (
         jobs_with_similar_compatibilities.update_compatibility_with_tile_shapes
@@ -161,7 +166,7 @@ def generate_pmappings_old(
         f"{einsum_name}<SEP>tile_shape{i}" for i in range(compatibility.n_loops)
     ]  # TODO: Make this work for extended Einsums
 
-    tensor_cols = [tensor2col(tensor) for tensor in intermediate_tensors]
+    tensor_cols = [tensor2col(tensor) for tensor in fusable_tensors]
 
     results.columns = [
         c if col_used_in_pareto(c) or c in tensor_cols else f"{einsum_name}<SEP>{c}"
@@ -199,7 +204,7 @@ def generate_pmappings_old(
         tensor2size = {}
 
         dropcols = []  # list(fused_loop_cols)
-        for tensor in intermediate_tensors:  # Sizes are all the same
+        for tensor in fusable_tensors:  # Sizes are all the same
             tensor2size[tensor] = mappings[tensor2col(tensor)].iloc[0]
             dropcols.append(tensor2col(tensor))
         mappings = mappings.drop(columns=dropcols)
@@ -286,6 +291,7 @@ def get_fused_loop_indices(
 def scale_n_pmappings_by_permutations(job: Job, n_pmappings: int) -> int:
     return n_pmappings
     from fastfusion.frontend.mapping import Reservation
+
     # This changes the pmapping count to include permutations
     n_loops = []
     cur_n_loops = 0
@@ -300,7 +306,6 @@ def scale_n_pmappings_by_permutations(job: Job, n_pmappings: int) -> int:
         n_loops.append(cur_n_loops)
 
     rv = {k: v for k, v in job.rank_variable_bounds.items() if v != 1}
-
 
     # Count dataplacement choices
     # return 1
@@ -326,6 +331,7 @@ def scale_n_pmappings_by_permutations(job: Job, n_pmappings: int) -> int:
     from functools import lru_cache
     from math import comb
     from collections import Counter
+
     def prime_factorization(M):
         f = []
         i = 2
@@ -342,7 +348,7 @@ def scale_n_pmappings_by_permutations(job: Job, n_pmappings: int) -> int:
         factors = {f2: f.count(f2) for f2 in set(f)}
         total = 1
         for exp in factors.values():
-            total *= comb(exp + N - 1, N - 1) # n choose k
+            total *= comb(exp + N - 1, N - 1)  # n choose k
         return total
 
     if len(n_loops) > 1:
@@ -352,7 +358,9 @@ def scale_n_pmappings_by_permutations(job: Job, n_pmappings: int) -> int:
     return n_pmappings
 
 
-def assert_all_jobs_have_same_symbols(jobs_with_similar_compatibilities: SameCompatibilityJobs):
+def assert_all_jobs_have_same_symbols(
+    jobs_with_similar_compatibilities: SameCompatibilityJobs,
+):
     iteration2symbols = []
     for j in jobs_with_similar_compatibilities:
         for t in j.compatibility.tensors:
@@ -395,7 +403,9 @@ def generate_pmappings_new(
 
     for job in jobs_with_similar_compatibilities:
         result = explore_tile_shapes(job)
-        job.compatibility = job.compatibility.populate_loops(job.mapping, job.spec.workload)
+        job.compatibility = job.compatibility.populate_loops(
+            job.mapping, job.spec.workload
+        )
         # This changes the pmapping count to include superfluous permutations
         # TODO: Add a multiplier for the permutations that we include in the fusion
         # piece, which are NOT known to be superfluous
@@ -412,7 +422,7 @@ def generate_pmappings_new(
         result.drop(columns=cols_to_drop, inplace=True)
         results.append(result)
 
-    intermediate_tensors = jwsc.intermediate_tensors
+    fusable_tensors = jwsc.fusable_tensors
     einsum_name = jwsc.einsum_name
     metrics = jwsc.metrics
     limit_capacity_drop_valid_reservations = not (Metrics.RESOURCE_USAGE & metrics)
@@ -428,8 +438,8 @@ def generate_pmappings_new(
                 skip_pareto=True,
                 next_shared_loop_index=next_shared_loop_index,
                 limit_capacity_drop_valid_reservations=limit_capacity_drop_valid_reservations,
-                total_pmappings=1, # Unused for now, just making an initial Pareto
-                valid_pmappings=1, # Unused for now, just making an initial Pareto
+                total_pmappings=1,  # Unused for now, just making an initial Pareto
+                valid_pmappings=1,  # Unused for now, just making an initial Pareto
                 no_drop_reservations_for=job.no_drop_reservations_for,
             )
             for r in results
@@ -439,14 +449,15 @@ def generate_pmappings_new(
     if df.empty:
         return einsum_name, [], {}, jobs_with_similar_compatibilities
 
-    tensor_cols = [tensor2col(tensor) for tensor in intermediate_tensors]
+    tensor_cols = [tensor2col(tensor) for tensor in fusable_tensors]
     df.columns = [
         c if col_used_in_pareto(c) or c in tensor_cols else f"{einsum_name}<SEP>{c}"
         for c in df.columns
     ]
 
     fused_loop_cols = [
-        f"{einsum_name}<SEP>{c}" for c in compatibility.symbols()
+        f"{einsum_name}<SEP>{c}"
+        for c in compatibility.symbols()
         if not is_n_iterations_col(c)
     ]
 
@@ -498,7 +509,9 @@ def generate_pmappings_new(
 
         compatibility = compatibility.drop_loop_indices(null_loop_indices)
 
-        symbol_renames, compatibility = compatibility.make_fused_loop_symbols(einsum_name)
+        symbol_renames, compatibility = compatibility.make_fused_loop_symbols(
+            einsum_name
+        )
         for k, v in symbol_renames.items():
             mappings[v] = mappings[f"{einsum_name}<SEP>{k}"]
         shift_reservations_by_null_loop_indices(mappings, null_loop_indices)

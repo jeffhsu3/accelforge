@@ -166,10 +166,12 @@ class MultiEinsumPmappings:
 
             def fmt(x, total: bool = True):
                 x = round(x)
+
                 def _f(y):
                     y = round(y)
                     return str(y) if y < 1000 else f"{y:.2e}".replace("e+", "e")
-                divved = _f(round(t)/x) if x != 0 else "inf"
+
+                divved = _f(round(t) / x) if x != 0 else "inf"
                 return f"{_f(x)} (1/{divved})" if total else _f(x)
 
             s.append(

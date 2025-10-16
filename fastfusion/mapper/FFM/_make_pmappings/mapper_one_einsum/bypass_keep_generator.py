@@ -87,7 +87,7 @@ def make_tensor_choices_one_level(
             if t not in seen_tensors:
                 nodes[-1]._backing.add(t)
                 nodes[-1]._must_keep_tensors = [t]
-                nodes[-1]._persistent = t in persistent_tensors
+                nodes[-1].persistent = t in persistent_tensors
             elif t in must_keep:
                 nodes[-1]._must_keep_tensors = [t]
 
@@ -124,7 +124,7 @@ def make_tensor_choices_all_levels(
             symbol_table=symbol_table,
             persistent_tensors=persistent_tensors,
             seen_tensors=new_seen_tensors,
-            is_copy_op=is_copy_op
+            is_copy_op=is_copy_op,
         ):
             yield {**subchoices, nodes[0].name: choice}, symbol_table
 

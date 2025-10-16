@@ -501,7 +501,7 @@ class ReservationAnalysisTracker:
 def insert_reservation_nodes(mapping, info: AnalysisInfo):
     trackers: list[ReservationAnalysisTracker] = []
     einsum = info.workload.einsums[mapping[-1].einsum]
-    non_intermediate_tensors = einsum.tensor_names - info.workload.intermediate_tensor_names
+    non_intermediate_tensors = einsum.tensor_names - info.workload.fusable_tensor_names
     seen_tensors = set()  # reservation for top-level buffets cannot be lowered
 
     n_nodes = len(mapping)
@@ -568,12 +568,12 @@ def insert_reservation_nodes(mapping, info: AnalysisInfo):
             tracker = trackers.pop(tracker_idx)
             buffet = tracker.buffet
             node = Reservation(purposes=[buffet.tensor], resource=buffet.level)
-            node._persistent = tracker.node._persistent
+            node.persistent = tracker.node.persistent
             node._backing = tracker.node._backing
 
             if (
                 buffet.tensor not in info.tensor_to_reservation_backer_id
-                and buffet.tensor in info.workload.intermediate_tensor_names
+                and buffet.tensor in info.workload.fusable_tensor_names
             ):
                 info.tensor_to_reservation_backer_id[buffet.tensor] = id(node)
 
@@ -827,7 +827,7 @@ def analyze_storage(node_idx, current_shape, info: AnalysisInfo, _propagate_chil
         stats = child_result.buffet_stats[buffet] 
         backer_id = info.tensor_to_backer_id[tensor]
         is_backing = backer_id == id(node)
-        if node._persistent:
+        if node.persistent:
             stats.persistent = True
         below_backing = backer_id in [id(m) for m in mapping[:node_idx]]
 

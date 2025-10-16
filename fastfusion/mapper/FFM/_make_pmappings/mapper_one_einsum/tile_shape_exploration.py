@@ -22,7 +22,11 @@ from fastfusion.model.looptree.reuse.summarized.symbolic import (
 )
 from fastfusion.model.looptree.energy import compute_energy_from_actions, gather_actions
 from fastfusion.model.looptree.latency import get_latency
-from fastfusion.mapper.FFM._pmapping_group import nameloop2col, tensor2col, firstlatency2col
+from fastfusion.mapper.FFM._pmapping_group import (
+    nameloop2col,
+    tensor2col,
+    firstlatency2col,
+)
 from fastfusion.frontend.mapper.metrics import Metrics
 from fastfusion.util.util import fzs
 import math
@@ -31,7 +35,9 @@ import numpy as np
 import paretoset
 from numbers import Number
 
-from fastfusion.mapper.FFM._make_pmappings.mapper_one_einsum.symbol_value_relations import SymbolValueRelations
+from fastfusion.mapper.FFM._make_pmappings.mapper_one_einsum.symbol_value_relations import (
+    SymbolValueRelations,
+)
 
 
 def run_model(
@@ -61,18 +67,18 @@ def run_model(
     actions = gather_actions(reuse, None, use_name=True)
     energy = compute_energy_from_actions(actions, ert, overall_latency)
 
-    intermediate_tensors = workload.intermediate_tensor_names
+    fusable_tensors = workload.fusable_tensor_names
     tensor_to_backing = {}
     for node in pmapping.nodes:
         if isinstance(node, TensorHolder):
             for tensor in node.tensors:
-                if tensor not in tensor_to_backing and tensor in intermediate_tensors:
+                if tensor not in tensor_to_backing and tensor in fusable_tensors:
                     tensor_to_backing[tensor] = node.component
 
     total_occupancy = {}
     compute_unit = pmapping.nodes[-1].compute
 
-    n_repetitions = workload.n_repetitions * workload.einsums[job.einsum_name].n_repetitions
+    n_instances = workload.n_instances * workload.einsums[job.einsum_name].n_instances
 
     n_loop_options = set()
     for buffet, stats in reuse.buffet_stats.items():
@@ -84,12 +90,12 @@ def run_model(
         if occupancy == 0:
             continue
         if stats.persistent:
-            occupancy *= n_repetitions
+            occupancy *= n_instances
 
         for tensor, backing in tensor_to_backing.items():
             if (is_copy_op or buffet.tensor == tensor) and buffet.level == backing:
                 df[tensor2col(tensor)] = occupancy
-                
+
         total_occupancy.setdefault(buffet.level, {}).setdefault(stats.n_loops_above, 0)
         total_occupancy[buffet.level][stats.n_loops_above] += occupancy
         n_loop_options.add(stats.n_loops_above)
@@ -104,20 +110,28 @@ def run_model(
                 df[nameloop2col(memory, n_loop)] = running_total
 
     if metrics & Metrics.LATENCY:
-        df[f"Total<SEP>latency"] = overall_latency * spec.arch.global_cycle_period * n_repetitions
-        df[f"latency<SEP>compute"] = comp_latency * spec.arch.global_cycle_period * n_repetitions
+        df[f"Total<SEP>latency"] = (
+            overall_latency * spec.arch.global_cycle_period * n_instances
+        )
+        df[f"latency<SEP>compute"] = (
+            comp_latency * spec.arch.global_cycle_period * n_instances
+        )
         # For first latency, we'll follow the convention of treating compute
         # as a component, similarly to memory (see below).
-        for compute_level, stats in reuse.compute_stats.items(): # FIRST LATENCY
+        for compute_level, stats in reuse.compute_stats.items():  # FIRST LATENCY
             for idx, max_first_latency in stats.max_first_latency.items():
-                df[firstlatency2col(compute_level.level, idx)] = max_first_latency * n_repetitions
+                df[firstlatency2col(compute_level.level, idx)] = (
+                    max_first_latency * n_instances
+                )
         for component, latency in mem_latency.items():
-            df[f"latency<SEP>{component}"] = latency * spec.arch.global_cycle_period * n_repetitions
+            df[f"latency<SEP>{component}"] = (
+                latency * spec.arch.global_cycle_period * n_instances
+            )
 
     if metrics & Metrics.ENERGY:
-        df[f"Total<SEP>energy"] = sum(energy.values()) * n_repetitions
+        df[f"Total<SEP>energy"] = sum(energy.values()) * n_instances
         for (component, action), energy in energy.items():
-            df[f"energy<SEP>{component}<SEP>{action}"] = energy * n_repetitions
+            df[f"energy<SEP>{component}<SEP>{action}"] = energy * n_instances
 
     # if metrics & Metrics.RESERVATIONS:
     #     for memory, occupancies in total_occupancy.items():
@@ -341,7 +355,7 @@ def partition_formula(
 
 def get_possible_factor_sizes(n: int, imperfect: bool = False) -> list[int]:
     factors = []
-    for i in range(1, math.ceil(n ** 0.5) + 1):
+    for i in range(1, math.ceil(n**0.5) + 1):
         if not imperfect and n % i != 0:
             continue
         factors.append(i)
@@ -404,7 +418,7 @@ def check_max_fused_loops_per_rank(
             return what_tiles_symbol.get_max_size(x)
         else:
             return x
-    
+
     def has_fanout(x: Union[Symbol, int]):
         outer = get_size(what_tiles_symbol.get_inner_tiles(x))  # TODO: is this a bug?
         inner = get_size(x)
@@ -469,7 +483,7 @@ def coalesce_symbols(
             if formula in symbols_enumerated:
                 update_symbol2goal(formula, goal, new_symbol2goal)
                 continue
-            
+
             # If it's a sum, remove any terms that are constant
             if isinstance(formula, sympy.Add):
                 for term in formula.args:
@@ -479,7 +493,7 @@ def coalesce_symbols(
                         continue
                 if len(formula.args) == 1:
                     formula = formula.args[0]
-                    
+
             # If it's a product, remove any terms that are constant
             if isinstance(formula, sympy.Mul):
                 for term in formula.args:
@@ -547,11 +561,11 @@ def coalesce_symbols(
                         diffed = sympy.diff(formula, s)
                         if diffed < 0:
                             this_goal = (~goal).goal
-                            
+
                         elif diffed > 0:
                             this_goal = (~goal).goal
                         else:
-                            raise TypeError # Can't tell if increasing or decreasing
+                            raise TypeError  # Can't tell if increasing or decreasing
 
                         if g != this_goal:
                             disagrees.append(s)
@@ -584,6 +598,7 @@ def coalesce_symbols(
         log_message(f"\t{g.goal}: {s}")
 
     return symbol2goal
+
 
 def get_tile_shape_choices(
     objectives: list[Objective],
@@ -658,7 +673,7 @@ def get_tile_shape_choices(
         # Maximize the # of choices that can be resolved easily
         return symbols_remaining.pop()
 
-    last_stride_symbol = None   # track the last stride symbol to select next symbol
+    last_stride_symbol = None  # track the last stride symbol to select next symbol
     symbol = None
     while symbols_remaining:
         # ==============================================================================
@@ -673,84 +688,126 @@ def get_tile_shape_choices(
             outer_tiles = what_tiles_symbol.get_outer_tiles(symbol, none_if_fail=True)
 
             if inner_tiles in symbols_enumerated:
-                inner_tiles_type = 'enumerated'
+                inner_tiles_type = "enumerated"
                 inner_size = None
             elif isinstance(inner_tiles, int):
-                inner_tiles_type = 'set'
+                inner_tiles_type = "set"
                 inner_size = inner_tiles
             else:
-                inner_tiles_type = 'unknown'
+                inner_tiles_type = "unknown"
                 inner_size = 1
 
             if outer_tiles in symbols_enumerated:
-                outer_tiles_type = 'enumerated'
+                outer_tiles_type = "enumerated"
                 outer_size = None
             elif isinstance(outer_tiles, int):
-                outer_tiles_type = 'set'
+                outer_tiles_type = "set"
                 outer_size = outer_tiles
             else:
-                outer_tiles_type = 'unknown'
+                outer_tiles_type = "unknown"
                 outer_size = what_tiles_symbol.get_max_size(outer_tiles)
 
-            if inner_tiles_type == 'enumerated' and outer_tiles_type == 'enumerated':
+            if inner_tiles_type == "enumerated" and outer_tiles_type == "enumerated":
                 raise RuntimeError(
                     f"BUG: both inner, {inner_tiles}, and outer, {outer_tiles},"
                     f"tiles of {symbol} are enumerated (thus far: {symbols_enumerated})"
                 )
-            if inner_tiles_type == 'unknown' and outer_tiles_type == 'unknown':
+            if inner_tiles_type == "unknown" and outer_tiles_type == "unknown":
                 raise RuntimeError("BUG: both inner and outer tiles are unknown")
 
-            if inner_tiles_type in {'set', 'unknown'} and outer_tiles_type in {'set', 'unknown'}:
-                choices.append(append_vector(
-                    choices_enumerated,
-                    (
-                        np.array(list(get_possible_factor_sizes(math.ceil(outer_size / inner_size),
-                                                                imperfect)))
-                        * inner_size
+            if inner_tiles_type in {"set", "unknown"} and outer_tiles_type in {
+                "set",
+                "unknown",
+            }:
+                choices.append(
+                    append_vector(
+                        choices_enumerated,
+                        (
+                            np.array(
+                                list(
+                                    get_possible_factor_sizes(
+                                        math.ceil(outer_size / inner_size), imperfect
+                                    )
+                                )
+                            )
+                            * inner_size
+                        ),
                     )
-                ))
-            elif inner_tiles_type == 'enumerated':
+                )
+            elif inner_tiles_type == "enumerated":
                 assert isinstance(outer_size, int)
                 i = symbols_enumerated.index(inner_tiles)
                 for inner_choice in np.unique(choices_enumerated[:, i]):
-                    partition = choices_enumerated[np.where(choices_enumerated[:, i] == inner_choice)]
-                    choices.append(append_vector(
-                        partition,
-                        (
-                            np.array(list(get_possible_factor_sizes(math.ceil(outer_size / inner_choice), imperfect)))
-                            * inner_choice
+                    partition = choices_enumerated[
+                        np.where(choices_enumerated[:, i] == inner_choice)
+                    ]
+                    choices.append(
+                        append_vector(
+                            partition,
+                            (
+                                np.array(
+                                    list(
+                                        get_possible_factor_sizes(
+                                            math.ceil(outer_size / inner_choice),
+                                            imperfect,
+                                        )
+                                    )
+                                )
+                                * inner_choice
+                            ),
                         )
-                    ))
+                    )
             else:
-                assert outer_tiles_type == 'enumerated'
+                assert outer_tiles_type == "enumerated"
                 assert isinstance(inner_size, int)
                 i = symbols_enumerated.index(outer_tiles)
                 for outer_choice in np.unique(choices_enumerated[:, i]):
-                    partition = choices_enumerated[np.where(choices_enumerated[:, i] == outer_choice)]
-                    choices.append(append_vector(
-                        partition,
-                        (
-                            np.array(list(get_possible_factor_sizes(math.ceil(outer_choice / inner_size), imperfect)))
-                            * inner_size
+                    partition = choices_enumerated[
+                        np.where(choices_enumerated[:, i] == outer_choice)
+                    ]
+                    choices.append(
+                        append_vector(
+                            partition,
+                            (
+                                np.array(
+                                    list(
+                                        get_possible_factor_sizes(
+                                            math.ceil(outer_choice / inner_size),
+                                            imperfect,
+                                        )
+                                    )
+                                )
+                                * inner_size
+                            ),
                         )
-                    ))
+                    )
         elif what_tiles_symbol.is_initial_tile_shape(symbol):
             stride = what_tiles_symbol.get_stride(symbol)
             delta_choices = np.array(list(what_tiles_symbol.get_delta_choices(symbol)))
 
             if not stride in symbols_enumerated and not isinstance(stride, int):
-                raise RuntimeError(f"BUG: stride {stride} of initial tile shape "
-                                   f"{symbol} is neither enumerated nor a specified value")
+                raise RuntimeError(
+                    f"BUG: stride {stride} of initial tile shape "
+                    f"{symbol} is neither enumerated nor a specified value"
+                )
 
             if isinstance(stride, int):
-                choices.append(append_vector(choices_enumerated, delta_choices + stride))
+                choices.append(
+                    append_vector(choices_enumerated, delta_choices + stride)
+                )
             else:
                 i = symbols_enumerated.index(stride)
                 for stride_choice in np.unique(choices_enumerated[:, i]):
-                    partition = choices_enumerated[np.where(choices_enumerated[:, i] == stride_choice)]
-                    choices.append(append_vector(partition, delta_choices + stride_choice))
+                    partition = choices_enumerated[
+                        np.where(choices_enumerated[:, i] == stride_choice)
+                    ]
+                    choices.append(
+                        append_vector(partition, delta_choices + stride_choice)
+                    )
         else:
-            raise RuntimeError(f"BUG: symbol {symbol} is neither stride nor initial tile shape")
+            raise RuntimeError(
+                f"BUG: symbol {symbol} is neither stride nor initial tile shape"
+            )
 
         # if not partitions:
         #     return np.array([]).reshape(-1, len(symbols))
@@ -773,9 +830,12 @@ def get_tile_shape_choices(
             what_tiles_symbol,
         )
         job.log_porp_pmappings_kept(
-            f"max_fused_loops_per_rank_variable", choices_enumerated.shape[0] / prev_size
+            f"max_fused_loops_per_rank_variable",
+            choices_enumerated.shape[0] / prev_size,
         )
-        log_message("max_fused_loops_per_rank_variable", f"size={choices_enumerated.shape[0]}")
+        log_message(
+            "max_fused_loops_per_rank_variable", f"size={choices_enumerated.shape[0]}"
+        )
 
         # ==============================================================================
         # Create initial Pareto-finding goals
@@ -829,7 +889,9 @@ def get_tile_shape_choices(
                         choices_enumerated,
                         minimize_formula=objective.formula,
                     )
-                    complete = objective.formula.free_symbols.issubset(sym_enumerated_set)
+                    complete = objective.formula.free_symbols.issubset(
+                        sym_enumerated_set
+                    )
                     valid = result <= objective.max_value
                     if sum(valid) == 0:
                         # print(f'No valid pmappings. Previous: {prev.sum()}. Best: {result[valid].max()}')
@@ -850,7 +912,9 @@ def get_tile_shape_choices(
                         valid = valid & above_min
                         if not valid.any():
                             prev = result <= objective.max_value
-                            print(f'No valid pmappings. Previous: {prev.sum()}. Best: {result[valid].max()}')
+                            print(
+                                f"No valid pmappings. Previous: {prev.sum()}. Best: {result[valid].max()}"
+                            )
 
                     porp = sum(valid) / max(1, choices_enumerated.shape[0])
                     job.log_porp_pmappings_kept(
@@ -895,7 +959,9 @@ def get_tile_shape_choices(
 
         paretoed_by_key = fzs((f, g.goal) for f, g in symbol2goal.items())
         if any(p.issubset(paretoed_by_key) for p in paretoed_by):
-            job.log_message("Skipping Pareto because we've already found a Pareto with these objectives.")
+            job.log_message(
+                "Skipping Pareto because we've already found a Pareto with these objectives."
+            )
             continue
         paretoed_by.append(paretoed_by_key)
 
@@ -1001,7 +1067,9 @@ def _explore_tile_shapes_new(job: "Job"):
     set_last_tile_shape_to_one(pmapping)
     symbols, symbolic_df, per_memory_usage_df, utilization_df = run_model(job)
     shape = get_rank_variable_bounds(job.spec.workload, pmapping.nodes[-1].einsum)
-    what_tiles_symbol = SymbolValueRelations.from_pmapping_and_shape(pmapping, shape, job.spec.workload)
+    what_tiles_symbol = SymbolValueRelations.from_pmapping_and_shape(
+        pmapping, shape, job.spec.workload
+    )
     keep_symbols = make_keep_symbols(pmapping)
     rank_var_to_fused_loops = get_rank_var_to_fused_loops(pmapping, shape)
     all_fused_loops = set(sum(rank_var_to_fused_loops.values(), []))
@@ -1056,10 +1124,13 @@ def _explore_tile_shapes_new(job: "Job"):
         if isinstance(node, (Temporal, Spatial)):
             if node.stride in symbols:
                 rank2symbols.setdefault(node.rank_variable, []).append(node.stride)
-                
+
     max_fused_loop_check_groups = [
         (job.spec.mapper.ffm.max_fused_loops, all_fused_loops),
-        *[(job.spec.mapper.ffm.max_fused_loops_per_rank_variable, x) for x in rank_var_to_fused_loops.values()]
+        *[
+            (job.spec.mapper.ffm.max_fused_loops_per_rank_variable, x)
+            for x in rank_var_to_fused_loops.values()
+        ],
     ]
 
     choices_enumerated = get_tile_shape_choices(

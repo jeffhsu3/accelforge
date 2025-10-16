@@ -204,15 +204,23 @@ def logify(x: pd.Series) -> pd.Series:
     return np.round(logged / TOLERANCE) * TOLERANCE
 
 
-
-def makepareto(mappings: pd.DataFrame, columns: list[str] = None, parallelize: bool = False, split_by_cols: list[str] = ()) -> pd.DataFrame:
+def makepareto(
+    mappings: pd.DataFrame,
+    columns: list[str] = None,
+    parallelize: bool = False,
+    split_by_cols: list[str] = (),
+) -> pd.DataFrame:
     # return makepareto_time_compare(mappings)
     if columns is None:
         columns = [c for c in mappings.columns if col_used_in_pareto(c)]
 
     # Number of iterations is derived from the tile shapes, so we don't need to use it,
     # since any row with the same tile shapes will have the same number of iterations.
-    split_by_cols = list(split_by_cols) + [c for c in mappings.columns if is_fused_loop_col(c) and not is_n_iterations_col(c)]
+    split_by_cols = list(split_by_cols) + [
+        c
+        for c in mappings.columns
+        if is_fused_loop_col(c) and not is_n_iterations_col(c)
+    ]
 
     goals = []
     to_pareto = []
@@ -221,7 +229,7 @@ def makepareto(mappings: pd.DataFrame, columns: list[str] = None, parallelize: b
         if mappings[c].nunique() <= 1:
             continue
 
-        if c in columns and is_objective_col(c):# or col_used_in_pareto(c)):
+        if c in columns and is_objective_col(c):  # or col_used_in_pareto(c)):
             to_pareto.append(logify(mappings[c]))
             pareto_cols.append(c)
             goals += ["min"]

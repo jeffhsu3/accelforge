@@ -30,7 +30,8 @@ from fastfusion.frontend.constraints import ConstraintGroup, MiscOnlyConstraints
 
 
 class ArchNode(ParsableModel):
-    """ A node in the architecture. """
+    """A node in the architecture."""
+
     def model_post_init(self, __context__=None) -> None:
         # Make sure all leaf names are unique
         leaves = {}
@@ -41,7 +42,7 @@ class ArchNode(ParsableModel):
 
     def name2leaf(self, name: str) -> "Leaf":
         """
-        Finds a `Leaf` node with the given name. 
+        Finds a `Leaf` node with the given name.
         :raises ValueError: If the `Leaf` node with the given name is not found.
         """
         if isinstance(self, Leaf) and getattr(self, "name", None) == name:
@@ -55,14 +56,14 @@ class ArchNode(ParsableModel):
 
     def find(self, *args, **kwargs) -> "Leaf":
         """
-        Finds a `Leaf` node with the given name. 
+        Finds a `Leaf` node with the given name.
         :raises ValueError: If the `Leaf` node with the given name is not found.
         """
         return self.name2leaf(*args, **kwargs)
 
 
 class ArchNodes(ParsableList):
-    """ A list of `ArchNode`s. """
+    """A list of `ArchNode`s."""
 
     def __repr__(self):
         return f"{self.__class__.__name__}({super().__repr__()})"
@@ -80,8 +81,8 @@ class ArchNodes(ParsableList):
 
 
 class Spatial(ParsableModel):
-    """ A one-dimensional spatial fanout in the architecture. """
-    
+    """A one-dimensional spatial fanout in the architecture."""
+
     name: str
     """ 
     The name of the dimension over which this spatial fanout is occurring (e.g., X or Y).
@@ -98,18 +99,20 @@ class Spatial(ParsableModel):
         return type(self)(
             name=self.name,
             fanout=self.fanout,
-            reuse=set(eval_set_expression(
-                self.reuse,
-                symbol_table,
-                expected_space_name="tensors",
-                location=location + ".reuse",
-            ))
+            reuse=set(
+                eval_set_expression(
+                    self.reuse,
+                    symbol_table,
+                    expected_space_name="tensors",
+                    location=location + ".reuse",
+                )
+            ),
         )
 
 
 class Leaf(ArchNode, ABC):
-    """ A leaf node in the architecture. This is an abstract class that represents any
-    node that is not a `Branch`. """
+    """A leaf node in the architecture. This is an abstract class that represents any
+    node that is not a `Branch`."""
 
     name: str
     """ The name of this `Leaf`. """
@@ -143,7 +146,7 @@ class Leaf(ArchNode, ABC):
         )
 
     def get_fanout(self) -> int:
-        """ The spatial fanout of this node. """
+        """The spatial fanout of this node."""
         return int(math.prod(x.fanout for x in self.spatial))
 
     def _parse_constraints(self, outer_scope: dict[str, Any]) -> ConstraintGroup:
@@ -152,8 +155,8 @@ class Leaf(ArchNode, ABC):
 
 
 class Component(Leaf, ABC):
-    """ A component object in the architecture. This is overridden by different
-    component types, such as `Memory` and `Compute`. """
+    """A component object in the architecture. This is overridden by different
+    component types, such as `Memory` and `Compute`."""
 
     component_class: Optional[str] = None
     """ The class of this `Component`. Used if an energy or area model needs to be
@@ -169,8 +172,8 @@ class Component(Leaf, ABC):
                 self.actions.append(action)
 
     def get_component_class(self) -> str:
-        """ Returns the class of this `Component`. 
-        
+        """Returns the class of this `Component`.
+
         :raises ParseError: If the `component_class` is not set.
         """
         if self.component_class is None:
@@ -183,12 +186,13 @@ class Component(Leaf, ABC):
 
 
 class Actions(ParsableList[SubcomponentAction]):
-    """ A list of actions that a `Component` can perform. """
+    """A list of actions that a `Component` can perform."""
+
     pass
 
 
 class Container(Leaf, ABC):
-    """ A `Container` is an abstract node in the architecture that contains other nodes. 
+    """A `Container` is an abstract node in the architecture that contains other nodes.
     For example, a P` may be a `Container` that contains `Memory`s and `Compute` units.
     """
 
@@ -196,7 +200,7 @@ class Container(Leaf, ABC):
 
 
 class ArchMemoryActionArguments(ComponentAttributes):
-    """ Arguments for any `Memory` action. """
+    """Arguments for any `Memory` action."""
 
     bits_per_action: ParsesTo[Union[int, float]] = 1
     """ The number of bits accessed in this action. For example, setting bits_per_action
@@ -204,7 +208,7 @@ class ArchMemoryActionArguments(ComponentAttributes):
 
 
 class ArchMemoryAction(SubcomponentAction):
-    """ An action that a `Memory` can perform. """
+    """An action that a `Memory` can perform."""
 
     arguments: ArchMemoryActionArguments
     """ The arguments for this `ArchMemoryAction`. """
@@ -220,7 +224,8 @@ MEMORY_ACTIONS = ParsableList(
 
 COMPUTE_ACTIONS = ParsableList(
     [
-        SubcomponentAction(name="compute"), SubcomponentAction(name="leak"),
+        SubcomponentAction(name="compute"),
+        SubcomponentAction(name="leak"),
     ]
 )
 
@@ -228,31 +233,34 @@ COMPUTE_ACTIONS = ParsableList(
 def _parse_tensor2bits(
     to_parse: dict[str, Any], location: str, symbol_table: dict[str, Any]
 ) -> dict[str, Any]:
-    result = {} 
+    result = {}
     for key, value in to_parse.items():
         if isinstance(value, Number):
-            result[key] = value 
+            result[key] = value
             continue
         result[key] = parse_expression(
-            expression=value, symbol_table=symbol_table, attr_name=key,
+            expression=value,
+            symbol_table=symbol_table,
+            attr_name=key,
             location=location,
         )
     return result
 
 
 class Attributes(ComponentAttributes):
-    """ Attributes for any `Component`. """
+    """Attributes for any `Component`."""
+
     pass
 
 
 class TensorHolderAttributes(Attributes):
-    """ Attributes for a `TensorHolder`. `TensorHolder`s are components that hold tensors
+    """Attributes for a `TensorHolder`. `TensorHolder`s are components that hold tensors
     (usually `Memory`s). When specifying these attributes, it is recommended to
     underscore-prefix attribute names. See `UNDERSCORE_PREFIX_DISCUSSION`.
-    
+
     Number of accesses calculation is as follows. These bullets are written for "read",
     and the same applies for "write".
-    
+
     - (# Values Read) comes from the mapping
     - (# Bits Read) = (datawidth) * (# Values Read). If datawidth is a dictionary, this
       calculation is done for each tensor.
@@ -298,17 +306,17 @@ class TensorHolderAttributes(Attributes):
 
 
 class MemoryAttributes(TensorHolderAttributes):
-    """ Attributes for a `Memory`. """
+    """Attributes for a `Memory`."""
 
     size: ParsesTo[Union[int, float]]
     """ The size of this `Memory` in bits. """
 
 
 class TensorHolder(Component):
-    """ A `TensorHolder` is a component that holds tensors. These are usually `Memory`s,
-    but can also be `ProcessingStage`s. """
+    """A `TensorHolder` is a component that holds tensors. These are usually `Memory`s,
+    but can also be `ProcessingStage`s."""
 
-    actions: ParsableList[ArchMemoryAction] = MEMORY_ACTIONS 
+    actions: ParsableList[ArchMemoryAction] = MEMORY_ACTIONS
     """ The actions that this `TensorHolder` can perform. """
 
     attributes: TensorHolderAttributes = pydantic.Field(
@@ -321,18 +329,18 @@ class TensorHolder(Component):
 
 
 class Memory(TensorHolder):
-    """ A `Memory` is a `TensorHolder` that stores data over time, allowing for temporal
-    reuse. """
+    """A `Memory` is a `TensorHolder` that stores data over time, allowing for temporal
+    reuse."""
 
     attributes: "MemoryAttributes" = pydantic.Field(default_factory=MemoryAttributes)
     """ The attributes of this `Memory`. """
 
 
 class ProcessingStage(TensorHolder):
-    """ A `ProcessingStage` is a `TensorHolder` that does not store data over time, and
+    """A `ProcessingStage` is a `TensorHolder` that does not store data over time, and
     therefore does not allow for temporal reuse. Use this as a toll that charges reads
-    and writes every time a piece of data moves through it. 
-    
+    and writes every time a piece of data moves through it.
+
     The access counts of `Memory` and `ProcessingStage` classes are identical; they vary
     in how they affect the access counts of other components. Every write to a
     `ProcessingStage` is written to the next `Memory` (which may be above or below
@@ -344,12 +352,12 @@ class ComputeAttributes(ComponentAttributes):
 
 
 class Compute(Component):
-    actions: ParsableList[SubcomponentAction] = COMPUTE_ACTIONS 
+    actions: ParsableList[SubcomponentAction] = COMPUTE_ACTIONS
     """ The actions that this `Compute` can perform. """
-    
+
     attributes: ComputeAttributes = pydantic.Field(default_factory=ComputeAttributes)
     """ The attributes of this `Compute`. """
-    
+
     constraints: MiscOnlyConstraints = MiscOnlyConstraints()
     """ Mapping constraints applied to this `Compute`. """
 
@@ -362,30 +370,35 @@ class Branch(ArchNode, ABC):
     nodes: ArchNodes[
         Annotated[
             Union[
-                Annotated[Compute, Tag("Compute")], Annotated[Memory, Tag("Memory")],
+                Annotated[Compute, Tag("Compute")],
+                Annotated[Memory, Tag("Memory")],
                 Annotated[ProcessingStage, Tag("ProcessingStage")],
-                Annotated["Parallel", Tag("Parallel")], Annotated["Hierarchical",
-                Tag("Hierarchical")],
-            ], Discriminator(get_tag),
+                Annotated["Parallel", Tag("Parallel")],
+                Annotated["Hierarchical", Tag("Hierarchical")],
+            ],
+            Discriminator(get_tag),
         ]
     ] = ArchNodes()
 
 
 class Parallel(Branch):
     def _flatten(
-        self, attributes: dict, compute_node: str, fanout: int = 1, return_fanout: bool
-        = False,
+        self,
+        attributes: dict,
+        compute_node: str,
+        fanout: int = 1,
+        return_fanout: bool = False,
     ):
         nodes = []
 
         def _parse_node(node: Leaf, fanout: int):
-            fanout *= node.get_fanout() 
-            node2 = node.model_copy() 
+            fanout *= node.get_fanout()
+            node2 = node.model_copy()
             node2.attributes = type(node.attributes)(
                 **{**attributes.model_dump(), **node.attributes.model_dump()}
-            ) 
-            node2.attributes.n_instances *= fanout 
-            nodes.append(node2) 
+            )
+            node2.attributes.n_instances *= fanout
+            nodes.append(node2)
             return fanout
 
         for node in self.nodes:
@@ -393,13 +406,13 @@ class Parallel(Branch):
                 fanout = _parse_node(node, fanout)
                 break
             if isinstance(node, Branch):
-                computes = node.get_instances_of_type(Compute) 
+                computes = node.get_instances_of_type(Compute)
                 if compute_node in [c.name for c in computes]:
                     new_nodes, new_fanout = node._flatten(
                         attributes, compute_node, fanout, return_fanout=True
-                    ) 
-                    nodes.extend(new_nodes) 
-                    fanout *= new_fanout 
+                    )
+                    nodes.extend(new_nodes)
+                    fanout *= new_fanout
                     break
         else:
             raise ParseError(f"Compute node {compute_node} not found in parallel node")
@@ -409,19 +422,22 @@ class Parallel(Branch):
 
 class Hierarchical(Branch):
     def _flatten(
-        self, attributes: dict, compute_node: str, fanout: int = 1, return_fanout: bool
-        = False,
+        self,
+        attributes: dict,
+        compute_node: str,
+        fanout: int = 1,
+        return_fanout: bool = False,
     ):
         nodes = []
 
         def _parse_node(node: Leaf, fanout: int):
-            fanout *= node.get_fanout() 
-            node2 = node.model_copy() 
+            fanout *= node.get_fanout()
+            node2 = node.model_copy()
             node2.attributes = type(node.attributes)(
                 **{**attributes.model_dump(), **node.attributes.model_dump()}
-            ) 
-            node2.attributes.n_instances *= fanout 
-            nodes.append(node2) 
+            )
+            node2.attributes.n_instances *= fanout
+            nodes.append(node2)
             return fanout
 
         for i, node in enumerate(self.nodes):
@@ -434,9 +450,9 @@ class Hierarchical(Branch):
                         )
                     new_nodes, new_fanout = node._flatten(
                         attributes, compute_node, fanout, return_fanout=True
-                    ) 
-                    nodes.extend(new_nodes) 
-                    fanout *= new_fanout 
+                    )
+                    nodes.extend(new_nodes)
+                    fanout *= new_fanout
                     if any(
                         isinstance(n, Compute) and n.name == compute_node
                         for n in new_nodes
@@ -444,7 +460,7 @@ class Hierarchical(Branch):
                         break
                 elif isinstance(node, Compute):
                     if node.name == compute_node:
-                        fanout = _parse_node(node, fanout) 
+                        fanout = _parse_node(node, fanout)
                         break
                 elif isinstance(node, Leaf) and not isinstance(node, Container):
                     fanout = _parse_node(node, fanout)
@@ -453,7 +469,7 @@ class Hierarchical(Branch):
                 else:
                     raise TypeError(f"Can't flatten {node}")
             except ParseError as e:
-                e.add_field(node) 
+                e.add_field(node)
                 raise e
 
         if return_fanout:
@@ -474,14 +490,16 @@ class Arch(Hierarchical):
     """
 
     def _parse_expressions(self, symbol_table: dict[str, Any], *args, **kwargs):
-        # Parse global_cycle_period 
+        # Parse global_cycle_period
         global_cycle_period = parse_expression(
-            expression=self.global_cycle_period, symbol_table=symbol_table,
-            attr_name="global_cycle_period", location="global_cycle_period",
-        ) 
-        symbol_table["global_cycle_period"] = global_cycle_period 
+            expression=self.global_cycle_period,
+            symbol_table=symbol_table,
+            attr_name="global_cycle_period",
+            location="global_cycle_period",
+        )
+        symbol_table["global_cycle_period"] = global_cycle_period
         new, symbol_table = super()._parse_expressions(symbol_table, *args, **kwargs)
-        new.global_cycle_period = global_cycle_period 
+        new.global_cycle_period = global_cycle_period
         return new, symbol_table
 
 
