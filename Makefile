@@ -2,55 +2,55 @@ NTL_VER := 11.5.1
 BARVINOK_VER := 0.41.8
 ISLPY_VER := 2024.2
 
-# Function to check and get platform
-check_platform:
-	@if [ -z "$$DOCKER_ARCH" ]; then \
-		echo "Please set DOCKER_ARCH environment variable to amd64 or arm64"; \
-		echo "Option A: export DOCKER_ARCH=amd64 ; make build_docker"; \
-		echo "Option B: make build_docker DOCKER_ARCH=amd64"; \
-		exit 1; \
-	fi
-	@if [ "$$DOCKER_ARCH" != "amd64" ] && [ "$$DOCKER_ARCH" != "arm64" ]; then \
-		echo "Invalid platform '$$DOCKER_ARCH'. Must be amd64 or arm64."; \
-		exit 1; \
-	fi
-	@echo "Using platform: $$DOCKER_ARCH"
+SOURCES_DIR := sources
+LIB_DIR := libraries
 
 
-build_docker: check_platform
-	sudo chmod -R 777 .dependencies
-	docker build -t fastfusion/fastfusion-infrastructure:latest-$$DOCKER_ARCH .
+.PHONY: install-dependencies install-ntl install-barvinok install-islpy
 
-run_docker: check_platform
-	sudo chmod -R 777 .dependencies
-	DOCKER_ARCH=$$DOCKER_ARCH docker-compose up
-	
 install-dependencies:
-	git clone --recurse-submodules https://github.com/Accelergy-Project/hwcomponents.git
-	cd hwcomponents && make install-submodules
-	cd hwcomponents && pip3 install .
+	mkdir -p $(LIB_DIR)
+	# install hwcomponents from GitHub (pinned commit recommended)
+	git clone --depth 1 https://github.com/Accelergy-Project/hwcomponents.git $(LIB_DIR)/hwcomponents || true
+	cd $(LIB_DIR)/hwcomponents && make install-submodules
+	cd $(LIB_DIR)/hwcomponents && pip3 install .
 
 install-ntl:
-	wget -O libraries/ntl-$(NTL_VER).tar.gz https://libntl.org/ntl-$(NTL_VER).tar.gz
-	cd libraries/ && tar -xvzf ntl-$(NTL_VER).tar.gz
-	cd libraries/ntl-$(NTL_VER)/src && ./configure NTL_GMP_LIP=on SHARED=on NATIVE=off && make
-	cd libraries/ntl-$(NTL_VER)/src && make install
+	mkdir -p $(LIB_DIR)
+	# If the file does not exist, download it
+	if [ ! -f $(SOURCES_DIR)/ntl-$(NTL_VER).tar.gz ]; then \
+		wget -O $(SOURCES_DIR)/ntl-$(NTL_VER).tar.gz https://libntl.org/ntl-$(NTL_VER).tar.gz; \
+	fi
+	tar -xvzf $(SOURCES_DIR)/ntl-$(NTL_VER).tar.gz -C $(LIB_DIR)
+	cd $(LIB_DIR)/ntl-$(NTL_VER)/src && ./configure NTL_GMP_LIP=on SHARED=on NATIVE=off
+	cd $(LIB_DIR)/ntl-$(NTL_VER)/src && make -j$$(nproc) && make install
 
 install-barvinok: install-ntl
-	wget -O libraries/barvinok-$(BARVINOK_VER).tar.gz https://barvinok.sourceforge.io/barvinok-$(BARVINOK_VER).tar.gz
-	cd libraries && tar -xvzf barvinok-$(BARVINOK_VER).tar.gz
-	cd libraries/barvinok-$(BARVINOK_VER) && ./configure --enable-shared-barvinok
-	cd libraries/barvinok-$(BARVINOK_VER) && make
-	cd libraries/barvinok-$(BARVINOK_VER) && make install
+	mkdir -p $(LIB_DIR)
+	if [ ! -f $(SOURCES_DIR)/barvinok-$(BARVINOK_VER).tar.gz ]; then \
+		wget -O $(SOURCES_DIR)/barvinok-$(BARVINOK_VER).tar.gz https://barvinok.sourceforge.io/barvinok-$(BARVINOK_VER).tar.gz; \
+	fi
+	tar -xvzf $(SOURCES_DIR)/barvinok-$(BARVINOK_VER).tar.gz -C $(LIB_DIR)
+	cd $(LIB_DIR)/barvinok-$(BARVINOK_VER) && ./configure --enable-shared-barvinok
+	cd $(LIB_DIR)/barvinok-$(BARVINOK_VER) && make -j$$(nproc) && make install
 
 install-islpy:
-	wget -O libraries/islpy-$(ISLPY_VER).tar.gz https://github.com/inducer/islpy/archive/refs/tags/v$(ISLPY_VER).tar.gz
-	cd libraries/ && tar -xvzf islpy-$(ISLPY_VER).tar.gz
-	cd libraries/islpy-$(ISLPY_VER) && rm -f siteconf.py
-	cd libraries/islpy-$(ISLPY_VER) && ./configure.py --use-barvinok --isl-inc-dir=/usr/local/include --isl-lib-dir=/usr/local/lib --no-use-shipped-isl --no-use-shipped-imath
-	cd libraries/islpy-$(ISLPY_VER) && pip3 install .
+	mkdir -p $(LIB_DIR)
+	if [ ! -f $(SOURCES_DIR)/islpy-$(ISLPY_VER).tar.gz ]; then \
+		wget -O $(SOURCES_DIR)/islpy-$(ISLPY_VER).tar.gz https://github.com/inducer/islpy/archive/refs/tags/v$(ISLPY_VER).tar.gz; \
+	fi
+	tar -xvzf $(SOURCES_DIR)/islpy-$(ISLPY_VER).tar.gz -C $(LIB_DIR)
+	cd $(LIB_DIR)/islpy-$(ISLPY_VER) && rm -f siteconf.py
+	cd $(LIB_DIR)/islpy-$(ISLPY_VER) && ./configure.py --use-barvinok --isl-inc-dir=/usr/local/include --isl-lib-dir=/usr/local/lib --no-use-shipped-isl --no-use-shipped-imath
+	cd $(LIB_DIR)/islpy-$(ISLPY_VER) && pip3 install .
 
-docs:
+build-docker:
+	docker build -t fastfusion/fastfusion-infrastructure .
+
+run-docker:
+	docker-compose up
+
+generate-docs:
     # pip install sphinx-autobuild sphinx_autodoc_typehints sphinx-rtd-theme
     LC_ALL=C.UTF-8 LANG=C.UTF-8 sphinx-apidoc -o docs fastfusion
     LC_ALL=C.UTF-8 LANG=C.UTF-8 sphinx-autobuild docs docs/_build/html
