@@ -157,3 +157,26 @@ def pydot_graph() -> pydot.Dot:
     graph.set_node_defaults(shape="box", fontname="Arial", fontsize="12")
     graph.set_edge_defaults(fontname="Arial", fontsize="10")
     return graph
+
+import cProfile
+import io
+import pstats
+
+class ProfilePrint:
+    def __init__(self):
+        self.profiler = cProfile.Profile()
+
+    def __enter__(self):
+        self.profiler.enable()
+        self.n_jobs = N_PARALLEL_PROCESSES
+        set_n_parallel_jobs(1)
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        self.profiler.disable()
+        s = io.StringIO()
+        stats = pstats.Stats(self.profiler, stream=s).sort_stats("cumulative")
+        stats.print_stats(20)
+        print("\n===== Profiling Results (sorted by total time) =====")
+        print(s.getvalue())
+        # set_n_parallel_jobs(self.n_jobs)
