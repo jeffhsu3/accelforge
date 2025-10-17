@@ -17,7 +17,7 @@ from fastfusion.frontend.mapping import (
     TilePattern,
 )
 from fastfusion.frontend.renames import RankName, RankVariableName, TensorName
-from fastfusion.mapper.FFM._pmapping_group.df_convention import make_fused_loop_col
+from fastfusion.mapper.FFM._pmapping_group.df_convention import make_fused_loop_col, stride2col, initial2col, iterations2col
 
 from fastfusion.util import expfmt, fzs
 
@@ -102,11 +102,13 @@ class Loop(Updatable):
     def clear_loop_bound(self, value=0):
         return self.update(tile_pattern=value)
 
-    def populate(self, loop: Iteration, tensor_access: TensorAccess) -> "Loop":
-        # TODO: handle projection
-        rank = self.rank_name
-        rank_var = loop.rank_variable
-        return self.update(tile_pattern=loop.tile_pattern.symbol2str())
+    def populate(self, nloop: int) -> "Loop":
+        tile_pattern = TilePattern(
+            stride=stride2col(self.rank_name, nloop),
+            initial_tile_shape=initial2col(self.rank_name, nloop),
+            calculated_n_iterations=iterations2col(nloop)
+        )
+        return self.update(tile_pattern=tile_pattern)
 
     def prepend_symbols(self, prepend: str) -> "Loop":
         return self.update(tile_pattern=self.tile_pattern.prepend_symbols(prepend))
@@ -176,14 +178,9 @@ class TensorReservation(Updatable):
     def clear_loop_bounds(self) -> "Reservation":
         return self.update(loops=tuple(loop.clear_loop_bound() for loop in self.loops))
 
-    def populate_loops(
-        self, loops: list[Iteration], tensor_access: TensorAccess
-    ) -> "TensorReservation":
-        assert len(self.loops) <= len(loops)
+    def populate_loops(self) -> "TensorReservation":
         return self.update(
-            loops=tuple(
-                l.populate(loop, tensor_access) for l, loop in zip(self.loops, loops)
-            )
+            loops=tuple(loop.populate(nloop) for nloop, loop in enumerate(self.loops))
         )
 
     @staticmethod
@@ -493,17 +490,8 @@ class Compatibility(Updatable):
         #             return False
         # return True
 
-    def populate_loops(self, mapping: Mapping, workload: Workload):
-        # NOTE: this code assumes mapping is single-Einsum
-        loops = [n for n in mapping.nodes if isinstance(n, Iteration)]
-        assert isinstance(mapping.nodes[-1], Compute)
-        einsum = workload.einsums[mapping.nodes[-1].einsum]
-        return self.update(
-            tensors=fzs(
-                t.populate_loops(loops, einsum.tensor_accesses[t.name])
-                for t in self.tensors
-            ),
-        )
+    def populate_loops(self):
+        return self.update(tensors=fzs(t.populate_loops() for t in self.tensors),)
 
     @classmethod
     def from_mapping(

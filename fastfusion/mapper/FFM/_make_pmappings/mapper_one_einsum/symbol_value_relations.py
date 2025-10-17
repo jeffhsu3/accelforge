@@ -42,6 +42,15 @@ class SymbolValueRelations:
                 return stride
         raise ValueError(f"Symbol {symbol} not found as initial in {self}")
 
+    def get_initial(self, symbol: Symbol, none_if_fail: bool=False) -> Symbol | int:
+        for stride, initial in self.stride_and_initial:
+            if stride == symbol:
+                return initial
+        if not none_if_fail:
+            raise ValueError(f"Symbol {symbol} not found as stride in {self}")
+        else:
+            return None
+
     def get_delta_choices(self, symbol: Symbol) -> frozenset[int]:
         """Get the possible initial deltas for the rank variable represented by `symbol`."""
         for initial, choices in self.delta_choices:
@@ -145,12 +154,12 @@ def get_initial_delta_choices(einsum_name: str, workload: Workload):
 
             for cons_rank_var in consumer.rank_variables:
                 for prod_rank_var in producer.rank_variables:
+                    prod_rank = prod_rank_var.upper()
                     for cons_choice in choices[cons_rank_var]:
-                        if (prod_rank_var, cons_rank_var) not in rank_stride_and_halo:
+                        key = (prod_rank, cons_rank_var)
+                        if key not in rank_stride_and_halo:
                             continue
-                        stride, halo = rank_stride_and_halo[
-                            (prod_rank_var, cons_rank_var)
-                        ]
-                        choices[prod_rank_var].add(cons_choice * stride + halo)
+                        stride, halo = rank_stride_and_halo[key]
+                        choices[prod_rank_var].add(int(cons_choice*stride + halo))
 
     return choices

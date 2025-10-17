@@ -4,11 +4,13 @@ import copy
 import re
 import resource
 from typing import Callable, Optional, Union
-from sympy import Expr, Symbol
+from sympy import Expr, Symbol, lambdify
 from fastfusion.accelerated_imports import np
 from fastfusion.accelerated_imports import pd
 import fastfusion.frontend.arch as arch
 from fastfusion.frontend.workload._isl import get_rank_variable_bounds
+from fastfusion.frontend.workload._symbolic import get_projection_expr
+from fastfusion.frontend.workload import Einsum
 from fastfusion.frontend.mapping import (
     Iteration,
     Mapping,
@@ -17,6 +19,7 @@ from fastfusion.frontend.mapping import (
     TensorHolder,
 )
 from fastfusion.mapper.FFM._make_pmappings.mapper_one_einsum.mapper_job import Job
+from fastfusion.mapper.FFM._pmapping_group.df_convention import stride2col, initial2col, iterations2col
 from fastfusion.model.looptree.reuse.summarized.symbolic import (
     analyze_reuse_and_add_reservations_to_mapping,
 )
@@ -1163,23 +1166,50 @@ def _explore_tile_shapes_new(job: "Job"):
     for key in compiled_df:
         df[key] = compiled_df[key](*choices_enumerated.T)
 
-    for n in job.mapping.nodes:
-        if not isinstance(n, Iteration) or not n._fused:
-            continue
+    # Some initial tile shapes are invalid
+    for nloops, n in enumerate(node for node in job.mapping.nodes
+                               if isinstance(node, Iteration) and node._fused):
         stride = n.tile_pattern.stride
-        n_iterations = str(n.tile_pattern.calculated_n_iterations)
-        if n_iterations in df:
-            continue
-        outer = what_tiles_symbol.get_outer_tiles(stride)
-        a = df[outer.name] if isinstance(outer, Symbol) else outer
-        b = df[stride.name] if isinstance(stride, Symbol) else stride
-        df[n_iterations] = np.round(a / b)
+        initial = n.tile_pattern.initial_tile_shape if n.tile_pattern.initial_tile_shape is not None else stride
+        outer_stride = what_tiles_symbol.get_outer_tiles(stride)
+        outer_initial = what_tiles_symbol.get_initial(outer_stride, none_if_fail=True)
+        outer_stride = df[outer_stride.name] if isinstance(outer_stride, Symbol) else outer_stride
+        outer_initial = df[outer_initial.name] if isinstance(outer_initial, Symbol) else None
+        rank_var_stride = df[stride.name] if isinstance(stride, Symbol) else stride
+        rank_var_initial = df[initial.name] if isinstance(initial, Symbol) else initial
+
+        # Generate rank columns
+        einsum: Einsum = job.spec.workload.einsums[job.einsum_name]
+        for tensor_access in einsum.tensor_accesses:
+            tensor = tensor_access.name
+            projections = get_projection_expr(einsum, tensor)
+            for rank, expr in projections.items():
+                rank_stride = expr.coeff(n.rank_variable)*rank_var_stride
+
+                free_symbols = tuple(expr.free_symbols)
+                args = []
+                for free_rank_var in free_symbols:
+                    if free_rank_var.name == n.rank_variable:
+                        args.append(rank_var_initial)
+                    else:
+                        args.append(shape[free_rank_var.name])
+                rank_initial = lambdify(free_symbols, expr)(*args)
+
+                df[stride2col(rank, nloops)] = rank_stride
+                df[initial2col(rank, nloops)] = rank_initial
+                df[iterations2col(nloops)] = np.ceil(
+                    (outer_stride - rank_initial) / rank_var_stride + 1
+                )
 
     try:
         df = pd.DataFrame(df, columns=df.keys())
     except ValueError as e:
         df = pd.DataFrame(df, columns=df.keys(), index=[0])
     assert not df.isna().any().any()
+
+    iteration_cols = [c for c in df.columns if 'n_iterations' in c]
+    df = df[(df[iteration_cols] >= 0).all(axis=1)]
+
     job.valid_pmappings = job.total_pmappings * prod(job.pmapping_keep_rates.values())
     return df
 

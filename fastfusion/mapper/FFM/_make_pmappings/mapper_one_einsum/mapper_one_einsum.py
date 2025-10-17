@@ -379,33 +379,31 @@ def generate_pmappings_new(
     jwsc = jobs_with_similar_compatibilities
     prev_jobs = copy.deepcopy(jwsc)
 
-    # Ensure that all the symbols are the same
-    symbols: set[tuple[tuple[RankVariableName, tuple[str, ...]]]] = set()
-    for job in jwsc:
-        cur_symbols = []
-        for node in job.mapping.nodes:
-            if not isinstance(node, Iteration):
-                continue
-            if not node._fused:
-                break
-            cur_symbols.append(
-                (
-                    node.rank_variable,
-                    tuple(sorted(node.tile_pattern.symbols_as_strings())),
-                )
-            )
-        symbols.add(tuple(cur_symbols))
+    # # Ensure that all the symbols are the same
+    # symbols: set[tuple[tuple[RankVariableName, tuple[str, ...]]]] = set()
+    # for job in jwsc:
+    #     cur_symbols = []
+    #     for node in job.mapping.nodes:
+    #         if not isinstance(node, Iteration):
+    #             continue
+    #         if not node._fused:
+    #             break
+    #         cur_symbols.append(
+    #             (
+    #                 node.rank_variable,
+    #                 tuple(sorted(node.tile_pattern.symbols_as_strings())),
+    #             )
+    #         )
+    #     symbols.add(tuple(cur_symbols))
 
-    if len(symbols) > 1:
-        raise ValueError(f"Symbols are not the same: {symbols}")
+    # if len(symbols) > 1:
+    #     raise ValueError(f"Symbols are not the same: {symbols}")
 
     results = []
 
     for job in jobs_with_similar_compatibilities:
         result = explore_tile_shapes(job)
-        job.compatibility = job.compatibility.populate_loops(
-            job.mapping, job.spec.workload
-        )
+        job.compatibility = job.compatibility.populate_loops()
         # This changes the pmapping count to include superfluous permutations
         # TODO: Add a multiplier for the permutations that we include in the fusion
         # piece, which are NOT known to be superfluous
