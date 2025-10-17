@@ -385,7 +385,10 @@ class Workload(ParsableModel):
 
     def _check_consistent_persistent(self):
         for tensor in self.tensor_names:
-            persistents = {e.persistent for e in self.einsums_with_tensor(tensor)}
+            persistents = {
+                e.tensor_accesses[tensor].persistent
+                for e in self.einsums_with_tensor(tensor)
+            }
             if len(persistents) > 1:
                 raise ValueError(
                     f"Tensor {tensor} is used in multiple Einsums with different "
