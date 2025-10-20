@@ -514,6 +514,9 @@ class Workload(ParsableModel):
             )
             > 1
         }
+        persistent = {
+            t for t in all_ if self.einsums[einsum_name].tensor_accesses[t].persistent
+        }
 
         element_to_child_space = {}
         all_rank_variables = einsum.rank_variables
@@ -540,20 +543,21 @@ class Workload(ParsableModel):
         )
 
         symbol_table = {
-            "Nothing": InvertibleSet(instance=(), **kwargs_tensors),
-            "Tensors": InvertibleSet(instance=all_, **kwargs_tensors),
             "All": InvertibleSet(instance=all_, **kwargs_tensors),
+            "Tensors": InvertibleSet(instance=all_, **kwargs_tensors),
+            "Nothing": InvertibleSet(instance=(), **kwargs_tensors),
             "Inputs": InvertibleSet(instance=inputs, **kwargs_tensors),
             "Outputs": InvertibleSet(instance=outputs, **kwargs_tensors),
             "Intermediates": InvertibleSet(instance=intermediates, **kwargs_tensors),
             "Shared": InvertibleSet(instance=shared, **kwargs_tensors),
+            "Persistent": InvertibleSet(instance=persistent, **kwargs_tensors),
             **{t: InvertibleSet(instance=(t,), **kwargs_tensors) for t in all_},
             **{
                 r: InvertibleSet(instance=(r,), **kwargs_rank_variables)
                 for r in all_rank_variables
             },
             "Einsum": einsum_name,
-            "Einsum_Object": einsum,
+            "EinsumObject": einsum,
         }
 
         taken_renames = set()
