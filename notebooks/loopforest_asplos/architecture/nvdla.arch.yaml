@@ -22,10 +22,10 @@ arch:
   - !Memory
     name: GlobalBuffer
     attributes:
-      _size: 1024*256*8 # 256 kB
+      _size: 1024*64*8 # 64 kB
       _datawidth: 8
-      _bandwidth_reads_per_cycle: 512 * 8e9 / 1e9 # 512 GB/s. Chip runs at at 1GHz, so divide to get per-cycle bandwidth
-      _bandwidth_writes_per_cycle: 256 * 4e9 / 1e9 # 256 GB/s. Chip runs at at 1GHz, so divide to get per-cycle bandwidth
+      # _bandwidth_reads_per_cycle: 512 * 8e9 / 1e9 # 512 GB/s. Chip runs at at 1GHz, so divide to get per-cycle bandwidth
+      # _bandwidth_writes_per_cycle: 256 * 4e9 / 1e9 # 256 GB/s. Chip runs at at 1GHz, so divide to get per-cycle bandwidth
     actions:
     - {name: read, arguments: {energy: 0.249e-12}}
     - {name: write, arguments: {energy: 0.293e-12}}
@@ -33,6 +33,9 @@ arch:
     constraints:
       tensors:
         keep: All()
+      dataflow:
+        tensor_order_options:
+        - [~weight, weight]
 
   # - !Memory
   #   name: LocalBuffer
@@ -49,7 +52,7 @@ arch:
 
   - !Memory
     name: Register
-    spatial: [{name: X, fanout: 64}, {name: Y, fanout: 192}]
+    spatial: [{name: X, fanout: 32}, {name: Y, fanout: 192}]
     attributes:
       _size: 8 # 8b
       _datawidth: 8
