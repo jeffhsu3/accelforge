@@ -22,7 +22,7 @@ class InvertibleSet(BaseModel, Generic[T]):
             setattr(
                 self,
                 self.child_access_name,
-                lambda *args, **kwargs: self._cast_to_child_space(*args, **kwargs),
+                self._cast_to_child_space(*args, **kwargs),
             )
 
         # Make sure there's no extra fields
