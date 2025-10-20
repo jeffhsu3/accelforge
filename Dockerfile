@@ -24,17 +24,26 @@ LABEL org.label-schema.docker.cmd="docker run -it --rm -v ~/workspace:/home/work
 
 # Install dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
+            # Python
             python3 \
-            make \
             git \
+            python3-pip \
+            python3-dev \
+            graphviz \
+            # Build tools
+            make \
             wget \
+            curl \
             gcc \
             g++ \
             libgmp-dev \
             libntl-dev \
-            curl \
-            python3-pip \
-            python3-dev
+            autoconf \
+            automake \
+            libtool \
+            pkg-config \
+            make \
+            && rm -rf /var/lib/apt/lists/*
 
 # Update certificates (needed for downloading)
 RUN apt-get upgrade -y ca-certificates && \
@@ -43,15 +52,20 @@ RUN apt-get upgrade -y ca-certificates && \
 
 WORKDIR /home/build
 COPY Makefile ./
-ADD https://libntl.org/ntl-11.5.1.tar.gz /home/build/sources/ntl-11.5.1.tar.gz
-ADD https://barvinok.sourceforge.io/barvinok-0.41.8.tar.gz /home/build/sources/barvinok-0.41.8.tar.gz
-ADD https://github.com/inducer/islpy/archive/refs/tags/v2024.2.tar.gz /home/build/sources/islpy-2024.2.tar.gz
+# ADD https://libntl.org/ntl-11.5.1.tar.gz /home/build/sources/ntl-11.5.1.tar.gz
+# ADD https://barvinok.sourceforge.io/barvinok-0.41.8.tar.gz /home/build/sources/barvinok-0.41.8.tar.gz
+# ADD https://github.com/inducer/islpy/archive/refs/tags/v2024.2.tar.gz /home/build/sources/islpy-2024.2.tar.gz
 
 # --- build + install all ---
-RUN make install-ntl 
-RUN make install-barvinok
+# RUN make install-ntl 
+# RUN make install-barvinok
 ENV PIP_BREAK_SYSTEM_PACKAGES=1
-RUN make install-islpy
+
+# RUN apt-get update && apt-get install -y python-is-python3
+# RUN git clone --recurse-submodules https://github.com/inducer/islpy.git
+# RUN cd islpy && LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH ./build-with-barvinok.sh /usr/local
+
+# RUN make install-islpy
 RUN make install-hwcomponents
 
 # Install jupyterlab and ipywidgets
@@ -60,8 +74,6 @@ RUN pip install jupyterlab ipywidgets
 # WORKDIR /home/workspace
 
 # ENTRYPOINT ["/bin/bash"]
-
-RUN apt-get update && apt-get install -y graphviz
 
 EXPOSE 8888
 

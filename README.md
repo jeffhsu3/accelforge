@@ -18,10 +18,7 @@ Run the following:
 git clone https://github.com/Accelergy-Project/fastfusion.git
 cd fastfusion
 
-sudo make install-ntl      # Install NTL (ISL dependency)
-sudo make install-barvinok # Install Barvinok (ISL dependency)
-make install-islpy         # Install ISL
-make install-hwcomponents  # Install hwcomponents
+make install-hwcomponents  # Install hwcomponents component models
 pip3 install -e .          # Install this package
 ```
 
@@ -34,15 +31,18 @@ make build-docker
 # Run the docker image
 make run-docker
 
-# Some additional installation will occur when you run the container for the first time.
-# This is done inside the container so that you can update the package without rebuilding
-# the container. If the install fails, you can run the following command to try again:
-# FROM INSIDE THE CONTAINER: cd /home/workspace && pip install -e .
-
 ```
 
 Running the Docker container will mount the current directory as `/home/workspace`. A
 link to a Jupyterlab server will be posted to the terminal.
+
+Some additional installation will occur when you run the container for the first time.
+This is done inside the container so that you can update the package without rebuilding
+the container. If the install fails, you can run the following from inside the container
+to try again:
+```bash
+cd /home/workspace && pip install -e .
+```
 
 ### Running the Examples
 
