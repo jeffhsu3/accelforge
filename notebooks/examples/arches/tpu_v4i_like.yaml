@@ -16,7 +16,7 @@ arch:
     - {name: write, arguments: {energy: 7.03e-12}}
     constraints:
       tensors:
-        keep: ~Intermediates()
+        keep: ~Intermediates
 
   - !Memory
     name: GlobalBuffer
@@ -31,8 +31,8 @@ arch:
     - {name: write, arguments: {energy: 2.36e-12}}
     constraints:
       tensors:
-        keep: ~MainMemory.tensors()
-        no_refetch_from_above: Intermediates() if ~MainMemory.tensors() else Nothing()
+        keep: ~MainMemory.tensors
+        no_refetch_from_above: Intermediates if ~MainMemory.tensors else Nothing
 
   - !Memory
     name: LocalBuffer
@@ -50,42 +50,33 @@ arch:
 
   - !Compute
     name: scalar_unit
-    attributes:
-      _latency: compute_actions / 128e9,
-      _leak_power: 0
+    attributes: 
       _area: 0
-    actions:
-    - {name: compute, arguments: {energy: 0}}
-    constraints: {misc: {enabled: len(All()) == 2}}
+      _leak_power: 0
+      _energy: 0
+      _latency: compute_actions / 128 / 1.05e9
+    constraints: {misc: {enabled: len(All) == 2}}
+
+  - !Memory
+    name: array_dummy
+    attributes: {_size: 0, _area: 0, _leak_power: 0, _energy: 0}
+    spatial:
+    - {name: reuse_input, fanout: 128, reuse: input} # 8 is the datawidth
+    - {name: reuse_output, fanout: 128, reuse: output}
+    constraints:
+      tensors: {bypass: All}
+      spatial:
+      - name: reuse_input
+        min_utilization: 1
+        loop_bounds: [{expression: input.rank_variables, operator: ==, value: 1}]
+      - name: reuse_output
+        min_utilization: 1
+        loop_bounds: [{expression: output.rank_variables, operator: ==, value: 1}]
 
   - !Memory
     name: Register
-    spatial:
-    - {name: X, fanout: 128, reuse: input}
-    - {name: Y, fanout: 128, reuse: output}
-    attributes:
-      _size: 8 # 8b
-      _datawidth: 8
-      _leak_power: 0
-      _area: 0
-    actions:
-    - {name: read, arguments: {energy: 0}}
-    - {name: write, arguments: {energy: 0}}
-    constraints:
-      tensors: {bypass: ~weight, keep: weight}
-      spatial:
-      - name: X # Parallel rank
-        min_utilization: 1
-        loop_bounds:
-        - expression: input.rank_variables()
-          operator: ==
-          value: 1
-      - name: Y # Reduced rank. No iteration over outputs
-        min_utilization: 1
-        loop_bounds:
-        - expression: output.rank_variables()
-          operator: ==
-          value: 1
+    attributes: {_size: 1, _area: 0, _leak_power: 0, _energy: 0}
+    constraints: {tensors: {keep: weight, bypass: ~weight}}
 
   - !Compute
     name: MAC
@@ -95,4 +86,4 @@ arch:
       _area: 0
     actions:
     - {name: compute, arguments: {energy: 0.084e-12}}
-    constraints: {misc: {enabled: len(All()) == 3}}
+    constraints: {misc: {enabled: len(All) == 3}}

@@ -1,6 +1,5 @@
 arch:
   version: "0.5"
-  global_cycle_period: 1/1.05e9
   nodes:
   - !Memory
     name: MainMemory
@@ -17,7 +16,7 @@ arch:
     - {name: write, arguments: {energy: 7.03e-12}}
     constraints:
       tensors:
-        keep: ~Intermediates()
+        keep: ~Intermediates
 
   - !Memory
     name: GlobalBuffer
@@ -31,41 +30,36 @@ arch:
     - {name: write, arguments: {energy: 0.293e-12}}
     constraints:
       tensors:
-        keep: All()
+        keep: All
       dataflow:
         tensor_order_options:
         - [~weight, weight]
 
   - !Memory
-    name: Register
-    spatial: [{name: X, fanout: 32}, {name: Y, fanout: 192}]
-    attributes:
-      _size: 8 # 8b
-      _datawidth: 8
-      _leak_power: 0
-    actions:
-    - {name: read, arguments: {energy: 0}}
-    - {name: write, arguments: {energy: 0}}
+    name: array_dummy
+    attributes: {_size: 0, _area: 0, _leak_power: 0, _energy: 0}
+    spatial:
+    - {name: reuse_input, fanout: 32, reuse: input} # 8 is the datawidth
+    - {name: reuse_output, fanout: 192, reuse: output}
     constraints:
-      tensors:
-        bypass: ~weight
+      tensors: {bypass: All}
       spatial:
-      - name: X # Parallel rank
-        # min_utilization: 1
-        loop_bounds:
-        - expression: ~output_channel
-          operator: ==
-          value: 1
-      - name: Y # Reduced rank. No iteration over outputs
-        # min_utilization: 1
-        loop_bounds:
-        - expression: ~input_channel
-          operator: ==
-          value: 1
+      - name: reuse_input
+        min_utilization: 1
+        # loop_bounds: [{expression: ~output_channel, operator: ==, value: 1}]
+        loop_bounds: [{expression: ~output.rank_variables, operator: ==, value: 1}]
+      - name: reuse_output
+        min_utilization: 1
+        # loop_bounds: [{expression: ~input_channel, operator: ==, value: 1}]
+        loop_bounds: [{expression: ~input.rank_variables, operator: ==, value: 1}]
+
+  - !Memory
+    name: Register
+    attributes: {_size: 1, _area: 0, _leak_power: 0, _energy: 0}
+    constraints: {tensors: {keep: weight, bypass: ~weight}}
 
   - !Compute
     name: MAC
     attributes: {_latency: compute_actions, _leak_power: 0}
     actions:
     - {name: compute, arguments: {energy: 0.084e-12}}
-    constraints: {misc: {enabled: len(All()) == 3}}
