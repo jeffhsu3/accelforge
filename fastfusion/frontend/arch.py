@@ -118,7 +118,7 @@ class LeafAttributes(ComponentAttributes):
     The latency of this component in seconds. This is used to calculate the latency of a
     given Einsum. Latency, when given as a string, is parsed. Special variables
     available are:
-    
+
     - min
     - max
     - X_actions, which counts the number of times action "X" is performed. For example,

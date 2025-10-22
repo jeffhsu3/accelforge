@@ -74,15 +74,15 @@ def component_latency(
     }
     
     for component, actions in component_to_actions.items():
-        if name2node[component].attributes.latency is None:
+        if name2component[component].attributes.latency is None:
             continue
         symbol_table = {
             **symbol_table_base,
-            **dict(name2node[component].attributes),
+            **dict(name2component[component].attributes),
             **actions,
         }
         component_latency[component] = parse_expression(
-            name2node[component].attributes.latency,
+            name2component[component].attributes.latency,
             symbol_table,
             attr_name="latency",
             location=component
