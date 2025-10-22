@@ -90,7 +90,7 @@ arch:
   - !Compute
     name: MAC
     attributes:
-      _latency: compute_actions,
+      _latency: compute_actions
       _leak_power: 0
       _area: 0
     actions:
