@@ -71,7 +71,21 @@ def run_model(
     # )
 
     latency = component_latency(reuse, job.flattened_arch, pmapping, spec)
-    overall_latency = Max(*latency.values()) if latency else 0
+    try:
+        overall_latency = Max(*latency.values()) if latency else 0
+    except Exception as e:
+        for k, v in latency.items():
+            if not isinstance(v, (Number, sympy.Symbol, sympy.Expr)):
+                raise ValueError(
+                    f"Invalid type for latency: {k}: {type(v)} {str(v).strip()}"
+                )
+        
+        raise ValueError(
+            f"Error calculating latency for {job.einsum_name}. Could not calculate "
+            f"a symbolic max of the following latencies:\n\t" + "\n\t".join(
+                [f"{k}: {type(v)} {str(v).strip()}" for k, v in latency.items()]
+            )
+        )
 
     actions = gather_actions(reuse, None, use_name=True)
     energy = compute_energy_from_actions(actions, ert, overall_latency)
