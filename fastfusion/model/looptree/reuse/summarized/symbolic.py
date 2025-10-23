@@ -4,8 +4,7 @@ from typing import Any
 
 from fastfusion.frontend import arch
 import fastfusion.frontend.mapping as mapping_spec
-from fastfusion.frontend.arch import ProcessingStage
-from fastfusion.frontend.mapping import Mapping, MappingNode, Spatial, Temporal, Storage, Reservation, Iteration, TensorHolder# NOFILL: Fill
+from fastfusion.frontend.mapping import Mapping, MappingNode, Spatial, Temporal, Storage, Reservation, Iteration, TensorHolder, ProcessingStage
 from fastfusion.frontend.workload import (
     Workload,
     TensorName,
@@ -551,17 +550,6 @@ def insert_reservation_nodes(mapping, info: AnalysisInfo):
         else:
             raise NotImplementedError(f"Unknown node type {type(node)}")
 
-        # NOFILL: fill_insert_below = []
-        # NOFILL: fill_insert_above = []
-        # NOFILL: for tracker in trackers:
-        # NOFILL:     if not tracker.is_fill_level:
-        # NOFILL:         continue
-        # NOFILL:     buffet = tracker.buffet
-        # NOFILL:     if tracker.insert_fill_under:
-        # NOFILL:         fill_insert_below.append(node)
-        # NOFILL:     else:
-        # NOFILL:         fill_insert_above.append(node)
-
         reservation_insert_below = []
         reservation_insert_above = []
         for tracker_idx in reversed(to_remove):
@@ -585,12 +573,8 @@ def insert_reservation_nodes(mapping, info: AnalysisInfo):
         # The order of these for loops is important. Reservation must be below fill.
         for node in reservation_insert_below:
             mapping.insert(i+1, node)
-        # NOFILL: for node in fill_insert_below:
-        # NOFILL:     mapping.insert(i+1, node)
         for node in reservation_insert_above:
             mapping.insert(i, node)
-        # NOFILL: for node in fill_insert_above:
-        # NOFILL:     mapping.insert(i, node)
 
         i += 1
         n_nodes = len(mapping)

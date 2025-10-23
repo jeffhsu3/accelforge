@@ -58,7 +58,6 @@ NodeList: TypeAlias = ParsableList[
             Annotated["Pipeline", Tag("Pipeline")],
             Annotated["Nested", Tag("Nested")],
             Annotated["Reservation", Tag("Reservation")],
-            # NOFILL: Annotated["Fill", Tag("Fill")],
             Annotated["Mapping", Tag("Mapping")],
             Annotated["ProcessingStage", Tag("ProcessingStage")],
         ],
