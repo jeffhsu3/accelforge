@@ -267,6 +267,8 @@ def iterate_mappings_constraints(
     if arch_flattened is None:
         arch_flattened = spec.get_flattened_architecture()
     compute_name = arch_flattened[-1].name
+    
+    n_yielded = 0
 
     if isinstance(einsum_names, str):
         einsum_names = [einsum_names]
@@ -296,6 +298,9 @@ def iterate_mappings_constraints(
             )
             mapping = Mapping(nodes=[copy.copy(n) for n in mapping])
             yield mapping, constraints, symbol_table
+            n_yielded += 1
+            if n_yielded >= spec.mapper.ffm.max_pmapping_templates_per_einsum:
+                return
 
 
 # =================================================================================================
