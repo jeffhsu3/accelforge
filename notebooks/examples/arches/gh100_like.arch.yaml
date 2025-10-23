@@ -82,7 +82,7 @@ arch:
         loop_bounds: [{expression: ~output.rank_variables, operator: ==, value: 1}]
 
   - !Memory
-    name: shared_memory
+    name: SharedMemory
     component_class: {{"aqfp_reg_sr" if AQFP else "SRAM"}}
     attributes:
       _size: 64 * b_per_KB # 64 kB
@@ -107,12 +107,12 @@ arch:
         tensor_order_options: [[Outputs, ~Outputs]]
 
   - !Compute
-    name: scalar_unit
+    name: ScalarUnit
     attributes: {_area: 0, _leak_power: 0, _energy: 0}
     constraints: {misc: {enabled: len(All) == 2}}
 
   - !Memory
-    name: tensor_core_dummy
+    name: TensorCoreDummy
     attributes: {_size: 0, _area: 0, _leak_power: 0, _energy: 0}
     spatial:
     - {name: reuse_input, fanout: 128 / 8, reuse: input} # 8 is the datawidth

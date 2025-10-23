@@ -49,7 +49,7 @@ arch:
       tensors: {bypass: weight, keep: input | output}
 
   - !Compute
-    name: scalar_unit
+    name: ScalarUnit
     attributes: 
       _area: 0
       _leak_power: 0
@@ -58,7 +58,7 @@ arch:
     constraints: {misc: {enabled: len(All) == 2}}
 
   - !Memory
-    name: array_dummy
+    name: ArrayDummy
     attributes: {_size: 0, _area: 0, _leak_power: 0, _energy: 0}
     spatial:
     - {name: reuse_input, fanout: 128, reuse: input} # 8 is the datawidth

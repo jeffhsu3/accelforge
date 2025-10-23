@@ -53,7 +53,7 @@ arch:
             value: 1
 
   - !Compute
-    name: scalar_unit
+    name: ScalarUnit
     attributes:
       _computes_per_cycle: 128
     actions:

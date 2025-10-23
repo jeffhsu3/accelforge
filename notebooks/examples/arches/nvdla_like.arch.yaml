@@ -36,7 +36,7 @@ arch:
         - [~weight, weight]
 
   - !Memory
-    name: array_dummy
+    name: ArrayDummy
     attributes: {_size: 0, _area: 0, _leak_power: 0, _energy: 0}
     spatial:
     - {name: reuse_input, fanout: 32, reuse: input} # 8 is the datawidth
