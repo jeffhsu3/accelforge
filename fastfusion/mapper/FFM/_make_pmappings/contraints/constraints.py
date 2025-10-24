@@ -219,26 +219,6 @@ def get_constraints(
                 new_nodes = [n for n in nodes if n.rank_variable in exp]
                 constraint = TileShapeConstraintLambda(c, new_nodes, exp)
                 constraints.tile_shape_constraints.append(constraint)
-
-        # # No refetch from above constraints
-        # exp = symbol_table[m.name] & tensor_constraints.no_refetch_from_above
-        # result = set()
-        # for no_refetch in exp.iter_one_element_sets():
-        #     result.update(~no_refetch.rank_variables())
-        # nodes = constrained_loops(
-        #     mapping,
-        #     result,
-        #     index - 1,
-        #     look_behind=True,
-        #     one_loop_per_rank_variable=False,
-        # )
-        # constraints.loop_bounds_constraints.append(
-        #     LoopBoundsConstraintLambda(
-        #         Comparison(expression=exp, operator="==", value=1), nodes, exp
-        #     )
-        # )
-
-        # No refetch from above constraints
         exp = symbol_table[m.name] & tensor_constraints.no_refetch_from_above
         nodes = []
         for no_refetch in exp.iter_one_element_sets():
