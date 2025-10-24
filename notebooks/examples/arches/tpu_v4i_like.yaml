@@ -14,9 +14,7 @@ arch:
       # reference, and they said it left out some things.
     - {name: read, arguments: {energy: 7.03e-12}}
     - {name: write, arguments: {energy: 7.03e-12}}
-    constraints:
-      tensors:
-        keep: ~Intermediates
+    constraints: {tensors: {keep: ~Intermediates, may_keep: All}}
 
   - !Memory
     name: GlobalBuffer
@@ -32,6 +30,7 @@ arch:
     constraints:
       tensors:
         keep: ~MainMemory.tensors
+        may_keep: All
         no_refetch_from_above: Intermediates if ~MainMemory.tensors else Nothing
 
   - !Memory
@@ -46,7 +45,7 @@ arch:
     - {name: read, arguments: {energy: 0.249e-12}}
     - {name: write, arguments: {energy: 0.293e-12}}
     constraints:
-      tensors: {bypass: weight, keep: input | output}
+      tensors: {keep: input | output}
 
   - !Compute
     name: ScalarUnit
@@ -64,19 +63,15 @@ arch:
     - {name: reuse_input, fanout: 128, reuse: input} # 8 is the datawidth
     - {name: reuse_output, fanout: 128, reuse: output}
     constraints:
-      tensors: {bypass: All}
+      tensors: {keep: Nothing}
       spatial:
-      - name: reuse_input
-        min_utilization: 1
-        loop_bounds: [{expression: input.rank_variables, operator: ==, value: 1}]
-      - name: reuse_output
-        min_utilization: 1
-        loop_bounds: [{expression: output.rank_variables, operator: ==, value: 1}]
+      - {name: reuse_input, must_reuse: input, min_utilization: 1}
+      - {name: reuse_output, must_reuse: output, min_utilization: 1}
 
   - !Memory
     name: Register
     attributes: {_size: 1, _area: 0, _leak_power: 0, _energy: 0}
-    constraints: {tensors: {keep: weight, bypass: ~weight}}
+    constraints: {tensors: {keep: weight}}
 
   - !Compute
     name: MAC

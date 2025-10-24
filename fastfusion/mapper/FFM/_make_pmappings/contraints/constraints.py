@@ -206,7 +206,7 @@ def get_constraints(
         if (index := first_tensor_holder_index(mapping, m.name)) is None:
             continue
 
-        tensor_constraints = m.constraints.tensors._parse_non_keep_bypass(
+        tensor_constraints = m.constraints.tensors._parse_non_keep(
             symbol_table, f"{m.name}.constraints.tensors"
         )
 
@@ -259,9 +259,17 @@ def get_constraints(
                 symbol_table, f"{m.name}.constraints.spatial"
             )
 
+            loop_bounds = list(spatial_constraint.loop_bounds)
+            if spatial_constraint.must_reuse:
+                loop_bounds.append(Comparison(
+                    expression=spatial_constraint.must_reuse.rank_variables,
+                    operator="==",
+                    value=1,
+                ))
+
             # Loop bounds constraints
-            if spatial_constraint.loop_bounds:
-                for c in spatial_constraint.loop_bounds:
+            if loop_bounds:
+                for c in loop_bounds:
                     nodes = constrained_loops(loops, c.expression, component=m.name)
                     for exp in c.split_expression():
                         new_nodes = [l for l in loops if l.rank_variable in exp]

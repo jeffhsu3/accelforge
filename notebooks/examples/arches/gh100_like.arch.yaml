@@ -35,9 +35,7 @@ arch:
     actions:
     - {name: read, arguments: {bits_per_action: width}}
     - {name: write, arguments: {bits_per_action: width}}
-    constraints:
-      tensors:
-        keep: ~Intermediates
+    constraints: {tensors: {keep: ~Intermediates, may_keep: All}}
 
   - !Memory
     name: GlobalBuffer
@@ -72,14 +70,10 @@ arch:
     - {name: CGA, fanout: 16, reuse: Nothing} # No multicast across CGAs
     attributes: {_size: 0}
     constraints: 
-      tensors: {bypass: All}
+      tensors: {keep: Nothing}
       spatial:
-      - name: X
-        min_utilization: 1 if len(All) > 2 else 0
-        loop_bounds: [{expression: ~output.rank_variables, operator: ==, value: 1}]
-      - name: CGA
-        min_utilization: 1 if len(All) > 2 else 0
-        loop_bounds: [{expression: ~output.rank_variables, operator: ==, value: 1}]
+      - {name: X, must_reuse: output, min_utilization: 1 if len(All) > 2 else 0}
+      - {name: CGA, must_reuse: output, min_utilization: 1 if len(All) > 2 else 0}
 
   - !Memory
     name: SharedMemory
@@ -119,19 +113,12 @@ arch:
     - {name: reuse_output, fanout: 4, reuse: output}
     - {name: reuse_weight, fanout: 8, reuse: weight}
     constraints:
-      tensors: {bypass: All} #{keep: Outputs, bypass: ~Outputs}
+      tensors: {keep: Nothing}
       spatial:
-      - name: reuse_nothing
-        min_utilization: 1
-      - name: reuse_input
-        min_utilization: 1
-        loop_bounds: [{expression: input.rank_variables, operator: ==, value: 1}]
-      - name: reuse_output
-        min_utilization: 1
-        loop_bounds: [{expression: output.rank_variables, operator: ==, value: 1}]
-      - name: reuse_weight
-        min_utilization: 1
-        loop_bounds: [{expression: weight.rank_variables, operator: ==, value: 1}]
+      - {name: reuse_nothing, must_reuse: output, min_utilization: 1}
+      - {name: reuse_input, must_reuse: input, min_utilization: 1}
+      - {name: reuse_output, must_reuse: output, min_utilization: 1}
+      - {name: reuse_weight, must_reuse: weight, min_utilization: 1}
 
   - !Compute
     name: MAC

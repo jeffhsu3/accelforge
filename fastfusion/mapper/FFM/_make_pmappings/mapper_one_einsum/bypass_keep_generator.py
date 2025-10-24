@@ -37,29 +37,23 @@ def make_tensor_choices_one_level(
         raise ValueError(f"Unexpected tensor holder type: {type(node)}")
 
     new_symbol_table = copy.copy(symbol_table)
-    tensor_constraints = node.constraints.tensors._parse_keep_bypass(
+    tensor_constraints = node.constraints.tensors._parse_keep(
         symbol_table, f"{node.name}.constraints.tensors"
     )
     must_keep = tensors.to_my_space(tensor_constraints.keep)
-    must_bypass = tensors.to_my_space(tensor_constraints.bypass)
+    may_keep = tensors.to_my_space(tensor_constraints.may_keep)
+    may_keep -= must_keep
 
     if must_keep - tensors:
         raise KeyError(
             f"Keep constraint for {node.name} includes tensors that are "
             f"not in the workload: {must_keep - new_symbol_table['All']}"
         )
-    if must_bypass - tensors:
+    if may_keep - tensors:
         raise KeyError(
             f"Bypass constraint for {node.name} includes tensors that are "
-            f"not in the workload: {must_bypass - tensors.full_space}"
+            f"not in the workload: {may_keep - tensors.full_space}"
         )
-    if must_keep & must_bypass:
-        raise KeyError(
-            f"Keep and bypass constraints for {node.name} intersect: "
-            f"{must_keep & must_bypass}"
-        )
-
-    may_keep = tensors - must_bypass - must_keep
 
     # No reuse in copy operations, so no need to keep tensors in more places
     if is_copy_op:
@@ -72,6 +66,7 @@ def make_tensor_choices_one_level(
         # Below line is so users can do MainMemory().tensors() or MainMemory.tensors
         keep_choice.tensors = keep_choice
         new_symbol_table[node.name] = keep_choice
+        new_symbol_table["Above"] |= keep_choice
         new_seen_tensors = seen_tensors | set(keep_choice)
 
         # Make sure they're all tensors

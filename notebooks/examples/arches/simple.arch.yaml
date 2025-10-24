@@ -9,7 +9,7 @@ arch:
       _size: inf
       _datawidth: 1
       _leak_power: 0
-    constraints: {tensors: {keep: ~Intermediates}}
+    constraints: {tensors: {keep: ~Intermediates, may_keep: All}}
     actions:
     - {name: read, arguments: {energy: 1}}
     - {name: write, arguments: {energy: 1}}

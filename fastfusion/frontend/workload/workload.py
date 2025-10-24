@@ -558,6 +558,7 @@ class Workload(ParsableModel):
             },
             "Einsum": einsum_name,
             "EinsumObject": einsum,
+            "Above": InvertibleSet(instance=(), **kwargs_tensors),
         }
 
         taken_renames = set()
