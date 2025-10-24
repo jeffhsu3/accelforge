@@ -228,12 +228,14 @@ class Objective:
     def __init__(
         self,
         name: str,
-        formula: Expr,
+        formula: Expr | Number,
         max_value: float = None,
         symbols: list[str] = None,
         only_care_if_valid: bool = False,
         min_value: float = None,
     ):
+        if isinstance(formula, Number):
+            formula = sympy.Number(formula)
         self.name: str = name
         self.formula: Expr = formula.simplify()
         self._symbols: list[str] = symbols
