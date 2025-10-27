@@ -43,3 +43,31 @@ are rank names and the values are the index expressions (*e.g.*, ``H: p+r``).
 
 Renaming Tensors and Rank Variables
 -----------------------------------
+
+It is often conventient to be able to assign a generic name that resolves to tensors of an Einsum.
+For example, architecture constraints often use tensor names. However, the tensors in an Einsum changes
+between Einsums in the cascade. Thus, it is useful to define a name `output` and use it to write
+architecture constraints, and resolve it for specific Einsums, such as `output = Z` in `Z = AB`.
+
+This feature is supported in FFM using the renaming feature. Renames are defined by specifying a
+`renames` key as follows
+::
+
+  renames:
+    version: <version-string>
+    einsums: <list-of-renames-per-einsum>
+
+The ``<list-of-renames-per-einsum>`` contains items with the following from
+::
+
+  name: <einsum-name-or-default>
+  tensor_accesses:
+  - name: <generic-tensor-name>
+    source: <specific-tensor-name-or-set-expression>
+  ...
+  rank_variables:
+  - name: <generic-rank-name>
+    source: <specific-rank-name-or-set-expression>
+
+The <einsum-name-or-default> can be an Einsum name or the keyword ``default``, which means that the
+renames will be used by default when an Einsum does not have a specific renames specified.
