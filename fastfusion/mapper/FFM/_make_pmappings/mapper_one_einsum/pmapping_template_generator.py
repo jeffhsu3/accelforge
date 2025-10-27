@@ -312,11 +312,16 @@ def parse_flattened_arch(
 ) -> list[arch.Leaf]:
     flattened_arch = [n for n in job.flattened_arch]
 
-    tensor_names = job.spec.workload.einsums[job.einsum_name].tensor_names
-
     def parse_tensor2bits(
-        to_parse: dict[str, Any], location: str, symbol_table: dict[str, str]
+        to_parse: dict[str, Any], 
+        location: str, 
+        symbol_table: dict[str, str],
+        extra_error_message: str = "",
+        tensor_names: set[str] = None,
     ) -> dict[str, Any]:
+        if tensor_names is None:
+            tensor_names = job.spec.workload.einsums[job.einsum_name].tensor_names
+
         result = {}
         if not isinstance(to_parse, dict):
             raise ValueError(f"Expected a dict, got {type(to_parse)}: {to_parse}")
@@ -339,9 +344,10 @@ def parse_flattened_arch(
             if tensor_name not in result:
                 raise ValueError(
                     f"Tensor {tensor_name} not found in {location}. "
-                    f"Available tensors: {', '.join(result.keys())}. Original "
-                    f"expressions: {', '.join(to_parse.keys())}. Symbol table:\n\t"
+                    f"Available tensors: ({', '.join(result.keys())}). Original "
+                    f"expressions: ({', '.join(to_parse.keys())}). Symbol table:\n\t"
                     + "\n\t".join(f"{k}: {v}" for k, v in symbol_table.items())
+                    + (f"\n{extra_error_message}" if extra_error_message else "")
                 )
 
         return result
@@ -353,10 +359,22 @@ def parse_flattened_arch(
         flattened_arch[i] = node
         node.attributes = copy.copy(node.attributes)
 
+        tensor_names = set()
+        for m in job.mapping.nodes:
+            if isinstance(m, TensorHolder) and m.component == node.name:
+                tensors = m.tensors
+                tensors = {tensors} if isinstance(tensors, str) else set(tensors)
+                tensor_names.update(tensors)
+
         node.attributes.datawidth = parse_tensor2bits(
             node.attributes.datawidth,
             location=f"datawidth of {node.name} for Einsum {job.einsum_name}",
             symbol_table=symbol_table,
+            extra_error_message=(
+                f"Set datawidth either as a dictionary of tensors to datawidths, or as "
+                f"a single value for all tensors."
+            ),
+            tensor_names=tensor_names,
         )
         node.spatial = ParsableList(
             s._parse(

@@ -265,7 +265,7 @@ class TensorHolderAttributes(LeafAttributes):
     underscore-prefix attribute names. See `TODO: UNDERSCORE_PREFIX_DISCUSSION`.
     """
 
-    datawidth: ParsesTo[Union[dict, int, float]] = 1
+    datawidth: ParsesTo[Union[dict, int, float]] = {}
     """ Number of bits per value stored in this `TensorHolder`. If this is a dictionary,
     keys in the dictionary are parsed as expressions and may reference one or more
     `Tensor`s. """
