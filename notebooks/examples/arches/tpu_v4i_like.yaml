@@ -21,7 +21,7 @@ arch:
     attributes:
       _size: 1024*1024*128*8 # 128MB
       _datawidth: 8
-      _latency: max(read_actions / 8 * 2048e9, write_actions / 8 * 1024e9) # 2GB/s read, 1GB/s write
+      _latency: max(read_actions / 8 / 2048e9, write_actions / 8 / 1024e9) # 2GB/s read, 1GB/s write
       _leak_power: 0
       _area: 0
     actions:
@@ -31,7 +31,7 @@ arch:
       tensors:
         keep: ~MainMemory.tensors
         may_keep: All
-        no_refetch_from_above: Intermediates if ~MainMemory.tensors else Nothing
+        # no_refetch_from_above: MainMemory.tensors if ~MainMemory.tensors else Nothing
 
   - !Memory
     name: LocalBuffer
