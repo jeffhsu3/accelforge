@@ -53,7 +53,7 @@ class FFM(ParsableModel):
     """ The maximum time limit per pmapping template. """
 
     max_pmapping_templates_per_einsum: float | int = float("inf")
-    """ 
+    """
     The maximum number of pmapping templates per Einsum. Once this many templates are
     generated, the mapper will stop generating more. This is useful for debugging (why
     are so many templates being generated?).

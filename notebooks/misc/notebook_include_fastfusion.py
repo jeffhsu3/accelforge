@@ -52,7 +52,7 @@ class EvaluationsScoreTracker():
         self.print_stopped_text = False
         self.n_mappings = {}
         self.runtime = {}
-    
+
     def add_evaluation(self, n_evaluations: int, best_score: float):
         self.evaluations += n_evaluations * self._scale_by
         self.score = min(self.score, best_score)
@@ -60,7 +60,7 @@ class EvaluationsScoreTracker():
         if len(self.history) > 2 and self.history[-2][1] == self.score:
             self.history.pop(-1)
         self.history.append((self.evaluations, self.score))
-        
+
         cur_time = time.time()
         if self.prev_print_time is None or cur_time - self.prev_print_time > self.print_period:
             self.prev_print_time = cur_time
@@ -79,16 +79,16 @@ class EvaluationsScoreTracker():
                 self.print_stopped_text = True
             return True
         return False
-    
+
     def multiply_scale_by(self, scale_by: float):
         self._scale_by *= scale_by
-        
+
     def __repr__(self):
         return f"Evaluations: {self.evaluations}, Score: {self.score}"
-    
+
     def __str__(self):
         return f"Evaluations: {self.evaluations}, Score: {self.score}"
-    
+
     def clean_history(self):
         keep_indices = [0]
         for i in range(1, len(self.history) - 1):
@@ -96,7 +96,7 @@ class EvaluationsScoreTracker():
                 keep_indices.append(i)
         keep_indices.append(len(self.history)-1)
         self.history = [self.history[i] for i in keep_indices]
-    
+
     def merge_with(self, other: "EvaluationsScoreTracker"):
         self.score = min(self.score, other.score)
         self.evaluations += other.evaluations
@@ -123,16 +123,16 @@ class EvaluationsScoreTracker():
                 j += 1
         self.history = history
         self.clean_history()
-            
-    def increase_all_evaluations(self, n_evaluations: int):            
+
+    def increase_all_evaluations(self, n_evaluations: int):
         self.evaluations += n_evaluations
         self.history = [(e + n_evaluations, s) for e, s in self.history]
 
 class Experiment:
-    def __init__(self, 
-                 name: str, 
-                 workload_fname: str, 
-                 prune_intra: bool = True, 
+    def __init__(self,
+                 name: str,
+                 workload_fname: str,
+                 prune_intra: bool = True,
                  taggers: tuple[callable] = tuple(),
                  dataflow: str = None,
                  fuse: bool = True,
@@ -191,7 +191,7 @@ class Experiment:
     @property
     def inter_results_file(self):
         return get_results_dir(self.workload_name) / f"{self.full_name} {self.name}.inter.pkl"
-    
+
     def get_pkl_attributes_intra(self):
         return ["intra_result", "equiv_ranks", "einsum2ranks", "bindings", "max_fanout", "max_capacity", "n_mappings_intra", "intra_runtime"]
 
@@ -322,7 +322,7 @@ def filter_tensors(e, tensors_filter):
         if not new_intra[k]:
             raise ValueError(f"No mappings for {k} with memory filter {tensors_filter}")
     e.intra_result = new_intra
-    
+
 def filter_layernorm(e):
     for k, sims in e.intra_result.items():
         e.intra_result[k] = [s for s in sims if "LAYERNORM_INVALID" not in s.compatibility.tags]
@@ -407,7 +407,7 @@ def ffmt(e):
                 r.append(s)
             # print(f'\t{s.compatibility}')
         e.intra_result[k] = r
-        
+
 def filter_optimus(e):
     filter_layernorm(e)
     for k, sims in e.intra_result.items():
@@ -439,8 +439,8 @@ def run_experiment(
     load_inter_or_fail: bool = False,
 ):
     exp = Experiment(
-        name, 
-        f"workloads/{workload_name}.yaml", 
+        name,
+        f"workloads/{workload_name}.yaml",
         prune_intra=prune_intra,
         taggers=taggers,
         dataflow=dataflow,
@@ -489,10 +489,10 @@ def run_experiment(
 
     t0 = time.time()
     exp.run_fusion(
-        lookahead_filter=lookahead_filter, 
-        fuse_function=fuse_function, 
-        max_evaluations=max_evaluations, 
-        stop_at_score=stop_at_score, 
+        lookahead_filter=lookahead_filter,
+        fuse_function=fuse_function,
+        max_evaluations=max_evaluations,
+        stop_at_score=stop_at_score,
         count_intra_evaluations=prune_intra
     )
     print(f'Inter-layer exploration took {time.time() - t0} seconds')
@@ -509,10 +509,10 @@ def get_average_percent_reduction(a: pd.DataFrame, b: pd.DataFrame, x: str, y: s
     b = b.sort_values(x).reset_index(drop=True)
     ax, ay = a[x], a[y]
     bx, by = b[x], b[y]
-    
+
     start = min(ax.min(), bx.min())
     end = max(ax.max(), bx.max())
-    
+
     n_points = 10000
     x = np.linspace(start, end, n_points)
     count = 0
@@ -524,16 +524,16 @@ def get_average_percent_reduction(a: pd.DataFrame, b: pd.DataFrame, x: str, y: s
         # a_i is the highest index in a that is less than x[i]
         a_i = np.searchsorted(ax, x[i], side='right') - 1
         b_i = np.searchsorted(bx, x[i], side='right') - 1
-        
+
         assert a_i != -1 and b_i != -1, f"One of the mappings is valid at a lower occupancy than the other"
-        
+
         if a_i is None or b_i is None:
             continue
         # total += (by[b_i] / ay[a_i])# / by[b_i]
         points.append(by[b_i] / ay[a_i])
         max_reduction = max(max_reduction, by[b_i] / ay[a_i])
         count += 1
-        
+
     def geomean(points):
         excess = 0
         counter = 1

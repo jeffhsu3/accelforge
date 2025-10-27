@@ -23,7 +23,7 @@ class TestBindingMapper(unittest.TestCase):
         spec: Dict
         for spec in specs:
             binding: Binding = Binding.model_validate(spec['binding'])
-            
+
             soln: Dict = spec['solution']
             assert binding.version == soln['version']
 

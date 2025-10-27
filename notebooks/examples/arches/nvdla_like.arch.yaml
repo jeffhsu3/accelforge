@@ -3,7 +3,7 @@ arch:
   nodes:
   - !Memory
     name: MainMemory
-    attributes: 
+    attributes:
       _size: inf
       # https://www.jedec.org/news/pressreleases/jedec-updates-standard-low-power-memory-devices-lpddr5
       _latency: (read_actions + write_actions) / (8 * 38.4e9) # 38.4 GB/s. DDR5-4800. Chip runs at at 1GHz, so divide to get per-cycle bwidth
@@ -15,7 +15,7 @@ arch:
     - {name: read, arguments: {energy: 7.03e-12}}
     - {name: write, arguments: {energy: 7.03e-12}}
     constraints: {tensors: {keep: ~Intermediates, may_keep: All}}
-        
+
 
   - !Memory
     name: GlobalBuffer

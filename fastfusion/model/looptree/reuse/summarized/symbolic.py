@@ -87,7 +87,7 @@ class BuffetStats:
     total_writes_to_parent: Any = field(default=0)
     max_per_parent_reads_to_parent: Any = field(default=0)
     max_per_parent_writes_to_parent: Any = field(default=0)
-    
+
     total_reads_to_peer: Any = field(default=0)
     total_writes_to_peer: Any = field(default=0)
     max_per_unit_reads_to_peer: Any = field(default=0)
@@ -114,17 +114,17 @@ class BuffetStats:
     min_per_unit_skipped_first_read_actions: Any = field(default=0)
 
     persistent: bool = field(default=False)
-    
+
     @property
     def n_loops_above(self) -> int:
         if self.persistent:
             return -1
         return self._n_loops_above
-    
+
     @n_loops_above.setter
     def n_loops_above(self, value: int):
         self._n_loops_above = value
-    
+
     def repeat_temporal(self, factor: int, is_fully_relevant: bool) -> "BuffetStats":
         new = copy.copy(self)
         for attr in self.__dict__:
@@ -136,7 +136,7 @@ class BuffetStats:
                 continue  # Max occupancy is not affected by temporal loops above
             setattr(new, attr, getattr(new, attr) * factor)
         return new
-    
+
     def repeat_spatial(self, factor: int, reuse_parent_accesses: bool) -> "BuffetStats":
         new = copy.copy(self)
         for attr in self.__dict__:
@@ -150,15 +150,15 @@ class BuffetStats:
                 continue  # Max occupancy is not affected by temporal loops above
             setattr(new, attr, getattr(new, attr) * factor)
         return new
-    
+
     def max(self, **kwargs: Any):
         for key, value in kwargs.items():
             setattr(self, key, Max(getattr(self, key), value))
-            
+
     def min(self, **kwargs: Any):
         for key, value in kwargs.items():
             setattr(self, key, Min(getattr(self, key), value))
-    
+
     def __add__(self, other: "BuffetStats") -> "BuffetStats":
         new = copy.copy(self)
         for attr in self.__dict__:
@@ -169,22 +169,22 @@ class BuffetStats:
             elif attr.startswith("total_"):
                 setattr(new, attr, getattr(self, attr) + getattr(other, attr))
         return new
-    
+
     def __iadd__(self, other: "BuffetStats") -> "BuffetStats":
         new = self + other
         for key, value in new.__dict__.items():
             setattr(self, key, value)
         return self
-    
+
     def net_total_read_actions(self) -> Any:
         return self.total_read_actions - self.total_skipped_first_read_actions
-    
+
     def net_total_write_actions(self) -> Any:
         return self.total_write_actions - self.total_skipped_first_write_actions
-    
+
     def net_max_per_unit_read_actions(self) -> Any:
         return self.max_per_unit_read_actions - self.min_per_unit_skipped_first_read_actions
-    
+
     def net_max_per_unit_write_actions(self) -> Any:
         return self.max_per_unit_write_actions - self.min_per_unit_skipped_first_write_actions
 
@@ -351,9 +351,9 @@ def convert_to_copy(mapping: list[MappingNode], workload: Workload) -> tuple[lis
     # Calculate this BEFORE we modify the mapping. We're going to have the copy source
     # tensor moving upward sometimes, and we don't want the backing tensor holder
     tensor_to_backer_id = get_tensor_to_backer_id(mapping)
-    
+
     first_input_tensor = workload.einsums[mapping[-1].einsum].copy_source_tensor()
-    
+
     for node in mapping:
         if isinstance(node, TensorHolder):
             if node.tensors:
@@ -374,10 +374,10 @@ def convert_to_copy(mapping: list[MappingNode], workload: Workload) -> tuple[lis
                     j += 1
         i += 1
     mapping = [node for node in mapping if node not in to_remove]
-    
+
     return mapping, tensor_to_backer_id
-    
-    
+
+
 def analyze_reuse_and_add_reservations_to_mapping(
     job: Job,
 ) -> SummarizedAnalysisOutput:
@@ -630,7 +630,7 @@ def analyze_temporal(node_idx,
 
         child_shape = current_shape.copy()
         child_shape[node.rank_variable] = shape_value
-        
+
         child_result = analyze_node(node_idx+1, child_shape, info)
 
         accumulated_buffet_stats = result_accumulator.buffet_stats
@@ -640,7 +640,7 @@ def analyze_temporal(node_idx,
             accumulated_stats = accumulated_buffet_stats.setdefault(buffet, BuffetStats())
             accumulated_stats += stats.repeat_temporal(shape_repeats, is_fully_relevant=isinstance(relevancy, Relevant))
             accumulated_stats.n_loops_above = stats.n_loops_above + 1
-            
+
         for einsum, child_steps in child_result.temporal_steps.items():
             if einsum not in result_accumulator.temporal_steps:
                 result_accumulator.temporal_steps[einsum] = 0
@@ -693,7 +693,7 @@ def analyze_spatial(node_idx, current_shape, info: AnalysisInfo):
         child_shape[node.rank_variable] = shape_value
 
         child_result = analyze_node(node_idx+1, child_shape, info)
-        
+
         component_object = find_component_object(node.component, info.job.flattened_arch)
         spatial_reuse = component_object.spatial[node.name].reuse
 
@@ -715,7 +715,7 @@ def analyze_spatial(node_idx, current_shape, info: AnalysisInfo):
                     break
 
             reuse_parent_accesses = (
-                last_buffet and 
+                last_buffet and
                 isinstance(relevancy, Irrelevant)
                 and buffet.tensor in spatial_reuse
             )
@@ -796,8 +796,8 @@ def find_component_object(component: str, flattened_arch: list[arch.Leaf]) -> ar
     raise ValueError(f"Component {component} not found in flattened arch")
 
 def analyze_storage(
-    node_idx: int, 
-    current_shape: dict[str, int], 
+    node_idx: int,
+    current_shape: dict[str, int],
     info: AnalysisInfo,
     _propagate_child_results: bool = False,
     _count_parent_accesses: bool = True,
@@ -815,7 +815,7 @@ def analyze_storage(
 
         # Reservations make these, and they go below the storage node, so the buffet
         # stats are already made at this point
-        stats = child_result.buffet_stats[buffet] 
+        stats = child_result.buffet_stats[buffet]
         backer_id = info.tensor_to_backer_id[tensor]
         is_backing = backer_id == id(node)
         if node.persistent:
@@ -841,8 +841,8 @@ def analyze_storage(
 
             # Data writeback. Do not writeback if it's a copy operation and we're below
             # the backing storage; data only flows upward.
-            
-            # Writeback occurs in two cases: 
+
+            # Writeback occurs in two cases:
             # - We're at or above the backing storage, so we need to propagate our
             #   results upward to any storage nodes that will need this data.
             # - This is a written tensor, so we need to write back the written data.
@@ -898,7 +898,7 @@ def analyze_storage(
             # Skip first read
             stats.total_skipped_first_read_actions += child.total_skipped_first_reads_to_parent * read_scale
             stats.min_per_unit_skipped_first_read_actions += child.min_per_parent_skipped_first_reads_to_parent * read_scale
-        
+
     return child_result
 
 
@@ -985,7 +985,7 @@ def analyze_compute(node_idx,
     einsum = info.mapping[-1].einsum
     node = info.mapping[node_idx]
     compute_node: arch.Compute = info.job.flattened_arch[-1]
-    
+
     computes = 0 if info.is_copy_operation else 1
 
     result_accumulator = SummarizedAnalysisOutput()
@@ -996,7 +996,7 @@ def analyze_compute(node_idx,
         computes,
         1,
     )
-    
+
     if info.is_copy_operation:
         return result_accumulator
 
@@ -1047,7 +1047,7 @@ def get_stride_and_tile_shape(node: Iteration, full_shape, n: int):
         else:
             factor = sympy.ceiling(rank_shape / sympy.Min(stride, rank_shape))
             return make_possibly_different_last(stride, factor, rank_shape)
-        
+
     middle_shape_factor = sympy.ceiling((rank_shape - initial_tile_shape)/stride)
     # TODO: sometimes last_shape is 0, causing numerical instability
     # Currently, we are sometimes rounding up last shape.
@@ -1079,7 +1079,7 @@ def get_stride_and_tile_shape(node: Iteration, full_shape, n: int):
     #     else:
     #         tile_shape = sympy.ceiling(rank_shape / sympy.Min(rank_shape, factor))
     #         return make_possibly_different_last(tile_shape, factor, rank_shape)
-    
+
     # elif node.tile_pattern is not None:
     #     stride = node.tile_pattern.stride
     #     initial_tile_shape = node.tile_pattern.initial_tile_shape

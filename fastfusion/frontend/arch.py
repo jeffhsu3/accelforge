@@ -43,7 +43,7 @@ class ArchNode(ParsableModel):
         """
         if isinstance(self, Leaf) and getattr(self, "name", None) == name:
             return self
-        
+
         if isinstance(self, Branch):
             for element in self.nodes:
                 try:
@@ -82,7 +82,7 @@ class Spatial(ParsableModel):
     """A one-dimensional spatial fanout in the architecture."""
 
     name: str
-    """ 
+    """
     The name of the dimension over which this spatial fanout is occurring (e.g., X or Y).
     """
 
@@ -133,9 +133,9 @@ class Leaf(ArchNode, ABC):
     """ The attributes of this `Leaf`. """
 
     spatial: ParsableList[Spatial] = ParsableList()
-    """ 
-    The spatial fanouts of this `Leaf`. 
-    
+    """
+    The spatial fanouts of this `Leaf`.
+
     Spatial fanouts describe the spatial organization of components in the architecture.
     A spatial fanout of size N for this node means that there are N instances of this
     node. Multiple spatial fanouts lead to a multi-dimensional fanout. Spatial
@@ -337,7 +337,7 @@ class ProcessingStage(TensorHolder):
     in how they affect the access counts of other components. Every write to a
     `ProcessingStage` is written to the next `Memory` (which may be above or below
     depending on where the write came from), and same for reads."""
-    
+
     attributes: ProcessingStageAttributes = pydantic.Field(default_factory=ProcessingStageAttributes)
     """ The attributes of this `ProcessingStage`. """
 
@@ -376,7 +376,7 @@ class Branch(ArchNode, ABC):
             Discriminator(get_tag),
         ]
     ] = ArchNodes()
-    
+
     def find_nodes_of_type(self, node_type: Type[T]) -> Iterator[T]:
         for node in self.nodes:
             if isinstance(node, node_type):
@@ -489,7 +489,7 @@ class Arch(Hierarchical):
         for node in self.find_nodes_of_type(Leaf):
             symbol_table[node.name] = node
         return super()._parse_expressions(*args, **kwargs)
-    
+
     def __getitem__(self, name: str) -> Leaf:
         return self.name2leaf(name)
 
@@ -501,5 +501,5 @@ class Arch(Hierarchical):
             leaves.setdefault(n, l)
             assert l is leaves[n], f"Duplicate name {n} found in architecture"
 
-# We had to reference Hierarchical before it was defined 
+# We had to reference Hierarchical before it was defined
 Branch.model_rebuild()

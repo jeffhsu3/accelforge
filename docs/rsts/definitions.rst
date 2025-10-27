@@ -18,7 +18,7 @@ Definitions
 
 - **Mapping**: :label:`Mapping`, :label:`Mappings` A *mapping* is a schedule that maps
   operations and data movement onto the hardware.
-  
+
 - **Component**: :label:`Component`, :label:`Components` A component is a hardware unit
   in the architecture. For example, a
   memory or a compute unit.

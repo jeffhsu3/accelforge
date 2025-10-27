@@ -49,7 +49,7 @@ arch:
 
   - !Compute
     name: ScalarUnit
-    attributes: 
+    attributes:
       _area: 0
       _leak_power: 0
       _energy: 0

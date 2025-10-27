@@ -22,7 +22,7 @@ def isl_to_summarized(looptree_results: IslReuseAnalysisOutput, mapping, workloa
         is_path=False
     )
     buffet_stats = {
-        Buffet(level=component, tensor=tensor, einsum=einsum): BuffetStats(    
+        Buffet(level=component, tensor=tensor, einsum=einsum): BuffetStats(
             max_per_unit_read_actions=accesses.max_per_unit_reads,
             max_per_unit_write_actions=accesses.max_per_unit_writes,
         )
@@ -72,7 +72,7 @@ def component_latency(
         "max": Max,
         "min": Min,
     }
-    
+
     for component, actions in component_to_actions.items():
         if name2component[component].attributes.latency is None:
             continue

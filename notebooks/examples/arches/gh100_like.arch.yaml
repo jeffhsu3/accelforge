@@ -65,11 +65,11 @@ arch:
   - !Memory
     name: SM
     component_class: dummy_storage
-    spatial: 
+    spatial:
     - {name: X, fanout: 9} # Yes multicast across SMs within a CGA
     - {name: CGA, fanout: 16, reuse: Nothing} # No multicast across CGAs
     attributes: {_size: 0}
-    constraints: 
+    constraints:
       tensors: {keep: Nothing}
       spatial:
       - {name: X, must_reuse: output, min_utilization: 1 if len(All) > 2 else 0}
@@ -94,7 +94,7 @@ arch:
     - {name: read, arguments: {bits_per_action: width}}
     - {name: write, arguments: {bits_per_action: width}}
     constraints:
-      tensors: 
+      tensors:
         keep: All
         no_refetch_from_above: Outputs
       dataflow:
@@ -123,7 +123,7 @@ arch:
   - !Compute
     name: MAC
     component_class: {{"aqfp_intmac" if AQFP else "intmac"}}
-    attributes: 
+    attributes:
       multiplier_width: 8
       adder_width: 16
       _leak_power_scale: cooling_overhead

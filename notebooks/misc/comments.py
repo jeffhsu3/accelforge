@@ -25,7 +25,7 @@
 # print(s.getvalue())
 
 # TODO: Check for ranks not in the mapping and put them at the bottom
-# TODO: What if there are no loops? 
+# TODO: What if there are no loops?
 # TODO: Set _must_exist for all backing storage nodes
 # TODO: Constraint attacher
 # TODO: Can't have tile size constraints on backing memory
@@ -62,7 +62,7 @@
 # display(SVG(newmapping.render()))
 
 # # https://github.com/nodesource/distributions/issues/1157#issuecomment-849595760
-# # cd /etc/apt/sources.list.d 
+# # cd /etc/apt/sources.list.d
 # # rm nodesource.list
 # # apt --fix-broken install
 # # apt update

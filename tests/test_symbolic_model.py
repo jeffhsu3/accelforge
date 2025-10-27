@@ -67,7 +67,7 @@ class TestSymbolicModel(unittest.TestCase):
             result.fanout,
             {('LocalBuffer', 'Matmul1'): {0: 128.0, 1: 4.0}, ('MainMemory', 'Matmul1'): {}}
         )
-        
+
     def test_copy_mapping(self):
         mapping = Mapping.from_yaml(PARENT_DIR / 'copy.mapping.yaml')
         workload = Workload.from_yaml(PARENT_DIR / 'copy.workload.yaml')
@@ -76,7 +76,7 @@ class TestSymbolicModel(unittest.TestCase):
 
         self.assertAlmostEqual(result.compute_stats[Compute('copy', 'MAC')].total_ops, 0)
         self.assertAlmostEqual(result.compute_stats[Compute('copy', 'MAC')].max_per_unit_ops, 0)
-        
+
         for tensor in ["O1", "O2", "O3", "O4"]:
             for memory in ["MainMemory", "GlobalBuffer", "LocalBuffer", "Register", "MAC"]:
                 buffet = Buffet(level=memory, tensor=tensor, einsum='copy')
@@ -88,7 +88,7 @@ class TestSymbolicModel(unittest.TestCase):
                 self.assertAlmostEqual(stats.net_total_write_actions(), 0)
                 self.assertAlmostEqual(stats.net_max_per_unit_write_actions(), 0)
                 self.assertAlmostEqual(stats.max_occupancy, 0)
-                
+
         buffet = Buffet(level='GlobalBuffer', tensor='I', einsum='copy')
         stats = result.buffet_stats.get(buffet, BuffetStats())
         self.assertAlmostEqual(stats.net_total_read_actions(), 0)

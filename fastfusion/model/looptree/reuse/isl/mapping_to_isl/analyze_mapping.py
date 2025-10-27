@@ -4,7 +4,7 @@ Flow of analysis:
   space of iterators in the mapping.
 - Create the relation from iteration space to operation space.
 - Create the relation from the iteration space to tensor space for each
-  (buffer, tensor, einsum) tuple. 
+  (buffer, tensor, einsum) tuple.
 - Run tile shape inference.
 """
 from dataclasses import dataclass, field

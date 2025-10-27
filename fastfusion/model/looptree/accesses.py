@@ -276,8 +276,8 @@ def isl_buffer_accesses_from_buffet_actions(
 
     summarized_actions = \
         summarize_total_and_per_unit_actions(reuse_analysis_result)
-        
-        
+
+
     accesses_results = BufferAccesses()
     for (buffer_id, tensor, einsum), stats in summarized_actions.items():
         fill = stats.total_fills # Writes

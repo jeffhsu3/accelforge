@@ -23,7 +23,7 @@ def get_latency(looptree_results,
                                  flattened_arch,
                                  mapping,
                                  workload)
-    
+
     overall_latency = Max(comp_latency, *mem_latency.values())
     return overall_latency, comp_latency, mem_latency
 

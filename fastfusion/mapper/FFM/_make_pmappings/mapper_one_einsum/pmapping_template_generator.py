@@ -267,7 +267,7 @@ def iterate_mappings_constraints(
     if arch_flattened is None:
         arch_flattened = spec.get_flattened_architecture()
     compute_name = arch_flattened[-1].name
-    
+
     n_yielded = 0
 
     if isinstance(einsum_names, str):
@@ -313,8 +313,8 @@ def parse_flattened_arch(
     flattened_arch = [n for n in job.flattened_arch]
 
     def parse_tensor2bits(
-        to_parse: dict[str, Any], 
-        location: str, 
+        to_parse: dict[str, Any],
+        location: str,
         symbol_table: dict[str, str],
         extra_error_message: str = "",
         tensor_names: set[str] = None,

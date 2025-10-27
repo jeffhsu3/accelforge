@@ -229,13 +229,13 @@ def get_constraints(
                 if isinstance(mapping[start_index], TensorHolder) and n in mapping[start_index].tensors:
                     break
                 start_index += 1
-                
+
             end_index = start_index
             while end_index < len(mapping):
                 if isinstance(mapping[end_index], TensorHolder) and n in mapping[end_index].tensors and mapping[end_index].component == m.name:
                     break
                 end_index += 1
-                
+
             rv = no_refetch.rank_variables
             for i in range(start_index, end_index):
                 if isinstance(mapping[i], Iteration) and mapping[i].rank_variable in rv:

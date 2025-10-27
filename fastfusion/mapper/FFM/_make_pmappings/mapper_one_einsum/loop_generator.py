@@ -44,7 +44,7 @@ def insert_temporal_loops(
         if m.component == first_memory.name:
             while len(split_mapping) > 1:
                 split_mapping[0].extend(split_mapping.pop(1))
-                
+
     split_mapping = [m for m in split_mapping if m]
 
     # These Einsum properties are recalculated since Einsum is mutable
@@ -61,7 +61,7 @@ def insert_temporal_loops(
     seen_tensors = set()
     choices = []
     lowering_choices: list[tuple[bool, ...]] = []
-    
+
     def _get_next_storages(i: int) -> list[TensorHolder]:
         for j in range(i + 1, len(split_mapping)):
             assert len(split_mapping[j]) <= 1

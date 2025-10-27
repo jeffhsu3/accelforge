@@ -18,7 +18,7 @@ def compute_max(child_caps, caps):
         if buf not in caps:
             caps[buf] = 0
         caps[buf] += c
-        
+
 
 
 def compute_total(child_caps, caps):

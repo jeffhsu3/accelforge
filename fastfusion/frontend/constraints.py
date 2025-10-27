@@ -114,16 +114,16 @@ class Comparison(ParsableModel):
 
 class Tensors(ParsableModel):
     keep: Union[str, InvertibleSet[TensorName], set[TensorName]] = "<Defaults to Nothing>"
-    """ Which tensors must be kept in this unit" """ 
-    
+    """ Which tensors must be kept in this unit" """
+
     may_keep: Union[str, InvertibleSet[TensorName], set[TensorName]] = "<Nothing if keep is defined, else All>"
     """ Which tensors may be kept in this unit, but are not required to be. The mapper
     will explore both keeping and not keeping each tensor. """
-    
+
     tile_shape: ParsableList[Comparison] = []
     """
     The tile shape for each rank variable. This is given as a list of comparisons, where
-    each comparison must evaluate to True for a valid mapping. 
+    each comparison must evaluate to True for a valid mapping.
     """
 
     no_refetch_from_above: Union[str, InvertibleSet[TensorName], set[TensorName]] = (
@@ -149,7 +149,7 @@ class Tensors(ParsableModel):
                 f"Keep and may_keep constraints reference each other: "
                 f"{keep} and {may_keep}"
             )
-            
+
         if may_keep_first:
             may_keep = eval_set_expression(may_keep, symbol_table, "tensors", location)
             symbol_table = copy.copy(symbol_table)

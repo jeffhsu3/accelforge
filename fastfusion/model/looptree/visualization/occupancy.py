@@ -12,4 +12,4 @@ def plot_occupancy_graph(output: IslReuseAnalysisOutput, workload):
         for einsum in workload.einsum_id_to_name()
     }
 
-    
+

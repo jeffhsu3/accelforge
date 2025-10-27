@@ -78,7 +78,7 @@ def run_model(
                 raise ValueError(
                     f"Invalid type for latency: {k}: {type(v)} {str(v).strip()}"
                 )
-        
+
         raise ValueError(
             f"Error calculating latency for {job.einsum_name}. Could not calculate "
             f"a symbolic max of the following latencies:\n\t" + "\n\t".join(
@@ -89,7 +89,7 @@ def run_model(
     actions = gather_actions(reuse, None, use_name=True)
     energy = compute_energy_from_actions(
         spec,
-        actions, 
+        actions,
         overall_latency
     )
 
