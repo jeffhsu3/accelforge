@@ -180,3 +180,8 @@ class ProfilePrint:
         print("\n===== Profiling Results (sorted by total time) =====")
         print(s.getvalue())
         # set_n_parallel_jobs(self.n_jobs)
+
+
+class SVGJupyterRender(str):
+    def _repr_svg_(self):
+        return self
