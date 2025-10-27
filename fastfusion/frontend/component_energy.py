@@ -17,9 +17,11 @@ class Subaction(ParsableModel):
 
 class Action(ParsableModel):
     name: str
+    attributes: ComponentAttributes = ComponentAttributes()
     arguments: ComponentAttributes = ComponentAttributes()
     energy: ParsesTo[Union[int, float]]
     subactions: ParsableList["Subaction"]
+    messages: list[str] = []
 
     @staticmethod
     def from_models(
@@ -120,6 +122,9 @@ class Action(ParsableModel):
             name=action_name,
             subactions=entries,
             energy=energy,
+            arguments=arguments,
+            attributes=attributes,
+            messages=[m for e in entries for m in e.messages],
         )
 
 

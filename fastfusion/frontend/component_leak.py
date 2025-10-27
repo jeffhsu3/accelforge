@@ -9,6 +9,7 @@ from fastfusion.util.basetypes import (
     ParsableDict,
 )
 from hwcomponents import get_leak_power
+from fastfusion.frontend.components import ComponentAttributes
 
 
 class LeakSubcomponent(ParsableModel):
@@ -21,8 +22,10 @@ class LeakSubcomponent(ParsableModel):
 
 class LeakEntry(ParsableModel):
     name: str
+    attributes: ComponentAttributes = ComponentAttributes()
     leak_power: ParsesTo[Union[int, float]]
     subcomponents: ParsableList[LeakSubcomponent]
+    messages: list[str]
 
     @staticmethod
     def from_models(
@@ -118,7 +121,13 @@ class LeakEntry(ParsableModel):
 
         leak_power = sum(subcomponent.leak_power for subcomponent in entries)
         assert name is not None, f"Name is required for LeakEntry"
-        return LeakEntry(name=name, leak_power=leak_power, subcomponents=entries)
+        return LeakEntry(
+            name=name,
+            leak_power=leak_power,
+            subcomponents=entries,
+            attributes=attributes,
+            messages=[m for e in entries for m in e.messages],
+        )
 
 
 class ComponentLeak(ParsableModel):
