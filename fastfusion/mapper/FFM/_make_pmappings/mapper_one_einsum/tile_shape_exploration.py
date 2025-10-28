@@ -1215,9 +1215,10 @@ def _explore_tile_shapes_new(job: "Job"):
             val = [df[key]] if isinstance(df[key], Number) else df[key]
             if any(l < 0 for l in val):
                 raise ValueError(f"Negative latency for {key}: {val}")
-        if 'energy' in key and any(l < 0 for l in df[key]):
+        if 'energy' in key:
             val = [df[key]] if isinstance(df[key], Number) else df[key]
-            raise ValueError(f"Negative energy for {key}: {val}")
+            if any(l < 0 for l in val):
+                raise ValueError(f"Negative energy for {key}: {val}")
 
     # Some initial tile shapes are invalid
     for nloops, n in enumerate(node for node in job.mapping.nodes
