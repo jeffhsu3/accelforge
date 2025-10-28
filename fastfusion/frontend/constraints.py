@@ -142,8 +142,8 @@ class Tensors(ParsableModel):
         if keep == "<Defaults to Nothing>":
             keep = "Nothing"
 
-        keep_first = isinstance(keep, str) and re.findall(r"\bmay_keep\b", keep)
-        may_keep_first = isinstance(may_keep, str) and re.findall(r"\bkeep\b", may_keep)
+        may_keep_first = isinstance(keep, str) and re.findall(r"\bmay_keep\b", keep)
+        keep_first = isinstance(may_keep, str) and re.findall(r"\bkeep\b", may_keep)
         if keep_first and may_keep_first:
             raise ValueError(
                 f"Keep and may_keep constraints reference each other: "
