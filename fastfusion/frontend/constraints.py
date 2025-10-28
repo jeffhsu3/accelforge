@@ -186,7 +186,7 @@ class Iteration(ParsableModel):
 
 class Spatial(Iteration):
     name: str
-    min_utilization: Union[float, str] = 0.0
+    min_utilization: Union[int, float, str] = 0.0
     reuse: Union[str, InvertibleSet[TensorName], set[TensorName]] = "All"
     must_reuse: Union[str, InvertibleSet[TensorName], set[TensorName]] = "Nothing"
 
