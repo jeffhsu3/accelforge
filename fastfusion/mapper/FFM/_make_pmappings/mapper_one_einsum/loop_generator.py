@@ -155,9 +155,8 @@ def insert_temporal_loops(
             if s.persistent:
                 lowering_choices.append((False,))
             # Processing stage. Lowering doesn't matter. Don't lower.
-            if isinstance(s, ProcessingStage):
+            elif isinstance(s, ProcessingStage):
                 lowering_choices.append((False,))
-                continue
             # Previous is backing and there's partially-relevant rank variables. May
             # want to lower to reduce memory footprint, or raise to reduce number of
             # fused loops.
