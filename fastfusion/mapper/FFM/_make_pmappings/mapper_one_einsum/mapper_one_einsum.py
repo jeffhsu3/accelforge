@@ -1,16 +1,14 @@
 import copy
 import math
-from typing import Callable
 import pandas as pd
 from uuid import UUID
+from collections import defaultdict
 
 import sympy
-from fastfusion.frontend.mapping import Iteration, Mapping, Reservation
-from fastfusion.frontend.renames import RankVariableName
+from fastfusion.frontend.mapping import Iteration, Mapping, Spatial, Temporal
 from fastfusion.frontend.workload.workload import EinsumName
 from fastfusion.mapper.FFM._join_pmappings.compatibility import (
     Compatibility,
-    TensorReservation,
 )
 from fastfusion.mapper.FFM._make_pmappings.mapper_one_einsum import (
     tile_shape_exploration,
@@ -44,16 +42,7 @@ from fastfusion.mapper.FFM._pmapping_group.df_convention import (
     is_fused_loop_col,
     is_n_iterations_col,
 )
-from enum import Enum
-
-
-class MappingCountingIncludes(Enum):
-    normal = 0
-    redundant_permutations = 1
-    redundant_permutations_and_irrelevant_loops = 2
-
-
-COUNT_OPTION = MappingCountingIncludes.normal
+from math import comb
 
 
 def shift_reservations_by_null_loop_indices(
@@ -298,77 +287,94 @@ def get_fused_loop_indices(
         return r2
 
 
-def scale_n_pmappings_by_permutations(job: Job, n_pmappings: int) -> int:
-    if COUNT_OPTION == MappingCountingIncludes.normal:
-        return n_pmappings
+def _prime_factorization(M):
+    f = []
+    i = 2
+    while M > 1:
+        if M % i == 0:
+            f.append(i)
+            M //= i
+        else:
+            i += 1
+    return f
 
-    # This changes the pmapping count to include permutations
-    n_loops = []
+
+def _count_factorizations(M, N):
+    if N <= 1:
+        return 1
+    f = _prime_factorization(M)
+    factors = {f2: f.count(f2) for f2 in set(f)}
+    total = 1
+    for exp in factors.values():
+        total *= comb(exp + N - 1, N - 1)  # n choose k
+    return total
+
+
+def _count_loops(job: Job) -> tuple[list[int], list[int], dict[str, int]]:
+    nodes = job.mapping.nodes
+    temporal_n_loops = []
+    spatial_n_loops = []
+    rv_spatial_count = defaultdict(int)
+    rv_temporal_count = defaultdict(int)
     cur_n_loops = 0
-    for node in job.mapping.nodes:
+    spatial_dim = None
+    def pop_loop():
+        nonlocal cur_n_loops
+        if cur_n_loops >= 1:
+            if spatial_dim is not None:
+                spatial_n_loops.append(cur_n_loops)
+            else:
+                temporal_n_loops.append(cur_n_loops)
+        cur_n_loops = 0
+    for node in nodes:
+        cur_spatial_dim = None
+        if isinstance(node, Spatial):
+            cur_spatial_dim = node.name
+            rv_spatial_count[node.rank_variable] += 1
+        if cur_spatial_dim != spatial_dim:
+            pop_loop()
+            spatial_dim = cur_spatial_dim
         if isinstance(node, Iteration):
             cur_n_loops += 1
-        elif isinstance(node, Reservation):
-            if cur_n_loops >= 1:
-                n_loops.append(cur_n_loops)
-            cur_n_loops = 0
-    if cur_n_loops != 0:
-        n_loops.append(cur_n_loops)
+            if isinstance(node, Temporal):
+                rv_temporal_count[node.rank_variable] += 1
+        else:
+            pop_loop()
+    pop_loop()
+    return temporal_n_loops, spatial_n_loops, rv_spatial_count, rv_temporal_count
 
-    rv = {k: v for k, v in job.rank_variable_bounds.items() if v != 1}
 
-    # Count dataplacement choices
-    # return 1
+def multiply_n_pmappings_by_permutations(n_pmappings: int, job: Job) -> int:
+    option = job.spec.mapper.ffm._count_option_for_mapsapce_size_evaluation
+    # if option == "normal":
+    #     return n_pmappings
 
-    # Count dataplacement choices * permutations, assuming that the permutation engine
-    # knows about irrelevant/relevant rank variables.
-    if COUNT_OPTION == MappingCountingIncludes.redundant_permutations:
-        return n_pmappings * math.prod(math.factorial(n) for n in n_loops)
+    temporal_n_loops, spatial_n_loops, rv_spatial_count, rv_temporal_count = _count_loops(job)
 
-    # Count dataplacement choices * permutations, assuming that the permutation engine
-    # does not know about irrelevant/relevant rank variables.
-    #
-    # return math.prod(math.factorial(n) for n in n_loops)
+    rv = {k: v for k, v in job.rank_variable_bounds.items()}
 
-    # Count dataplacement choices * permutations, assuming that the permutation engine
-    # knows about irrelevant/relevant rank variables.
-    if COUNT_OPTION == MappingCountingIncludes.redundant_permutations_and_irrelevant_loops:
-        n_pmappings = math.factorial(len(rv)) ** len(n_loops)
-        return math.factorial(len(rv)) ** len(n_loops)
+    if "non_helpful_tile_shapes" in option:
+        rv_temporal_count = {r: len(temporal_n_loops) for r in rv.keys()}
 
-    raise ValueError(f"Invalid COUNT_OPTION: {COUNT_OPTION}")
+    if "non_helpful_loops_for_permutations" in option:
+        for i in range(len(temporal_n_loops)):
+            temporal_n_loops[i] = len(rv)
 
-    # Count dataplacement choices * index factorization choices, assuming that the
-    # permutation engine does not know about irrelevant/relevant rank variables.
+    # Count number of tile shapes
+    rv2loops = {r: rv_spatial_count[r] + rv_temporal_count[r] for r in rv}
+    n_factorizations = math.prod(_count_factorizations(b, rv2loops[r]) for r, b in rv.items())
+    n_temporal_permutations = math.prod(math.factorial(n) for n in temporal_n_loops)
 
-    from functools import lru_cache
-    from math import comb
-    from collections import Counter
+    n = n_factorizations
 
-    def prime_factorization(M):
-        f = []
-        i = 2
-        while M > 1:
-            if M % i == 0:
-                f.append(i)
-                M //= i
-            else:
-                i += 1
-        return f
+    # assert n >= n_pmappings, f"n_pmappings: {n_pmappings} > n: {n}"
 
-    def count_factorizations(M, N):
-        f = prime_factorization(M)
-        factors = {f2: f.count(f2) for f2 in set(f)}
-        total = 1
-        for exp in factors.values():
-            total *= comb(exp + N - 1, N - 1)  # n choose k
-        return total
+    if "redundant_permutations" in option:
+        n *= n_temporal_permutations
 
-    if len(n_loops) > 1:
-        for b in rv.values():
-            n_pmappings *= count_factorizations(b, len(n_loops) - 1)
+    # assert n >= n_pmappings, f"n_pmappings: {n_pmappings} > n: {n}"
 
-    return n_pmappings
+    return n
 
 
 def assert_all_jobs_have_same_symbols(
@@ -420,7 +426,22 @@ def generate_pmappings_new(
         # This changes the pmapping count to include superfluous permutations
         # TODO: Add a multiplier for the permutations that we include in the fusion
         # piece, which are NOT known to be superfluous
-        # job.total_pmappings = scale_n_pmappings_by_permutations(job, job.total_pmappings)
+
+        # prev = job.spec.mapper.ffm._count_option_for_mapsapce_size_evaluation
+        # job.spec.mapper.ffm._count_option_for_mapsapce_size_evaluation = "redundant_permutations_and_irrelevant_loops"
+        # a = multiply_n_pmappings_by_permutations(job.total_pmappings, job)
+        # job.spec.mapper.ffm._count_option_for_mapsapce_size_evaluation = "redundant_permutations"
+        # b = multiply_n_pmappings_by_permutations(job.total_pmappings, job)
+
+        # if a < b:
+        #     job.spec.mapper.ffm._count_option_for_mapsapce_size_evaluation = "redundant_permutations_and_irrelevant_loops"
+        #     a = multiply_n_pmappings_by_permutations(job.total_pmappings, job)
+        #     job.spec.mapper.ffm._count_option_for_mapsapce_size_evaluation = "redundant_permutations"
+        #     b = multiply_n_pmappings_by_permutations(job.total_pmappings, job)
+        #     assert False
+
+        # job.spec.mapper.ffm._count_option_for_mapsapce_size_evaluation = prev
+        job.total_pmappings = multiply_n_pmappings_by_permutations(job.total_pmappings, job)
 
         result[MAPPING_COLUMN] = job.job_id
         cols_to_drop = []
@@ -475,7 +496,7 @@ def generate_pmappings_new(
     job0 = next(iter(jobs_with_similar_compatibilities))
 
     # Pareto prune
-    df = makepareto(df, split_by_cols=fused_loop_cols)
+    df = makepareto(df, split_by_cols=fused_loop_cols).copy()
 
     jobs_passed_pareto = sorted(df[f"{einsum_name}<SEP>{MAPPING_COLUMN}"].unique())
     pmapping_objects = {
@@ -562,6 +583,12 @@ def generate_pmappings_new(
         )
         sim = SIM(compatibility, partial_mappings)
         sims.append(sim)
+
+    # Significant amount of time is spent pickling these objects
+    for job in jobs_with_similar_compatibilities:
+        job.spec = None
+        job.mapping = None
+        job.flattened_arch = None
 
     return einsum_name, sims, pmapping_objects, jobs_with_similar_compatibilities
 

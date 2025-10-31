@@ -1,8 +1,9 @@
 from functools import lru_cache
-from math import ceil, prod
+from math import ceil, log2, prod
 import copy
 import re
 import resource
+import time
 from typing import Callable, Optional, Union
 from sympy import Expr, Symbol, lambdify
 from fastfusion import util
@@ -45,7 +46,8 @@ from fastfusion.mapper.FFM._make_pmappings.mapper_one_einsum.symbol_value_relati
 )
 from fastfusion.util.sympy.broadcast_max import Max
 
-DUMMY_TILE_SHAPE_EXPLORATION = False
+
+IMPERFECT = False
 
 
 def run_model(
@@ -624,6 +626,18 @@ def coalesce_symbols(
     return symbol2goal
 
 
+def paretoset_dirty(choices: np.ndarray, objectives: list[Objective]):
+    # TODO: Play with the log2 function. Try different log bases and powers to find
+    # which one is empirically fastest.
+    # TODO: imperfect with this?
+    permuted = np.random.permutation(np.arange(choices.shape[0]))
+    groups = np.array_split(choices[permuted], int(log2(choices.shape[0])))
+    found = []
+    for group in groups:
+        found.append(paretoset.paretoset(group, objectives))
+    return np.concatenate(found)[permuted]
+
+
 def get_tile_shape_choices(
     objectives: list[Objective],
     symbols: list[Symbol],
@@ -643,7 +657,7 @@ def get_tile_shape_choices(
 
     symbols_remaining = list(symbols)
 
-    imperfect = False
+    imperfect = IMPERFECT
 
     paretoed_by = []
 
@@ -851,7 +865,7 @@ def get_tile_shape_choices(
 
         prev_size = choices_enumerated.shape[0] if choices_enumerated is not None else 1
         choices_enumerated = np.concatenate(choices, axis=0)
-        job.total_pmappings *= choices_enumerated.shape[0] / prev_size
+        job.total_pmappings *= choices_enumerated.shape[0] / max(1, prev_size)
         symbols_enumerated.append(symbol)
         log_message("enumerate", f"{symbol}", f"size={choices_enumerated.shape[0]}")
 
@@ -868,7 +882,7 @@ def get_tile_shape_choices(
         )
         job.log_porp_pmappings_kept(
             f"max_fused_loops_per_rank_variable",
-            choices_enumerated.shape[0] / prev_size,
+            choices_enumerated.shape[0] / max(1, prev_size),
         )
         log_message(
             "max_fused_loops_per_rank_variable", f"size={choices_enumerated.shape[0]}"
@@ -907,6 +921,10 @@ def get_tile_shape_choices(
 
         symbols_non_enumerated_set = set(symbols) - set(symbols_enumerated)
         sym_enumerated_set = set(symbols_enumerated)
+
+        if job.spec.mapper.ffm._count_option_for_mapsapce_size_evaluation != ():
+            choices_enumerated = choices_enumerated[:1, :]
+            continue
 
         choices_enumerated_float = choices_enumerated.astype(util.NUMPY_FLOAT_TYPE)
 
@@ -979,10 +997,6 @@ def get_tile_shape_choices(
             for symbol, goal in goals.items():
                 update_symbol2goal(symbol, goal)
 
-        if DUMMY_TILE_SHAPE_EXPLORATION:
-            choices_enumerated = choices_enumerated[:1, :]
-            continue
-
         job.evaluated_pmappings += choices_enumerated.shape[0]
         if not choices_enumerated.shape[0]:
             return np.array([]).reshape(-1, len(symbols))
@@ -1045,7 +1059,7 @@ def get_tile_shape_choices(
             to_pareto = to_pareto[
                 :, [i for i in range(to_pareto.shape[1]) if i not in drop_cols]
             ]
-            keep = paretoset.paretoset(to_pareto, pareto_goals)
+            keep = paretoset_dirty(to_pareto, pareto_goals)
             prev_size = choices_enumerated.shape[0]
             choices_enumerated = choices_enumerated[keep]
             job.log_porp_pmappings_kept(
@@ -1114,7 +1128,9 @@ def _explore_tile_shapes_new(job: "Job"):
     constraints = job.constraints
     constraints.set_loop_indices(pmapping.nodes)
     set_last_tile_shape_to_one(pmapping)
+    t0 = time.time()
     symbols, symbolic_df, per_memory_usage_df, utilization_df = run_model(job)
+    model_time = time.time() - t0
     shape = get_rank_variable_bounds(job.spec.workload, pmapping.nodes[-1].einsum)
     what_tiles_symbol = SymbolValueRelations.from_pmapping_and_shape(
         pmapping, shape, job.spec.workload
@@ -1205,10 +1221,14 @@ def _explore_tile_shapes_new(job: "Job"):
         raise
 
     choices_float = choices_enumerated.astype(util.NUMPY_FLOAT_TYPE)
+    # choices_float = np.tile(choices_float, (1000000, 1))
+    # choices_enumerated = np.tile(choices_enumerated, (1000000, 1))
 
     df = {}
     for i, symbol in enumerate(symbols):
         df[symbol.name] = choices_enumerated[:, i]
+
+    t0 = time.time()
     for key in compiled_df:
         df[key] = compiled_df[key](*choices_float.T)
         if 'latency' in key and 'first_latency' not in key:
@@ -1219,6 +1239,9 @@ def _explore_tile_shapes_new(job: "Job"):
             val = [df[key]] if isinstance(df[key], Number) else df[key]
             if any(l < 0 for l in val):
                 raise ValueError(f"Negative energy for {key}: {val}")
+    df_time = time.time() - t0
+    n_pmappings = choices_enumerated.shape[0]
+    # print(f"Model time: {model_time:.2f}s, ratio: {model_time * n_pmappings / df_time:.2f} for {n_pmappings} pmappings")
 
     # Some initial tile shapes are invalid
     for nloops, n in enumerate(node for node in job.mapping.nodes

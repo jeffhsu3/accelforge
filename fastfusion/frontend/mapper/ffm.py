@@ -1,4 +1,4 @@
-from typing import Any, Annotated
+from typing import Any, Annotated, Literal
 
 from fastfusion.frontend.mapper.metrics import Metrics
 from fastfusion.util.basetypes import ParsableModel
@@ -58,3 +58,10 @@ class FFM(ParsableModel):
     generated, the mapper will stop generating more. This is useful for debugging (why
     are so many templates being generated?).
     """
+
+    _count_option_for_mapsapce_size_evaluation: tuple[Literal[
+        "redundant_permutations",
+        "non_helpful_loops_for_permutations",
+        "non_helpful_tile_shapes",
+        "redundant_dataplacements",
+    ]] = ()

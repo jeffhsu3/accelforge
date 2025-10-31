@@ -16,7 +16,7 @@ for BATCH_SIZE in [4, 16, 64]:
             print(f'=' * 100)
 
         spec = ff.Spec.from_yaml(
-            "arches/tpu_v4i_like.yaml",
+            "arches/tpu_v4i_like.arch.yaml",
             # "arches/tpu_v4i_like_constrained.yaml",
             # "arches/simple.arch.yaml",
             "workloads/gpt3_6.7B.yaml",

@@ -194,7 +194,7 @@ def make_compatibility(
 
 @dataclass
 class Job:
-    spec: Specification
+    spec: Specification | None
     metrics: Metrics
     rank_variable_bounds: dict[RankVariableName, int]
 

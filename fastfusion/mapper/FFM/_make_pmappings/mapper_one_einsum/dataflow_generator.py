@@ -238,15 +238,16 @@ def valid_tensor_holder_order(
             # If a tensor is stored in two levels back-to-back, then we should have
             # bypassed the outer TensorHolder if possible.
             either_backing = m0._backing & m1._backing
-            if i == j or i == j - 1:
-                if s1_idx < s2_idx and not (
-                    (set(m0._must_keep_tensors) & set(m1.tensors)) or either_backing
-                ):
-                    return False
-                if s2_idx < s1_idx and not (
-                    (set(m1._must_keep_tensors) & set(m0.tensors)) or either_backing
-                ):
-                    return False
+            if "redundant_dataplacements" not in spec.mapper.ffm._count_option_for_mapsapce_size_evaluation:
+                if i == j or i == j - 1:
+                    if s1_idx < s2_idx and not (
+                        (set(m0._must_keep_tensors) & set(m1.tensors)) or either_backing
+                    ):
+                        return False
+                    if s2_idx < s1_idx and not (
+                        (set(m1._must_keep_tensors) & set(m0.tensors)) or either_backing
+                    ):
+                        return False
 
     for i, m0 in enumerate(mapping):
         for j, m1 in enumerate(mapping[i:]):
