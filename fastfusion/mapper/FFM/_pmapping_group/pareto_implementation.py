@@ -184,7 +184,7 @@ def pareto_front_cupy_blockwise_sorted_recursive(X, block_size=2000):
 #         return mappings[mask]
 
 
-TOLERANCE = 0.00
+TOLERANCE = 0.0
 
 
 def logify(x: pd.Series) -> pd.Series:
@@ -246,6 +246,38 @@ def makepareto(
         return mappings.iloc[0:1]
 
     return mappings[paretoset(pd.concat(to_pareto, axis=1), sense=goals)]
+
+    f = pd.concat(to_pareto, axis=1)
+    x = list(f.groupby([c for c, d in zip(pareto_cols, goals) if d == "diff"]))
+    print(x)
+
+
+def makepareto_numpy(
+    mappings: np.ndarray,
+    goals: list[str],
+) -> pd.DataFrame:
+
+    to_pareto = []
+    pareto_cols = []
+    new_goals = []
+    assert len(goals) == mappings.shape[1]
+    for c in range(mappings.shape[1]):
+        if len(np.unique(mappings[:, c])) <= 1:
+            continue
+
+        if goals[c] in ["min", "max"]:
+            to_pareto.append(logify(mappings[:, c].reshape((-1, 1))))
+            pareto_cols.append(c)
+            new_goals.append("min")
+        elif goals[c] == "diff":
+            to_pareto.append(mappings[:, c].reshape((-1, 1)))
+            pareto_cols.append(c)
+            new_goals.append("diff")
+
+    if not to_pareto:
+        return mappings[:1]
+
+    return paretoset(np.concatenate(to_pareto, axis=1), sense=new_goals)
 
     f = pd.concat(to_pareto, axis=1)
     x = list(f.groupby([c for c, d in zip(pareto_cols, goals) if d == "diff"]))

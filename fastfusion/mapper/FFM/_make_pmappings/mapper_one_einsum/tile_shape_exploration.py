@@ -634,8 +634,9 @@ def paretoset_dirty(choices: np.ndarray, objectives: list[Objective]):
     groups = np.array_split(choices[permuted], int(log2(choices.shape[0])))
     found = []
     for group in groups:
-        found.append(paretoset.paretoset(group, objectives))
-    return np.concatenate(found)[permuted]
+        # found.append(paretoset.paretoset(group, objectives))
+        found.append(makepareto_numpy(group, objectives))
+    return np.concatenate(found)[np.argsort(permuted)]
 
 
 def get_tile_shape_choices(
