@@ -1,9 +1,11 @@
+import functools
 import time
 
 import pandas as pd
 
 from paretoset import paretoset
 from joblib import delayed
+from sympy import factorint
 
 from fastfusion.accelerated_imports import np
 from fastfusion.util.util import parallel
@@ -252,13 +254,36 @@ def makepareto(
     print(x)
 
 
+@functools.lru_cache(maxsize=10000)
+def _factorint_cached(x: int):
+    return factorint(x)
+
+
+def prime_factor_counts(arr: np.ndarray) -> np.ndarray:
+    arr = np.asarray(arr, dtype=int)
+    unique_vals = np.unique(arr)
+    factorizations = {x: _factorint_cached(x) for x in unique_vals}
+
+    # Gather all unique primes
+    all_primes = sorted({p for f in factorizations.values() for p in f})
+
+    # Build result matrix
+    result = np.zeros((len(arr), len(all_primes)), dtype=int)
+    prime_index = {p: j for j, p in enumerate(all_primes)}
+
+    for i, x in enumerate(arr):
+        for p, exp in factorizations[x].items():
+            result[i, prime_index[p]] = exp
+
+    return result
+
+
 def makepareto_numpy(
     mappings: np.ndarray,
     goals: list[str],
 ) -> pd.DataFrame:
 
     to_pareto = []
-    pareto_cols = []
     new_goals = []
     assert len(goals) == mappings.shape[1]
     for c in range(mappings.shape[1]):
@@ -267,18 +292,21 @@ def makepareto_numpy(
 
         if goals[c] in ["min", "max"]:
             to_pareto.append(logify(mappings[:, c].reshape((-1, 1))))
-            pareto_cols.append(c)
             new_goals.append("min")
         elif goals[c] == "diff":
             to_pareto.append(mappings[:, c].reshape((-1, 1)))
-            pareto_cols.append(c)
             new_goals.append("diff")
+        elif goals[c] == "min_per_prime_factor":
+            # to_pareto.append(mappings[:, c].reshape((-1, 1)))
+            # new_goals.append("diff")
+            # continue
+
+            counts = prime_factor_counts(mappings[:, c])
+            for i in range(counts.shape[1]):
+                to_pareto.append(counts[:, i].reshape((-1, 1)))
+                new_goals.append("min")
 
     if not to_pareto:
         return mappings[:1]
 
     return paretoset(np.concatenate(to_pareto, axis=1), sense=new_goals)
-
-    f = pd.concat(to_pareto, axis=1)
-    x = list(f.groupby([c for c, d in zip(pareto_cols, goals) if d == "diff"]))
-    print(x)

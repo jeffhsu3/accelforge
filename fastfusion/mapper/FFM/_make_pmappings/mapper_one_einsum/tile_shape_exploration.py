@@ -50,17 +50,6 @@ from fastfusion.mapper.FFM._make_pmappings.mapper_one_einsum.symbol_value_relati
 from fastfusion.util.sympy.broadcast_max import Max
 
 
-TILE_SHAPE_ORDER = "inner_to_outer"
-# TILE_SHAPE_ORDER = "outer_to_inner"
-
-# For imperfect, we make inner tile shapes, then create outer tile shapes that are
-# multiples of the non-residual part of the inner tile shape. This way, the very last
-# iteration of the outer tile shape fully contains the reisudal part of the inner tile
-# shape, and we don't have any cases where there are residuals stacking across multiple
-# loop levels.
-if IMPERFECT:
-    assert TILE_SHAPE_ORDER == "inner_to_outer"
-
 class ComparisonResult(Enum):
     GREATER_THAN_ZERO = "greater_than_zero"
     LESS_THAN_ZERO = "less_than_zero"
@@ -69,24 +58,28 @@ class ComparisonResult(Enum):
 
 
 @lru_cache(maxsize=10000)
-def diff_geq_leq_than_zero(f: Expr, s: Symbol):
+def diff_geq_leq_than_zero(f: Expr, s: Symbol, bounds: tuple[tuple[Symbol, int, int], ...]):
     # Assume ceiling won't affect the sign of the derivative. Changing from positive to
     # zero or negative to zero is OK and does not count as changing the sign.
     f = f.replace(
         lambda expr: expr.is_Function and expr.func == sympy.ceiling,
         lambda expr: expr.args[0]
     )
-    return geq_leq_than_zero(sympy.diff(f, s))
-
+    return geq_leq_than_zero(sympy.diff(f, s), bounds)
 
 @lru_cache(maxsize=10000)
-def geq_leq_than_zero(f: Expr):
+def frange(f: Expr, s: Symbol, lo: int, hi: int):
+    return sympy.calculus.util.function_range(f, s, domain=sympy.Interval(lo, hi))
+
+@lru_cache(maxsize=10000)
+def geq_leq_than_zero(f: Expr, bounds: tuple[tuple[Symbol, int, int], ...]):
     # Assume ceiling won't affect the sign. Changing from positive to zero or negative
     # to zero is OK and does not count as changing the sign.
     f = f.replace(
         lambda expr: expr.is_Function and expr.func == sympy.ceiling,
         lambda expr: expr.args[0]
     )
+
     try:
         if f == 0:
             return ComparisonResult.EQUAL_TO_ZERO
@@ -94,8 +87,61 @@ def geq_leq_than_zero(f: Expr):
             return ComparisonResult.GREATER_THAN_ZERO
         if f <= 0:
             return ComparisonResult.LESS_THAN_ZERO
-    except (TypeError, ValueError):
+    except TypeError:
         pass
+
+    lt_zero = False
+    gt_zero = False
+
+    functions = [f]
+    for s, lo, hi in bounds:
+        if len(functions) >= 64:  # Starts getting slow if we have too many functions
+            break
+        if s not in f.free_symbols:
+            continue
+        new_functions = []
+        for f in functions:
+            try:
+                if f < 0:
+                    lt_zero = True
+                    continue
+                if f > 0:
+                    gt_zero = True
+                    continue
+                if f == 0:
+                    continue
+            except TypeError:
+                pass
+            try:
+                cur_f = frange(f, s, lo, hi)
+            except NotImplementedError:
+                return ComparisonResult.UNKNOWN
+            if isinstance(cur_f, sympy.FiniteSet):
+                new_functions.extend(cur_f)
+            elif cur_f.left == cur_f.right:
+                new_functions.append(cur_f.left)
+            else:
+                new_functions.extend((cur_f.left, cur_f.right))
+        functions = new_functions
+
+        new_functions = []
+        for f in functions:
+            if isinstance(f, (sympy.Min, sympy.Max)):
+                new_functions.extend(f.args)
+            else:
+                new_functions.append(f)
+        functions = new_functions
+
+        try:
+            if all(f2 == 0 for f2 in functions) and not lt_zero and not gt_zero:
+                return ComparisonResult.EQUAL_TO_ZERO
+            if all(f2 >= 0 for f2 in functions) and not lt_zero:
+                return ComparisonResult.GREATER_THAN_ZERO
+            if all(f2 <= 0 for f2 in functions) and not gt_zero:
+                return ComparisonResult.LESS_THAN_ZERO
+        except TypeError:
+            pass
+
     return ComparisonResult.UNKNOWN
 
 
@@ -234,12 +280,23 @@ def compile_dict(symbols, dictionary):
 
 
 class Goal:
+    """
+    X subset Y means that Y will block pruning for all cases that X will block pruning.
+
+    - min is a subset of min_per_prime_factor is a subset of diff
+    - max is a subset of diff
+
+    If we're combining goals and they disagree, use the larger space.
+    """
+
     def __init__(
         self,
         goal: str = None,
         max_value: Optional[float] = None,
         only_care_if_valid: bool = False,
     ):
+        if goal == "min_per_prime_factor" and IMPERFECT:
+            goal = "min"
         self.goal = goal
         self.max_value = max_value
         self.only_care_if_valid = only_care_if_valid
@@ -253,9 +310,17 @@ class Goal:
         assert self.only_care_if_valid == other.only_care_if_valid
         mv = self.max_value
         care = self.only_care_if_valid or other.only_care_if_valid
+
+        # If the goals are the same, space doesn't change
         if self.goal == other.goal:
             return Goal(self.goal, max_value=mv, only_care_if_valid=care)
-        return Goal("diff", only_care_if_valid=care)
+
+        # min_per_prime_factor is a superset of min, so we can just keep the min_per_prime_factor goal
+        if self.goal == "min_per_prime_factor" and other.goal == "min":
+            return Goal("min_per_prime_factor", max_value=mv, only_care_if_valid=care)
+
+        # Otherwise, there's a disagreement and the only space we're both in can be diff
+        return Goal("diff", max_value=mv, only_care_if_valid=care)
 
     def __str__(self):
         return f"{self.goal} {self.max_value} {self.only_care_if_valid}"
@@ -268,6 +333,8 @@ class Goal:
             return Goal("max", self.max_value, self.only_care_if_valid)
         elif self.goal == "max":
             return Goal("min", self.max_value, self.only_care_if_valid)
+        elif self.goal == "min_per_prime_factor":
+            raise ValueError("Can't invert min_per_prime_factor")
         else:
             return copy.copy(self)
 
@@ -310,12 +377,12 @@ def is_constant(f: Expr) -> bool:
 
 
 @lru_cache(maxsize=10000)
-def _try_replace_single_term(t: Expr, symbols_enumerated: fzs[Symbol]):
+def _try_replace_single_term(t: Expr, symbols_enumerated: fzs[Symbol], bounds: tuple[tuple[Symbol, int, int], ...]):
     goal = None
     if len(t.free_symbols & symbols_enumerated) == 1:
         s = next(iter(t.free_symbols & symbols_enumerated))
         try:
-            diff_result = diff_geq_leq_than_zero(t, s)
+            diff_result = diff_geq_leq_than_zero(t, s, bounds)
             if diff_result == ComparisonResult.GREATER_THAN_ZERO:
                 goal = Goal("min")
             elif diff_result == ComparisonResult.LESS_THAN_ZERO:
@@ -333,6 +400,7 @@ def _try_replace_single_term(t: Expr, symbols_enumerated: fzs[Symbol]):
 def _partition_formula(
     f: Expr,
     symbols_enumerated: set[Symbol],
+    bounds: tuple[tuple[Symbol, int, int], ...],
 ) -> dict[Symbol, Goal]:
     goals: dict[Symbol, Goal] = {}
 
@@ -349,7 +417,7 @@ def _partition_formula(
             if s in symbols_enumerated:
                 continue
             try:
-                diff_result = diff_geq_leq_than_zero(t, s)
+                diff_result = diff_geq_leq_than_zero(t, s, bounds)
                 # Won't change the derivative sign, so we can just replace it with 1.
                 if diff_result != ComparisonResult.UNKNOWN:
                     t = t.subs(s, 1)
@@ -380,7 +448,7 @@ def _partition_formula(
         # - For non-constant factors, if they're >1 then we can keep the max.
         #   Otherwise we have to drop it.
         for t in f.args:
-            geq_result = geq_leq_than_zero(t)
+            geq_result = geq_leq_than_zero(t, bounds)
             if geq_result == ComparisonResult.LESS_THAN_ZERO:
                 negate = not negate
             elif geq_result == ComparisonResult.UNKNOWN:
@@ -390,7 +458,7 @@ def _partition_formula(
         terms = [_try_replace_unknowns(f)]
 
     for term in terms:
-        term, goal = _try_replace_single_term(term, fzs(symbols_enumerated))
+        term, goal = _try_replace_single_term(term, fzs(symbols_enumerated), bounds)
         if goal is not None:
             update_goal(term, goal.goal)
             continue
@@ -409,7 +477,7 @@ def _partition_formula(
             for symbol in term.free_symbols:
                 update_goal(symbol, "diff")
         else:
-            for subterm, subgoal in partition_formula(term, symbols_enumerated).items():
+            for subterm, subgoal in partition_formula(term, symbols_enumerated, bounds).items():
                 goals[subterm] = subgoal | goals.get(subterm, Goal())
 
     for k, v in goals.items():
@@ -424,8 +492,9 @@ def _partition_formula(
 def partition_formula(
     f: Expr,
     symbols_enumerated: set[Symbol],
+    bounds: tuple[tuple[Symbol, int, int], ...],
 ) -> dict[Symbol, Goal]:
-    return _partition_formula(f, fzs(symbols_enumerated & f.free_symbols))
+    return _partition_formula(f, fzs(symbols_enumerated & f.free_symbols), bounds)
 
 
 def get_possible_factor_sizes(n: int, imperfect: bool = False) -> list[int]:
@@ -468,7 +537,7 @@ def get_padded_choices(
     for symbol in symbols_non_enumerated_set:
         choices_padded[symbol] = ones
         if minimize_formula is not None:
-            diff_result = diff_geq_leq_than_zero(minimize_formula, symbol)
+            diff_result = diff_geq_leq_than_zero(minimize_formula, symbol, what_tiles_symbol.bounds)
             if diff_result == ComparisonResult.LESS_THAN_ZERO:
                 choices_padded[symbol] = ones * what_tiles_symbol.get_max_size(symbol)
             elif diff_result == ComparisonResult.GREATER_THAN_ZERO:
@@ -476,7 +545,7 @@ def get_padded_choices(
             elif diff_result == ComparisonResult.EQUAL_TO_ZERO:
                 pass
             else:
-                diff_geq_leq_than_zero(minimize_formula, symbol)
+                diff_geq_leq_than_zero(minimize_formula, symbol, what_tiles_symbol.bounds)
                 raise ValueError(f"Can't tell if {symbol} is increasing or decreasing")
 
     return choices_padded
@@ -531,6 +600,7 @@ def coalesce_symbols(
     symbols_enumerated: list[Symbol],
     symbol2goal: dict[Symbol, Goal],
     log_message: Callable,
+    bounds: tuple[tuple[Symbol, int, int], ...],
 ):
     sym_enumerated_set = set(symbols_enumerated)
     new_symbol2goal = {}
@@ -594,7 +664,7 @@ def coalesce_symbols(
                     goal_str = "diff"
 
                 try:
-                    diff_result = diff_geq_leq_than_zero(formula, s)
+                    diff_result = diff_geq_leq_than_zero(formula, s, bounds)
                     # If this symbol doesn't change the derivative sign & we can't
                     # compare it, then don't include it here.
                     if diff_result != ComparisonResult.UNKNOWN and goal_str == "diff":
@@ -609,7 +679,7 @@ def coalesce_symbols(
             # just the symbol.
             if len(formula.free_symbols & sym_enumerated_set) == 1:
                 formula, new_goal = _try_replace_single_term(
-                    formula, fzs(symbols_enumerated)
+                    formula, fzs(symbols_enumerated), bounds
                 )
                 if new_goal is not None:
                     log_message("coalesce symbols", f"replacing single term: {formula}")
@@ -631,7 +701,7 @@ def coalesce_symbols(
 
             # If a symbol does not affect the formula, we can remove it
             for s in formula.free_symbols:
-                diff_result = diff_geq_leq_than_zero(formula, s)
+                diff_result = diff_geq_leq_than_zero(formula, s, bounds)
                 if diff_result == ComparisonResult.EQUAL_TO_ZERO:
                     formula = formula.subs(s, 1)
                     log_message("coalesce symbols", f"dropping symbol {s}: {formula}")
@@ -642,21 +712,16 @@ def coalesce_symbols(
             for s in formula.free_symbols:
                 g = latest(s).goal if s in latest() else None
                 if g in ["min", "max"]:
-                    try:
-                        diff_result = diff_geq_leq_than_zero(formula, s)
-                        if diff_result == ComparisonResult.LESS_THAN_ZERO:
-                            this_goal = (~goal).goal
-                        elif diff_result == ComparisonResult.GREATER_THAN_ZERO:
-                            this_goal = (~goal).goal
-                        elif diff_result == ComparisonResult.UNKNOWN:
-                            raise TypeError  # Can't tell if increasing or decreasing
-
-                        if g != this_goal:
-                            disagrees.append(s)
-                        continue
-
-                    except TypeError:
-                        diffed = None
+                    diff_result = diff_geq_leq_than_zero(formula, s, bounds)
+                    if diff_result == ComparisonResult.LESS_THAN_ZERO:
+                        this_goal = (~goal).goal
+                    elif diff_result == ComparisonResult.GREATER_THAN_ZERO:
+                        this_goal = (goal).goal
+                    elif diff_result == ComparisonResult.UNKNOWN:
+                        break
+                    if g != this_goal:
+                        disagrees.append(s)
+                    continue
                 break
             else:
                 # We didn't break! This formula agrees with all other goals, so we can
@@ -683,26 +748,6 @@ def coalesce_symbols(
 
     return symbol2goal
 
-
-def paretoset_dirty(choices: np.ndarray, objectives: list[str]):
-    # TODO: Play with the log2 function. Try different log bases and powers to find
-    # which one is empirically fastest.
-    # TODO: imperfect with this?
-
-    if all(o == "diff" for o in objectives):
-        return np.ones(choices.shape[0], dtype=bool)
-
-    return makepareto_numpy(choices, objectives)
-
-    permuted = np.random.permutation(np.arange(choices.shape[0]))
-    groups = np.array_split(choices[permuted], int(log2(choices.shape[0])))
-    found = []
-    for group in groups:
-        # found.append(paretoset.paretoset(group, objectives))
-        found.append(makepareto_numpy(group, objectives))
-    return np.concatenate(found)[np.argsort(permuted)]
-
-
 def get_tile_shape_choices(
     objectives: list[Objective],
     symbols: list[Symbol],
@@ -723,6 +768,20 @@ def get_tile_shape_choices(
     symbols_remaining = list(symbols)
 
     imperfect = IMPERFECT
+
+    # Inner to outer faster if there's symbols to keep because those symbols end up in
+    # the outer loops, so it does those symbols (which end up multiplying our choices)
+    # last. Outer to inner is faster if there's no symbols to keep because that's what
+    # happened on exactly one workload that Tanner tested.
+    TILE_SHAPE_ORDER = "inner_to_outer" if keep_symbols else "outer_to_inner"
+
+    # For imperfect, we make inner tile shapes, then create outer tile shapes that are
+    # multiples of the non-residual part of the inner tile shape. This way, the very last
+    # iteration of the outer tile shape fully contains the reisudal part of the inner tile
+    # shape, and we don't have any cases where there are residuals stacking across multiple
+    # loop levels.
+    if IMPERFECT:
+        assert TILE_SHAPE_ORDER == "inner_to_outer"
 
     paretoed_by = []
 
@@ -767,19 +826,50 @@ def get_tile_shape_choices(
         )
 
     def grab_symbol(prev_symbol: Symbol = None):
-        # Continue with a symbol representing the parent tile of the last symbol
-        # if possible. Otherwise (see return), just grab any symbol.
-        choice = what_tiles_symbol.get_outer_tiles(prev_symbol, none_if_fail=True)
-        if choice is not None and choice in symbols_remaining:
-            symbols_remaining.remove(choice)
-            return choice
-
         # TODO: Maybe start with a symbol that would result in more pruning up front?
         # Maximize the # of choices that can be resolved easily
         if TILE_SHAPE_ORDER == "inner_to_outer":
-            return symbols_remaining.pop()
+            # Continue with a symbol representing the parent tile of the last symbol
+            # if possible. Otherwise (see return), just grab any symbol.
+            choice = what_tiles_symbol.get_outer_tiles(prev_symbol, none_if_fail=True)
+            if choice is not None and choice in symbols_remaining:
+                symbols_remaining.remove(choice)
+                return choice
+            # Pick a symbol that has:
+            # - Nobody tiling it
+            # - The smallest maximum size
+            strides = [s for s in symbols_remaining if what_tiles_symbol.is_stride(s)]
+            choice = -1
+            if strides:
+                max_size = what_tiles_symbol.get_max_size(strides[choice])
+                for i, s in enumerate(strides):
+                    if what_tiles_symbol.get_inner_tiles(s, none_if_fail=True) is None:
+                        if what_tiles_symbol.get_max_size(s) < max_size:
+                            choice = i
+                            max_size = what_tiles_symbol.get_max_size(s)
+                choice = symbols_remaining.index(strides[choice])
+            return symbols_remaining.pop(choice)
         elif TILE_SHAPE_ORDER == "outer_to_inner":
-            return symbols_remaining.pop(0)
+            # Continue with a symbol representing the child tile of the last symbol
+            # if possible. Otherwise (see return), just grab any symbol.
+            choice = what_tiles_symbol.get_inner_tiles(prev_symbol, none_if_fail=True)
+            if choice is not None and choice in symbols_remaining:
+                symbols_remaining.remove(choice)
+                return choice
+            # Pick a symbol that has:
+            # - Tiles nobody
+            # - The smallest maximum size
+            strides = [s for s in symbols_remaining if what_tiles_symbol.is_stride(s)]
+            choice = 0
+            if strides:
+                max_size = what_tiles_symbol.get_max_size(strides[choice])
+                for i, s in enumerate(strides):
+                    if what_tiles_symbol.get_outer_tiles(s, none_if_fail=True) is None:
+                        if what_tiles_symbol.get_max_size(s) < max_size:
+                            choice = i
+                            max_size = what_tiles_symbol.get_max_size(s)
+                choice = symbols_remaining.index(strides[choice])
+            return symbols_remaining.pop(choice)
         else:
             raise RuntimeError(f"BUG: invalid TILE_SHAPE_ORDER: {TILE_SHAPE_ORDER}")
 
@@ -974,16 +1064,31 @@ def get_tile_shape_choices(
         # to track this loop. Minimize it if we're imperfect (giving the outer the most
         # choices possible), or diff if we're perfect (since perfect constrains choices
         # so we can't just min).
+
+        # NOTE: Tanner tried for a long time to get min_per_prime_factor to be faster, but it
+        # didn't work. What it would do is say that if one choice for an inner loop has
+        # used up fewer of every prime factor than another choice, then the latter would
+        # give a superset of options for outer loops. Intuitively, we could enable more
+        # pruning by doing this instead of "diff", which is overconservative. Likewise,
+        # we could do "min" for imperfect instead of "diff". However, this ultimately
+        # made things slower because it didn't get much Pareto pruning, but caused many
+        # more Pareto comparisons ("diff" partitioning into N partitions --> N^2
+        # improvement). I hypothesize that the reason that it doesn't improve pruning
+        # much is that when we've enumerated a loop but not the loop above it, the given
+        # loop is almost always trading off tile shape for accesses, leading to no point
+        # being dominated by another point.
+
         for s in symbols_enumerated:
             tiles = what_tiles_symbol.get_outer_tiles(s, none_if_fail=True)
             if isinstance(tiles, Symbol) and tiles not in symbols_enumerated:
-                update_symbol2goal(s, Goal("min" if imperfect else "diff"))
+                # update_symbol2goal(s, Goal("min_per_prime_factor"))
+                update_symbol2goal(s, Goal("diff"))
 
         # Same for inner loops depending on us, but maximize if we're imperfect
         for s in symbols_enumerated:
             tiled_by = what_tiles_symbol.get_inner_tiles(s, none_if_fail=True)
             if isinstance(tiled_by, Symbol) and tiled_by not in symbols_enumerated:
-                update_symbol2goal(tiled_by, Goal("max" if imperfect else "diff"))
+                update_symbol2goal(s, Goal("diff"))
 
         # If we need to keep this symbol, must preserve all choices for it
         for s in set(symbols_enumerated) & set(keep_symbols):
@@ -1002,9 +1107,9 @@ def get_tile_shape_choices(
         # Create functions to Pareto using objectives
         # ==============================================================================
         for objective in list(objectives):
-            goals = partition_formula(objective.formula, sym_enumerated_set)
+            goals = partition_formula(objective.formula, sym_enumerated_set, what_tiles_symbol.bounds)
             if any(g.goal == "diff" for g in goals.values()):
-                goals2 = partition_formula(sympy.expand(objective.formula), sym_enumerated_set)
+                goals2 = partition_formula(sympy.expand(objective.formula), sym_enumerated_set, what_tiles_symbol.bounds)
                 goals = min(
                     (goals, goals2),
                     key=lambda x: sum(g.goal == "diff" for g in x.values())
@@ -1090,6 +1195,7 @@ def get_tile_shape_choices(
             symbol2goal=symbol2goal,
             update_symbol2goal=update_symbol2goal,
             log_message=log_message,
+            bounds=what_tiles_symbol.bounds,
         )
 
         log_message("coalesce symbols", f"{symbol2goal}")
@@ -1135,7 +1241,7 @@ def get_tile_shape_choices(
             to_pareto = to_pareto[
                 :, [i for i in range(to_pareto.shape[1]) if i not in drop_cols]
             ]
-            keep = paretoset_dirty(to_pareto, pareto_goals)
+            keep = makepareto_numpy(to_pareto, pareto_goals)
             prev_size = choices_enumerated.shape[0]
             choices_enumerated = choices_enumerated[keep]
             job.log_porp_pmappings_kept(

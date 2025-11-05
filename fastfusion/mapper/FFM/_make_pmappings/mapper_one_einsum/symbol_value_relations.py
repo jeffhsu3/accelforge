@@ -16,6 +16,11 @@ class SymbolValueRelations:
         self.what_tiles_symbol: list[tuple[Symbol | int, Symbol | int]] = []
         self.stride_and_initial: list[tuple[Symbol | int, Symbol | int]] = []
         self.delta_choices: list[tuple[Symbol, frozenset[int]]] = []
+        self.bounds: tuple[tuple[Symbol, int, int], ...] = ()
+
+    def make_bounds(self):
+        all_symbols = set(s for w in self.what_tiles_symbol for s in w if isinstance(s, Symbol))
+        self.bounds = tuple((s, 1, self.get_max_size(s)) for s in all_symbols)
 
     def is_stride(self, symbol: Symbol) -> bool:
         """Check if `symbol` is a stride."""
@@ -122,6 +127,8 @@ class SymbolValueRelations:
         for r, s in last_seen_loop_per_rank_var.items():
             if isinstance(s, Symbol):
                 relation.what_tiles_symbol.append((s, 1))
+
+        relation.make_bounds()
         return relation
 
 
