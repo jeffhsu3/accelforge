@@ -17,8 +17,8 @@ from fastfusion.util import fzs
 
 from fastfusion.accelerated_imports import pd
 
-from .df_convention import *
-from .pareto_implementation import makepareto
+from fastfusion.mapper.FFM._pareto_df.df_convention import *
+from fastfusion.mapper.FFM._pareto_df.pareto import makepareto
 
 
 CHECK_CORRECTNESS = False
@@ -45,7 +45,7 @@ def error_check_wrapper(func):
                     if idx < len(args):
                         live_tensors = args[idx]
             for prev_arg in itertools.chain(prev_args, prev_kwargs.values()):
-                if isinstance(prev_arg, PmappingGroup):
+                if isinstance(prev_arg, PmappingDataframe):
                     prev_arg.fail(0, live_tensors)
                 break
             func(*args, **kwargs)  # For debugging
@@ -53,7 +53,7 @@ def error_check_wrapper(func):
     return wrapper
 
 
-class PmappingGroup:
+class PmappingDataframe:
     def __init__(
         self,
         data: pd.DataFrame,
@@ -90,11 +90,11 @@ class PmappingGroup:
             )
             self._check_reservations()
 
-        if fill_reservation_cols:  # Affects PmappingGroup so must go before
+        if fill_reservation_cols:  # Affects PmappingDataframe so must go before
             self.fill_reservation_cols(fill_reservation_cols)
         if check_above_subset_below:
             self.check_above_subset_below()
-        if max_right_to_left:  # Affects PmappingGroup so must go before
+        if max_right_to_left:  # Affects PmappingDataframe so must go before
             self.max_right_to_left()
         if check_above_subset_below:
             self.check_above_subset_below()
@@ -118,7 +118,7 @@ class PmappingGroup:
             *self.right_reservations.values(),
         )
 
-    def rename(self, renames: dict[str, str]) -> "PmappingGroup":
+    def rename(self, renames: dict[str, str]) -> "PmappingDataframe":
         new = self.copy()
         new.data.rename(columns=renames, inplace=True)
         return new
@@ -366,7 +366,7 @@ class PmappingGroup:
     @error_check_wrapper
     def merge_next(
         self,
-        right: "PmappingGroup",
+        right: "PmappingDataframe",
         shared_loop_index: int,
         next_shared_loop_index: int,
         live_tensors: set[int],
@@ -379,7 +379,7 @@ class PmappingGroup:
         resource2capacity: dict[str, int],
         drop_valid_reservations: bool = True,
         pmapping_row_filter_function: Callable[[pd.Series], bool] | None = None,
-    ) -> "PmappingGroup":
+    ) -> "PmappingDataframe":
         """
            A  B            A2
             / | --- 0      |
@@ -549,7 +549,7 @@ class PmappingGroup:
                 add_to_col(df, target, source)
 
         df = df.drop(columns=dropcols)
-        result = PmappingGroup(
+        result = PmappingDataframe(
             df,
             skip_pareto=True,
             check_above_subset_below=False,
@@ -653,8 +653,8 @@ class PmappingGroup:
 
     @staticmethod
     def concat(
-        paretos: list["PmappingGroup"], skip_pareto: bool = False
-    ) -> "PmappingGroup":
+        paretos: list["PmappingDataframe"], skip_pareto: bool = False
+    ) -> "PmappingDataframe":
         if len(paretos) == 0:
             raise ValueError("No paretos to concatenate")
         if len(paretos) == 1:
@@ -667,7 +667,7 @@ class PmappingGroup:
 
         concatenated = pd.concat([p.data for p in paretos]).reset_index(drop=True)
 
-        p = PmappingGroup(
+        p = PmappingDataframe(
             concatenated.fillna(0),
             skip_pareto=len(paretos) == 1 or skip_pareto,
             fill_reservation_cols=fill_cols,
@@ -680,7 +680,7 @@ class PmappingGroup:
         self,
         skip_pareto: bool,
         **kwargs,
-    ) -> "PmappingGroup":
+    ) -> "PmappingDataframe":
         args = dict(
             data=self.data,
             skip_pareto=skip_pareto,
@@ -689,9 +689,9 @@ class PmappingGroup:
             valid_pmappings=self.valid_pmappings,
         )
         args.update(kwargs)
-        return PmappingGroup(**args)
+        return PmappingDataframe(**args)
 
-    def copy(self) -> "PmappingGroup":
+    def copy(self) -> "PmappingDataframe":
         return self.update(
             data=self.data.copy(),
             skip_pareto=True,
@@ -794,7 +794,7 @@ class PmappingGroup:
 
     def filter_rows(
         self, pmapping_row_filter_function: Callable[[pd.Series], bool] | None = None
-    ) -> "PmappingGroup":
+    ) -> "PmappingDataframe":
         if pmapping_row_filter_function is None:
             return self.copy()
 
@@ -854,7 +854,7 @@ class PmappingGroup:
     #                 )
 
     # def fail(self, index, live_tensors):
-    #     from fastfusion.mapper.FFM._join_pmappings.sim import TensorReservation
+    #     from fastfusion.mapper.FFM._join_pmappings.pmapping_group import TensorReservation
     #     r = self.data.iloc[index]
     #     assert not self.data.isnull().values.any(), f"NaN in {self.data}"
     #     self = self.copy()

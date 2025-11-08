@@ -9,7 +9,7 @@ from fastfusion.frontend.specification import Specification
 from fastfusion.frontend.workload.workload import TensorName, SymbolTable
 from fastfusion.util.parse_expressions import MATH_FUNCS
 
-from .bypass_keep_generator import make_tensor_choices_all_levels
+from fastfusion.mapper.FFM._make_pmappings.make_templates.make_storages import make_storage_choices_all_levels
 from fastfusion.frontend.workload.workload import EinsumName
 
 
@@ -53,7 +53,7 @@ def get_tensor_choices(
         if t.persistent
     }
 
-    for choice, symbol_table in make_tensor_choices_all_levels(
+    for choice, symbol_table in make_storage_choices_all_levels(
         nodes=nodes,
         symbol_table=symbol_table,
         is_copy_op=is_copy_op,
@@ -70,7 +70,7 @@ def get_tensor_choices(
                 base_mapping.append(node)
 
         # Get the dataflow constraints for the mapping
-        required_order = get_dataflow_constraint(nodes, symbol_table, tensors)
+        required_order = get_tensor_order_constraint(nodes, symbol_table, tensors)
 
         # If the compute is not enabled, then this mapping is not valid
         if not eval_enabled(compute, symbol_table):
@@ -89,7 +89,7 @@ def get_tensor_choices(
             yield mapping, symbol_table
 
 
-def get_dataflow_constraint(nodes, symbol_table, tensors):
+def get_tensor_order_constraint(nodes, symbol_table, tensors):
     required_order: dict[str, list[Order]] = {}
     for node in nodes:
         constraint = node.constraints.dataflow._parse(

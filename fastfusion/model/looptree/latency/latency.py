@@ -5,7 +5,7 @@ from sympy import Piecewise
 from fastfusion.frontend.arch import Compute
 from fastfusion.model.looptree.latency.processors import LATENCY_PROCESSORS
 from fastfusion.model.looptree.reuse.isl import IslReuseAnalysisOutput
-from fastfusion.model.looptree.reuse.summarized import SummarizedAnalysisOutput
+from fastfusion.model.looptree.reuse import SymbolicAnalysisOutput
 
 from fastfusion.util.sympy.broadcast_max import Max
 
@@ -34,7 +34,7 @@ def calculate_compute_latency(reuse_analysis_results: IslReuseAnalysisOutput,
                               workload):
     pass
 @overload
-def calculate_compute_latency(reuse_analysis_results: SummarizedAnalysisOutput,
+def calculate_compute_latency(reuse_analysis_results: SymbolicAnalysisOutput,
                               mapping,
                               workload):
     pass
@@ -43,7 +43,7 @@ def calculate_compute_latency(reuse_analysis_results, mapping, workload):
         return compute_isl_latency(reuse_analysis_results.temporal_steps,
                                    mapping,
                                    workload)
-    elif isinstance(reuse_analysis_results, SummarizedAnalysisOutput):
+    elif isinstance(reuse_analysis_results, SymbolicAnalysisOutput):
         return compute_summarized_latency(
             reuse_analysis_results.compute_stats,
             mapping,

@@ -28,18 +28,18 @@ from fastfusion.frontend.workload.workload import (
     RankVariableName,
     Workload,
 )
-from fastfusion.mapper.FFM._make_pmappings.mapper_one_einsum.dataflow_generator import (
+from fastfusion.mapper.FFM._make_pmappings.make_templates.make_storage_order import (
     get_tensor_choices,
 )
 from fastfusion.mapper.FFM._make_pmappings.contraints.constraints import (
     MappingConstraints,
     get_constraints,
 )
-from fastfusion.mapper.FFM._make_pmappings.mapper_one_einsum.loop_generator import (
+from fastfusion.mapper.FFM._make_pmappings.make_templates.make_loops import (
     insert_temporal_loops,
     insert_spatial_loops,
 )
-from fastfusion.mapper.FFM._make_pmappings.mapper_one_einsum.mapper_job import (
+from fastfusion.mapper.FFM._make_pmappings.pmapper_job import (
     Job,
     SameEinsumJobs,
 )
@@ -305,7 +305,7 @@ def iterate_mappings_constraints(
 
 
 # =================================================================================================
-# Make sims
+# Make pmapping_groups
 # =================================================================================================
 def parse_flattened_arch(
     job: Job,

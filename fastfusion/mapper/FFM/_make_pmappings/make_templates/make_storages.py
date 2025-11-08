@@ -88,7 +88,7 @@ def make_tensor_choices_one_level(
         yield nodes, new_symbol_table, new_seen_tensors
 
 
-def make_tensor_choices_all_levels(
+def make_storage_choices_all_levels(
     nodes: list[TensorHolder],
     symbol_table: dict[str, InvertibleSet],
     persistent_tensors: set[TensorName],
@@ -113,7 +113,7 @@ def make_tensor_choices_all_levels(
         seen_tensors=seen_tensors,
         is_copy_op=is_copy_op,
     ):
-        for subchoices, symbol_table in make_tensor_choices_all_levels(
+        for subchoices, symbol_table in make_storage_choices_all_levels(
             nodes=nodes[1:],
             symbol_table=symbol_table,
             persistent_tensors=persistent_tensors,

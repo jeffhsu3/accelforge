@@ -6,7 +6,7 @@ from typing import Optional, overload
 import islpy as isl
 
 from fastfusion.model.looptree.reuse.isl import IslReuseAnalysisOutput
-from fastfusion.model.looptree.reuse.summarized.symbolic import BuffetStats, SummarizedAnalysisOutput
+from fastfusion.model.looptree.reuse.symbolic import BuffetStats, SymbolicAnalysisOutput
 from fastfusion.model.looptree.mapping_utilities import get_paths, get_leaves
 
 from fastfusion.frontend.mapping import Mapping, TensorHolder, Compute
@@ -59,7 +59,7 @@ def summarize_total_and_per_unit_actions(
     pass
 @overload
 def summarize_total_and_per_unit_actions(
-    reuse_analysis_result: SummarizedAnalysisOutput
+    reuse_analysis_result: SymbolicAnalysisOutput
 ) -> dict[tuple, BuffetStats]:
     pass
 
@@ -98,7 +98,7 @@ def summarize_total_and_per_unit_actions(
                 max_per_unit_reads_to_peer=max_per_unit_read_to_peer
             )
 
-    elif isinstance(reuse_analysis_result, SummarizedAnalysisOutput):
+    elif isinstance(reuse_analysis_result, SymbolicAnalysisOutput):
         for buffet, buffet_stats in reuse_analysis_result.buffet_stats.items():
             level = buffet.level
             einsum = buffet.einsum
@@ -119,7 +119,7 @@ def isl_buffer_accesses_from_buffet_actions(
     pass
 @overload
 def isl_buffer_accesses_from_buffet_actions(
-    reuse_analysis_result: SummarizedAnalysisOutput,
+    reuse_analysis_result: SymbolicAnalysisOutput,
     mapping,
     workload,
     is_path=False

@@ -10,7 +10,7 @@ class LoopTreeStatistics:
     capacity_usage: dict
 
 def run_symbolic_model(mapping, workload, architecture):
-    from pytimeloop.looptree.reuse.summarized import analyze_reuse_and_add_reservations_to_mapping
+    from pytimeloop.looptree.reuse import analyze_reuse_and_add_reservations_to_mapping
     from pytimeloop.looptree.energy import gather_actions
 
     job = Job.make_job(mapping=mapping, workload=workload, architecture=architecture)
@@ -79,12 +79,12 @@ def run_looptree_symbolic(config_dir, paths, tmp_path, bindings, call_accelergy)
     from bindings.looptree import LooptreeWorkload, LooptreeWorkloadDependencyAnalyzer
     from pytimeloop.file import gather_yaml_configs
     from pytimeloop.looptree.capacity import compute_capacity_usage
-    from pytimeloop.looptree.reuse.summarized import analyze_reuse_and_add_reservations_to_mapping
+    from pytimeloop.looptree.reuse import analyze_reuse_and_add_reservations_to_mapping
     from pytimeloop.looptree.energy import gather_actions, compute_energy_from_actions
     from pytimeloop.looptree.latency import get_latency
     from pytimeloop.timeloopfe.v4fused import Specification
     from pytimeloop.timeloopfe.common.backend_calls import call_accelergy_verbose
-    from fastfusion.mapper.FFM._make_pmappings.mapper_one_einsum.mapper_job import Job
+    from fastfusion.mapper.FFM._make_pmappings.pmapper_job import Job
 
     yaml_str = gather_yaml_configs(config_dir, paths)
 

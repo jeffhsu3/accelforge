@@ -4,16 +4,16 @@ from typing import Any, Callable, Iterable
 import pandas as pd
 from joblib import delayed
 
-from fastfusion.mapper.FFM._pmapping_group import PmappingGroup
+from fastfusion.mapper.FFM._join_pmappings.pmapping_dataframe import PmappingDataframe
 
 from fastfusion.mapper.FFM._join_pmappings.compatibility import *
 from fastfusion.util import parallel
 
 
-class SIM:
-    def __init__(self, compatibility: Compatibility, mappings: PmappingGroup):
+class PmappingGroup:
+    def __init__(self, compatibility: Compatibility, mappings: PmappingDataframe):
         self.compatibility: Compatibility = compatibility
-        self.mappings: PmappingGroup = mappings
+        self.mappings: PmappingDataframe = mappings
         self.tensors: dict[str, TensorReservation] = {
             t.name: t for t in self.compatibility.tensors
         }
@@ -28,15 +28,15 @@ class SIM:
     def tensor_names(self) -> set[str]:
         return set(self.tensors)
 
-    def copy(self) -> "SIM":
-        return SIM(self.compatibility, self.mappings.copy())
+    def copy(self) -> "PmappingGroup":
+        return PmappingGroup(self.compatibility, self.mappings.copy())
 
     def __len__(self) -> int:
         return len(self.mappings)
 
     def merge_next(
         self,
-        right: "SIM",
+        right: "PmappingGroup",
         live_tensors: set[str],
         live_tensors_with_right: set[str],
         aliased_tensors: dict[str, set[str]],
@@ -46,7 +46,7 @@ class SIM:
         drop_valid_reservations: bool = True,
         delay: bool = False,
         pmapping_row_filter_function: Callable[[pd.Series], bool] | None = None,
-    ) -> "SIM":
+    ) -> "PmappingGroup":
         shared_loop_index = self.compatibility.shared_loop_index(
             right.compatibility.tensor_names | live_tensors
         )
@@ -85,7 +85,7 @@ class SIM:
         if not delay:
             mapping = mapping[0](*mapping[1], **mapping[2])
 
-        s = SIM(compatibility_joined, mapping)
+        s = PmappingGroup(compatibility_joined, mapping)
         assert (
             compatibility_joined.max_above_loop_index == next_shared_loop_index + 1
         ), f"{self.compatibility} {right.compatibility} {next_shared_loop_index + 1} -> {compatibility_joined} {len(compatibility_joined.loops)}"
@@ -122,82 +122,82 @@ class SIM:
 
     @staticmethod
     def right_consolidate(
-        sims: list["SIM"],
+        pmapping_groups: list["PmappingGroup"],
         live_tensors: set[str],
         shared_tensors: set[str] = None,
         pbar: str = None,
         parallelize: bool = True,
-    ) -> list["SIM"]:
+    ) -> list["PmappingGroup"]:
         def job(s):
             return s._right_consolidate(live_tensors, shared_tensors)
 
         if not parallelize:
-            return [s._right_consolidate(live_tensors, shared_tensors) for s in sims]
+            return [s._right_consolidate(live_tensors, shared_tensors) for s in pmapping_groups]
 
-        return parallel([delayed(job)(s) for s in sims], pbar=pbar)
+        return parallel([delayed(job)(s) for s in pmapping_groups], pbar=pbar)
 
     @staticmethod
     def left_consolidate(
-        sims: list["SIM"],
+        pmapping_groups: list["PmappingGroup"],
         live_tensors: set[str],
         pbar: str = None,
         parallelize: bool = True,
-    ) -> list["SIM"]:
+    ) -> list["PmappingGroup"]:
         def job(s):
             return s._left_consolidate(live_tensors)
 
         if not parallelize:
-            return [s._left_consolidate(live_tensors) for s in sims]
+            return [s._left_consolidate(live_tensors) for s in pmapping_groups]
 
-        return parallel([delayed(job)(s) for s in sims], pbar=pbar)
+        return parallel([delayed(job)(s) for s in pmapping_groups], pbar=pbar)
 
     def _hashable_attrs(self):
         return self.mappings, fzs(self.tensors.items())
 
     @staticmethod
     def concat(
-        sims: Iterable["SIM"], allow_different_compatibilies: bool = False
-    ) -> "SIM":
-        sims = list(sims)
-        assert len(sims) > 0, "Cannot concat empty list of SIMs"
+        pmapping_groups: Iterable["PmappingGroup"], allow_different_compatibilies: bool = False
+    ) -> "PmappingGroup":
+        pmapping_groups = list(pmapping_groups)
+        assert len(pmapping_groups) > 0, "Cannot concat empty list of PmappingGroups"
         if not allow_different_compatibilies:
-            s = set(s.compatibility.clear_symbolic_tile_patterns() for s in sims)
+            s = set(s.compatibility.clear_symbolic_tile_patterns() for s in pmapping_groups)
             if len(s) > 1:
-                a = sims[0]
-                for b in sims[1:]:
+                a = pmapping_groups[0]
+                for b in pmapping_groups[1:]:
                     if a.compatibility != b.compatibility:
                         break
-                SIM.combine_combineable((a, b), "All")
+                PmappingGroup.combine_combineable((a, b), "All")
                 assert (
                     a == b
-                ), f"Cannot concat SIMs with different compatibilies:\n\t{a}\n\t{b}"
+                ), f"Cannot concat PmappingGroups with different compatibilies:\n\t{a}\n\t{b}"
                 assert len(s) == 1, (
-                    f"Cannot concat SIMs with different compatibilies:\n\t"
+                    f"Cannot concat PmappingGroups with different compatibilies:\n\t"
                     + "\n\t".join(str(s2) for s2 in s)
                 )
 
-        c0 = sims[0].compatibility
-        to_concat = [sims[0]] + [s.rename_compatibility(c0) for s in sims[1:]]
-        return SIM(c0, PmappingGroup.concat([s.mappings for s in to_concat]))
+        c0 = pmapping_groups[0].compatibility
+        to_concat = [pmapping_groups[0]] + [s.rename_compatibility(c0) for s in pmapping_groups[1:]]
+        return PmappingGroup(c0, PmappingDataframe.concat([s.mappings for s in to_concat]))
 
     def rename_compatibility(self, new_c: Compatibility) -> Compatibility:
         c, renamed = self.compatibility.rename_to_match(new_c)
-        return SIM(c, self.mappings.rename(renamed))
+        return PmappingGroup(c, self.mappings.rename(renamed))
 
     @staticmethod
     def _group(
-        sims: list["SIM"],
+        pmapping_groups: list["PmappingGroup"],
         live_tensors: set[str] | Literal["All"],
         clear_tile_patterns_and_reservation_indices: bool = False,
         include_permutations: bool = False,
         clear_symbolic_tile_patterns: bool = False,
         try_permute_into_equivalent: bool = False,
     ) -> (
-        dict[Compatibility, list["SIM"]]
-        | dict[Compatibility, list[tuple["SIM", list[int]]]]
+        dict[Compatibility, list["PmappingGroup"]]
+        | dict[Compatibility, list[tuple["PmappingGroup", list[int]]]]
     ):
         """
-        Clears dead tensors (may keep loops), then group SIMs based on
+        Clears dead tensors (may keep loops), then group PmappingGroups based on
         compatibility.
         """
         grouped = defaultdict(list)
@@ -209,7 +209,7 @@ class SIM:
                 return c.clear_tile_patterns_and_reservation_indices()
             return c
 
-        for s in sims:
+        for s in pmapping_groups:
             compatibility = s.compatibility.clear_dead_tensors(live_tensors)
 
             if include_permutations or try_permute_into_equivalent:
@@ -230,19 +230,19 @@ class SIM:
         if try_permute_into_equivalent:
             assert not include_permutations
             new_grouped = {}
-            sims_remaining = {id(s) for s in sims}
+            pmgroups_remaining = {id(s) for s in pmapping_groups}
             for c, g in sorted(grouped.items(), key=lambda x: len(x[1]), reverse=True):
-                if not sims_remaining:
+                if not pmgroups_remaining:
                     break
                 g = [
                     (s, loop_changes)
                     for s, loop_changes in g
-                    if id(s) in sims_remaining
+                    if id(s) in pmgroups_remaining
                 ]
                 if g:
-                    sims_remaining -= {id(s) for s, _ in g}
+                    pmgroups_remaining -= {id(s) for s, _ in g}
                     permuted = [
-                        SIM(s.compatibility.permute(lc), s.mappings) for s, lc in g
+                        PmappingGroup(s.compatibility.permute(lc), s.mappings) for s, lc in g
                     ]
                     new_grouped[c] = permuted
             grouped = new_grouped
@@ -251,21 +251,21 @@ class SIM:
 
     @staticmethod
     def combine_combineable(
-        sims: list["SIM"],
+        pmapping_groups: list["PmappingGroup"],
         live_tensors: set[str] | Literal["All"],
         allow_different_compatibilies: bool = False,
         combine_reservations: bool = True,
         pbar_postfix: str = "",
-    ) -> list["SIM"]:
-        sims = [s for s in sims if len(s.mappings.data) > 0]
+    ) -> list["PmappingGroup"]:
+        pmapping_groups = [s for s in pmapping_groups if len(s.mappings.data) > 0]
         no_combine = []
         if not combine_reservations:
-            has_reservations = [s.mappings.has_reservations() for s in sims]
-            no_combine = [s for s, h in zip(sims, has_reservations) if h]
-            sims = [s for s, h in zip(sims, has_reservations) if not h]
+            has_reservations = [s.mappings.has_reservations() for s in pmapping_groups]
+            no_combine = [s for s, h in zip(pmapping_groups, has_reservations) if h]
+            pmapping_groups = [s for s, h in zip(pmapping_groups, has_reservations) if not h]
         groups = list(
-            SIM._group(
-                sims,
+            PmappingGroup._group(
+                pmapping_groups,
                 live_tensors,
                 clear_symbolic_tile_patterns=True,
                 try_permute_into_equivalent=True,
@@ -277,7 +277,7 @@ class SIM:
 
         others = parallel(
             [
-                delayed(SIM.concat)(g, allow_different_compatibilies)
+                delayed(PmappingGroup.concat)(g, allow_different_compatibilies)
                 for g in groups
                 if len(g) > 1
             ],
@@ -287,8 +287,8 @@ class SIM:
 
     @staticmethod
     def filter_by_tensors(
-        sims: list["SIM"] | dict[Compatibility, Any], tensors: set[str]
-    ) -> list["SIM"]:
+        pmapping_groups: list["PmappingGroup"] | dict[Compatibility, Any], tensors: set[str]
+    ) -> list["PmappingGroup"]:
         def check(tensors_to_check):
             for t in tensors_to_check:
                 for t2 in tensors:
@@ -297,18 +297,18 @@ class SIM:
             return True
 
         tensors = set(tensors)
-        if isinstance(sims, list):
-            return [s for s in sims if check(s.compatibility.tensors)]
-        if isinstance(sims, dict):
-            return {k: v for k, v in sims.items() if check(k.tensors)}
-        raise ValueError(f"Invalid type {type(sims)}")
+        if isinstance(pmapping_groups, list):
+            return [s for s in pmapping_groups if check(s.compatibility.tensors)]
+        if isinstance(pmapping_groups, dict):
+            return {k: v for k, v in pmapping_groups.items() if check(k.tensors)}
+        raise ValueError(f"Invalid type {type(pmapping_groups)}")
 
     @staticmethod
     def group(
-        sims: list["SIM"], live_tensors: set[str]
-    ) -> dict[tuple[Compatibility, ...], list[tuple["SIM", list[int]]]]:
-        x = SIM._group(
-            sims,
+        pmapping_groups: list["PmappingGroup"], live_tensors: set[str]
+    ) -> dict[tuple[Compatibility, ...], list[tuple["PmappingGroup", list[int]]]]:
+        x = PmappingGroup._group(
+            pmapping_groups,
             live_tensors,
             clear_tile_patterns_and_reservation_indices=True,
             include_permutations=True,
@@ -316,8 +316,8 @@ class SIM:
         return x
 
     @staticmethod
-    def remove_dead_tensors(sims: list["SIM"], live_tensors: set[str]):
-        for s in sims:
+    def remove_dead_tensors(pmapping_groups: list["PmappingGroup"], live_tensors: set[str]):
+        for s in pmapping_groups:
             for t in list(s.tensors):
                 if t not in live_tensors:
                     del s.tensors[t]

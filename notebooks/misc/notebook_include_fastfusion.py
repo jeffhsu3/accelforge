@@ -6,7 +6,7 @@ import time
 logging.basicConfig(level=logging.WARN)
 
 from fastfusion.accelerated_imports import np
-from fastfusion.mapper.FFM._join_pmappings.sim import SIM, TensorReservation
+from fastfusion.mapper.FFM._join_pmappings.sim import PmappingGroup, TensorReservation
 from tests.util import TEST_TMP_DIR
 
 import logging
@@ -17,7 +17,7 @@ from bindings.config import Config
 import pickle
 
 from fastfusion.mapper.simanneal.simanneal import mapper
-from fastfusion.mapper.FFM._join_pmappings.join_pmappings import join_sims
+from fastfusion.mapper.FFM._join_pmappings.join_pmappings import join_pmappings
 from fastfusion.visualization.ski_slope import plot_ski_slope
 from fastfusion.mapper.simanneal.process_results import Metrics
 from pytimeloop.frontend.v4fused import Specification
@@ -219,7 +219,7 @@ class Experiment:
 
     @property
     def total_mappings_from_intra(self):
-        return sum(len(s.mappings.data) for sims in self.intra_result.values() for s in sims)
+        return sum(len(s.mappings.data) for pmapping_groups in self.intra_result.values() for s in pmapping_groups)
 
     def run_intra(self, tag=True, prune=True, dataflow=None):
         config_str = self.workload_config + "\n" + self.arch_config + "\n"
@@ -300,50 +300,50 @@ class Experiment:
 
 
 def clear_tags(e):
-    for sims in e.intra_result.values():
-        for s in sims:
+    for pmapping_groups in e.intra_result.values():
+        for s in pmapping_groups:
             s.set_tags()
 
 
 def filter_first_mapping(e):
     e.intra_result.pop(next(iter(e.intra_result)))
-    for k, sims in e.intra_result.items():
+    for k, pmapping_groups in e.intra_result.items():
         e.intra_result[k] = [
             s
-            for s in sims
+            for s in pmapping_groups
             if not s.compatibility.has_tensor(TensorReservation("I_I_to_Q_K_V", "*", 1, "*"))
         ]
 
 
 def filter_tensors(e, tensors_filter):
     new_intra = {}
-    for k, sims in e.intra_result.items():
-        new_intra[k] = SIM.filter_by_tensors(sims, tensors_filter)
+    for k, pmapping_groups in e.intra_result.items():
+        new_intra[k] = PmappingGroup.filter_by_tensors(pmapping_groups, tensors_filter)
         if not new_intra[k]:
             raise ValueError(f"No mappings for {k} with memory filter {tensors_filter}")
     e.intra_result = new_intra
 
 def filter_layernorm(e):
-    for k, sims in e.intra_result.items():
-        e.intra_result[k] = [s for s in sims if "LAYERNORM_INVALID" not in s.compatibility.tags]
+    for k, pmapping_groups in e.intra_result.items():
+        e.intra_result[k] = [s for s in pmapping_groups if "LAYERNORM_INVALID" not in s.compatibility.tags]
         for s in e.intra_result[k]:
             s.set_tags(*(t for t in s.compatibility.tags if "LAYERNORM" not in t))
 
 
 def tileflow(e):
     filter_layernorm(e)
-    for k, sims in e.intra_result.items():
+    for k, pmapping_groups in e.intra_result.items():
         # print(f"Mappings for Einsum {k}")
-        e.intra_result[k] = [s for s in sims if "TILEFLOW_VALID" in s.compatibility.tags]
+        e.intra_result[k] = [s for s in pmapping_groups if "TILEFLOW_VALID" in s.compatibility.tags]
         for s in e.intra_result[k]:
             s.set_tags(*(t for t in s.compatibility.tags if "LOOPS_ABOVE_GLB" in t))
             # print(f"\t{s.compatibility}")
 
 def looptree(e):
     filter_layernorm(e)
-    for k, sims in e.intra_result.items():
+    for k, pmapping_groups in e.intra_result.items():
         # print(f"Mappings for Einsum {k}")
-        e.intra_result[k] = [s for s in sims if "LOOPTREE_VALID" in s.compatibility.tags]
+        e.intra_result[k] = [s for s in pmapping_groups if "LOOPTREE_VALID" in s.compatibility.tags]
         for s in e.intra_result[k]:
             s.set_tags(*(t for t in s.compatibility.tags if "FUSED_LOOPS" in t))
             # print(f"\t{s.compatibility}")
@@ -370,8 +370,8 @@ def fastfusion_full(e):
 def unfused(e):
     filter_layernorm(e)
     e.intra_result = {
-        k: SIM.filter_by_tensors(sims, {TensorReservation("*", "*", 0, "*")})
-        for k, sims in e.intra_result.items()
+        k: PmappingGroup.filter_by_tensors(pmapping_groups, {TensorReservation("*", "*", 0, "*")})
+        for k, pmapping_groups in e.intra_result.items()
     }
     clear_tags(e)
 
@@ -382,16 +382,16 @@ def ffmt(e):
         filter_first_mapping(e)
     # FFMT only fuses Q, QK, AV, and Z
     WEIGHT_TAGS = ("FFMT_WEIGHT_TILED", "FFMT_WEIGHT_UNTILED")
-    for k, sims in e.intra_result.items():
+    for k, pmapping_groups in e.intra_result.items():
         # print(f"Mappings for Einsum {k}")
-        sims = [
+        pmapping_groups = [
             s
-            for s in sims
+            for s in pmapping_groups
             if "FFMT_VALID" in s.compatibility.tags
             and "FFMT_WEIGHTS_INVALID" not in s.compatibility.tags
         ]
         r = []
-        for s in sims:
+        for s in pmapping_groups:
             # The tag is actually a set of tags, all of which must match, so we
             # combine them into a frozenset in a tuple. In the tag class, we'll
             # get a frozenset(frozenset(tag0, tag1...)).
@@ -410,9 +410,9 @@ def ffmt(e):
 
 def filter_optimus(e):
     filter_layernorm(e)
-    for k, sims in e.intra_result.items():
+    for k, pmapping_groups in e.intra_result.items():
         # print(f"Mappings for Einsum {k}")
-        e.intra_result[k] = [s for s in sims if "OPTIMUS_VALID" in s.compatibility.tags]
+        e.intra_result[k] = [s for s in pmapping_groups if "OPTIMUS_VALID" in s.compatibility.tags]
         for s in e.intra_result[k]:
             s.set_tags(*(t for t in s.compatibility.tags if "OPTIMUS" in t))
     print(e)
@@ -429,7 +429,7 @@ def run_experiment(
     save_results: bool = True,
     run_inter: bool = True,
     prune_intra: bool = True,
-    fuse_function: callable = join_sims,
+    fuse_function: callable = join_pmappings,
     taggers: tuple[callable] = tuple(),
     dataflow: str = None,
     fuse: bool = True,
@@ -483,9 +483,9 @@ def run_experiment(
     if callfunction is not None:
         callfunction(exp)
 
-    for k, sims in exp.intra_result.items():
-        live_tensors = list(sims[0].tensors)
-        exp.intra_result[k] = SIM.combine_combineable(sims, live_tensors)
+    for k, pmapping_groups in exp.intra_result.items():
+        live_tensors = list(pmapping_groups[0].tensors)
+        exp.intra_result[k] = PmappingGroup.combine_combineable(pmapping_groups, live_tensors)
 
     t0 = time.time()
     exp.run_fusion(

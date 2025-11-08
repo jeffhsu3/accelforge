@@ -19,7 +19,7 @@ from fastfusion.frontend.workload._symbolic import (
     PartiallyRelevant
 )
 
-from fastfusion.mapper.FFM._make_pmappings.mapper_one_einsum.mapper_job import Job
+from fastfusion.mapper.FFM._make_pmappings.pmapper_job import Job
 from fastfusion.util.sympy.broadcast_max import Min, Max
 
 import sympy
@@ -241,7 +241,7 @@ class ComputeStats:
 
 
 @dataclass
-class SummarizedAnalysisOutput:
+class SymbolicAnalysisOutput:
     compute_stats: dict[Compute, ComputeStats] = field(default_factory=dict)
 
     buffet_stats: dict[Buffet, BuffetStats] = field(default_factory=dict)
@@ -382,7 +382,7 @@ def convert_to_copy(mapping: list[MappingNode], workload: Workload) -> tuple[lis
 
 def analyze_reuse_and_add_reservations_to_mapping(
     job: Job,
-) -> SummarizedAnalysisOutput:
+) -> SymbolicAnalysisOutput:
     mapping = job.mapping.nodes
     workload = job.spec.workload
     einsum_name = mapping[-1].einsum
@@ -600,7 +600,7 @@ def label_fused_loops(mapping: list[MappingNode]):
     return mapping
 
 
-def analyze_node(node_idx, current_shape, info: AnalysisInfo) -> SummarizedAnalysisOutput:
+def analyze_node(node_idx, current_shape, info: AnalysisInfo) -> SymbolicAnalysisOutput:
     node = info.mapping[node_idx]
     class2analysis_function = {
         Temporal: analyze_temporal,
@@ -616,12 +616,12 @@ def analyze_node(node_idx, current_shape, info: AnalysisInfo) -> SummarizedAnaly
 
 def analyze_temporal(node_idx,
                      current_shape,
-                     info: AnalysisInfo) -> SummarizedAnalysisOutput:
+                     info: AnalysisInfo) -> SymbolicAnalysisOutput:
     mapping = info.mapping
     node = mapping[node_idx]
     stride_and_shape = get_stride_and_tile_shape(node, current_shape, node_idx, info)
 
-    result_accumulator = SummarizedAnalysisOutput()
+    result_accumulator = SymbolicAnalysisOutput()
 
     first_latency = None
 
@@ -685,7 +685,7 @@ def analyze_spatial(node_idx, current_shape, info: AnalysisInfo):
     node_dim = node.name
     stride_and_shape = get_stride_and_tile_shape(node, current_shape, node_idx, info)
 
-    result_accumulator = SummarizedAnalysisOutput()
+    result_accumulator = SymbolicAnalysisOutput()
 
     def handle_repeated_value(repeated_shape):
         shape_value = repeated_shape.value
@@ -962,7 +962,7 @@ def analyze_reservation(node_idx, current_shape, info: AnalysisInfo):
     return child_result
 
 
-def analyze_fill(node_idx, current_shape, info: AnalysisInfo) -> SummarizedAnalysisOutput:
+def analyze_fill(node_idx, current_shape, info: AnalysisInfo) -> SymbolicAnalysisOutput:
     mapping = info.mapping
     einsum_name = mapping[-1].einsum
     node = mapping[node_idx]
@@ -988,14 +988,14 @@ def analyze_fill(node_idx, current_shape, info: AnalysisInfo) -> SummarizedAnaly
 
 def analyze_compute(node_idx,
                     current_shape,
-                    info: AnalysisInfo) -> SummarizedAnalysisOutput:
+                    info: AnalysisInfo) -> SymbolicAnalysisOutput:
     einsum = info.mapping[-1].einsum
     node = info.mapping[node_idx]
     compute_node: arch.Compute = info.job.flattened_arch[-1]
 
     computes = 0 if info.is_copy_operation else 1
 
-    result_accumulator = SummarizedAnalysisOutput()
+    result_accumulator = SymbolicAnalysisOutput()
 
     result_accumulator.temporal_steps[einsum] = computes
     result_accumulator.compute_stats[Compute(einsum, node.compute)] = ComputeStats(

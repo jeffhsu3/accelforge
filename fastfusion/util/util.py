@@ -16,6 +16,7 @@ N_PARALLEL_PROCESSES = os.cpu_count()
 
 NUMPY_FLOAT_TYPE = np.float32
 
+
 def lambdify_type_check(*args, **kwargs):
     f = sympy.lambdify(*args, **kwargs)
     def f_type_checked(*args, **kwargs):
@@ -41,7 +42,7 @@ def set_n_parallel_jobs(n_jobs: int, print_message: bool = False):
     global PARALLELIZE
     PARALLELIZE = n_jobs > 1
     if print_message:
-        print(f"Using {n_jobs} parallel jobs")
+        print(f"Using {n_jobs} parallel job{'s' if n_jobs > 1 else ''}")
 
 
 def using_parallel_processing():

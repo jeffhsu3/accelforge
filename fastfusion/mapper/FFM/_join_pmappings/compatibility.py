@@ -17,14 +17,14 @@ from fastfusion.frontend.mapping import (
     TilePattern,
 )
 from fastfusion.frontend.renames import RankName, RankVariableName, TensorName
-from fastfusion.mapper.FFM._pmapping_group.df_convention import make_fused_loop_col, stride2col, initial2col, iterations2col
+from fastfusion.mapper.FFM._pareto_df.df_convention import make_fused_loop_col, stride2col, initial2col, iterations2col
 
 from fastfusion.util import expfmt, fzs
 
 # Abstractions:
 # 1. Each tensor is stored above some loop index. 0 is the outermost loop, 1 the
 #    next-innermost...
-# 2. All loops above any shared tensor are co-tiled and must match between SIMs.
+# 2. All loops above any shared tensor are co-tiled and must match between PmappingGroups.
 
 T = TypeVar("T", bound="Updatable")
 

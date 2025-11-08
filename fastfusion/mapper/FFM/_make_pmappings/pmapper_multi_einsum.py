@@ -17,21 +17,14 @@ from fastfusion.frontend.workload._isl import (
 )
 from fastfusion.frontend.workload.workload import EinsumName, TensorName
 
-from fastfusion.mapper.FFM._make_pmappings.mapper_one_einsum.mapper_one_einsum import (
-    generate_pmappings,
-)
+from fastfusion.mapper.FFM._make_pmappings.make_templates import get_single_einsum_jobs
 from fastfusion.frontend.mapper.metrics import Metrics
-from fastfusion.mapper.FFM._make_pmappings.mapper_one_einsum import (
-    get_single_einsum_jobs,
-)
+from fastfusion.mapper.FFM._make_pmappings.make_pmappings import make_pmappings_from_templates
 from fastfusion.mapper.FFM._join_pmappings.compatibility import Compatibility
-from fastfusion.mapper.FFM._join_pmappings.sim import SIM
-from fastfusion.mapper.FFM._make_pmappings.mapper_one_einsum.tile_shape_exploration import (
-    EXPERIMENTAL_TILE_SHAPE_EXPLORATION,
-)
+from fastfusion.mapper.FFM._join_pmappings.pmapping_group import PmappingGroup
 from fastfusion.util.util import parallel
 from fastfusion.util import util
-from fastfusion.mapper.FFM._make_pmappings.mapper_one_einsum.mapper_job import (
+from fastfusion.mapper.FFM._make_pmappings.pmapper_job import (
     Job,
     SameCompatibilityJobs,
 )
@@ -241,7 +234,7 @@ def get_memories_to_track(
     return memories_track_all, memories_track_pmappings_only, no_drop_reservations_for
 
 
-def get_sims(
+def make_pmappings(
     spec: Specification,
     flattened_arches: list[list[arch.Leaf]],
     can_combine_multiple_runs: bool,
@@ -249,7 +242,7 @@ def get_sims(
     einsum_names: Optional[list[EinsumName]] = None,
     fail_if_no_pmappings_for_einsum: bool | None = None,
 ) -> tuple[
-    dict[EinsumName, list[SIM]],
+    dict[EinsumName, list[PmappingGroup]],
     dict[EinsumName, dict[uuid.UUID, Mapping]],
     dict[EinsumName, list[Job]],
 ]:
@@ -282,38 +275,36 @@ def get_sims(
 
     calls = _allocate_jobs(einsum2jobs)
 
-    if EXPERIMENTAL_TILE_SHAPE_EXPLORATION:
-        # Sort the calls by the length of the longest mapping in each job. We get long
-        # poles with the long mappings, so we want to get them done early so we don't
-        # have one or two procs slowing us down at the end.
-        def get_longest_mapping_length(call):
-            j: SameCompatibilityJobs = call[2]["jobs_with_similar_compatibilities"]
-            return max([len(j2.mapping.nodes) for j2 in j])
-
-        calls = sorted(calls, key=get_longest_mapping_length, reverse=True)
+    # Sort the calls by the length of the longest mapping in each job. We get long
+    # poles with the long mappings, so we want to get them done early so we don't
+    # have one or two procs slowing us down at the end.
+    def get_longest_mapping_length(call):
+        j: SameCompatibilityJobs = call[2]["jobs_with_similar_compatibilities"]
+        return max([len(j2.mapping.nodes) for j2 in j])
+    calls = sorted(calls, key=get_longest_mapping_length, reverse=True)
 
     pmapping_objects = {}
-    sims = {einsum_name: [] for einsum_name in spec.workload.einsum_names}
+    pmapping_groups = {einsum_name: [] for einsum_name in spec.workload.einsum_names}
     return_jobs = {}
-    for einsum_name, new_sims, pmappings, jobs_with_similar_compatibilities in parallel(
+    for einsum_name, new_pmapping_groups, pmappings, jobs_with_similar_compatibilities in parallel(
         calls,
         pbar=f"Generating pmappings",
         return_as="generator_unordered",
     ):
-        sims[einsum_name].extend(new_sims)
+        pmapping_groups[einsum_name].extend(new_pmapping_groups)
         pmapping_objects.setdefault(einsum_name, {}).update(pmappings)
         return_jobs.setdefault(einsum_name, []).extend(
             jobs_with_similar_compatibilities
         )
 
-    for einsum_name in list(sims.keys()):
-        sims[einsum_name] = SIM.combine_combineable(
-            sims[einsum_name],
+    for einsum_name in list(pmapping_groups.keys()):
+        pmapping_groups[einsum_name] = PmappingGroup.combine_combineable(
+            pmapping_groups[einsum_name],
             "All",
             pbar_postfix=f" for {einsum_name}",
         )
 
-    return sims, pmapping_objects, return_jobs
+    return pmapping_groups, pmapping_objects, return_jobs
 
 
 def _raise_error_if_no_pmappings(einsum2jobs):
@@ -328,7 +319,7 @@ def _allocate_jobs(einsum2jobs):
     calls = []
     for einsum_name, jobs in einsum2jobs.items():
         calls.extend(
-            delayed(generate_pmappings)(
+            delayed(make_pmappings_from_templates)(
                 jobs_with_similar_compatibilities=job_list,
             )
             for job_list in jobs.values()
@@ -347,7 +338,7 @@ def _allocate_jobs(einsum2jobs):
         for einsum_name, jobs in einsum2jobs.items():
             for job_list in jobs.values():
                 calls.extend(
-                    delayed(generate_pmappings)(
+                    delayed(make_pmappings_from_templates)(
                         jobs_with_similar_compatibilities=job,
                     )
                     for job in job_list.split()

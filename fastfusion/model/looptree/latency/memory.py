@@ -8,13 +8,13 @@ from fastfusion.frontend.specification import Specification
 from fastfusion.model.looptree.accesses import isl_buffer_accesses_from_buffet_actions
 from fastfusion.model.looptree.mapping_utilities import get_leaves
 from fastfusion.model.looptree.reuse.isl import IslReuseAnalysisOutput
-from fastfusion.model.looptree.reuse.summarized import SummarizedAnalysisOutput
+from fastfusion.model.looptree.reuse import SymbolicAnalysisOutput
 
-from fastfusion.model.looptree.reuse.summarized.symbolic import Buffet, BuffetStats
+from fastfusion.model.looptree.reuse.symbolic import Buffet, BuffetStats
 from fastfusion.util.parse_expressions import MATH_FUNCS, parse_expression
 from fastfusion.util.sympy.broadcast_max import Max, Min
 
-def isl_to_summarized(looptree_results: IslReuseAnalysisOutput, mapping, workload) -> SummarizedAnalysisOutput:
+def isl_to_summarized(looptree_results: IslReuseAnalysisOutput, mapping, workload) -> SymbolicAnalysisOutput:
     accesses_stats = isl_buffer_accesses_from_buffet_actions(
         looptree_results,
         mapping,
@@ -28,11 +28,11 @@ def isl_to_summarized(looptree_results: IslReuseAnalysisOutput, mapping, workloa
         )
         for (component, tensor, einsum), accesses in accesses_stats.items()
     }
-    return SummarizedAnalysisOutput(buffet_stats=buffet_stats)
+    return SymbolicAnalysisOutput(buffet_stats=buffet_stats)
 
 
 def component_latency(
-    looptree_results: SummarizedAnalysisOutput,
+    looptree_results: SymbolicAnalysisOutput,
     flattened_arch: list[Leaf],
     mapping: Mapping,
     spec: Specification

@@ -10,15 +10,9 @@ from fastfusion.frontend.workload.workload import EinsumName
 from fastfusion.mapper.FFM._join_pmappings.compatibility import (
     Compatibility,
 )
-from fastfusion.mapper.FFM._make_pmappings.mapper_one_einsum import (
-    tile_shape_exploration,
-)
-from fastfusion.mapper.FFM._make_pmappings.mapper_one_einsum.tile_shape_exploration import (
-    EXPERIMENTAL_TILE_SHAPE_EXPLORATION,
-)
-from fastfusion.mapper.FFM._pmapping_group import (
+from fastfusion.mapper.FFM._join_pmappings.pmapping_dataframe import (
     MAPPING_COLUMN,
-    PmappingGroup,
+    PmappingDataframe,
     col2nameloop,
     col_used_in_pareto,
     is_reservation_col,
@@ -30,15 +24,16 @@ from fastfusion.mapper.FFM._pmapping_group import (
 )
 
 from fastfusion.frontend.mapper.metrics import Metrics
-from fastfusion.mapper.FFM._make_pmappings.mapper_one_einsum.tile_shape_exploration import (
-    explore_tile_shapes,
+from fastfusion.mapper.FFM._make_pmappings.make_pmappings.make_tile_shapes import (
+    make_tile_shapes,
+    IMPERFECT,
 )
-from fastfusion.mapper.FFM._join_pmappings.sim import SIM
-from fastfusion.mapper.FFM._make_pmappings.mapper_one_einsum.mapper_job import (
+from fastfusion.mapper.FFM._join_pmappings.pmapping_group import PmappingGroup
+from fastfusion.mapper.FFM._make_pmappings.pmapper_job import (
     Job,
     SameCompatibilityJobs,
 )
-from fastfusion.mapper.FFM._pmapping_group.df_convention import (
+from fastfusion.mapper.FFM._pareto_df.df_convention import (
     is_fused_loop_col,
     is_n_iterations_col,
 )
@@ -78,11 +73,11 @@ def shift_reservations_by_null_loop_indices(
     return mappings
 
 
-def get_equivalent_sims(sim: SIM, reservation_levels: set[int]) -> list[SIM]:
-    equivalent_permutations = sim.compatibility.make_equivalent_permutations(
+def get_equivalent_pmappings(pmapping_group: PmappingGroup, reservation_levels: set[int]) -> list[PmappingGroup]:
+    equivalent_permutations = pmapping_group.compatibility.make_equivalent_permutations(
         reservation_levels
     )
-    result = [SIM(c, None) for c in equivalent_permutations]
+    result = [PmappingGroup(c, None) for c in equivalent_permutations]
     return result
 
 
@@ -183,7 +178,7 @@ def multiply_n_pmappings_by_permutations(n_pmappings: int, job: Job) -> int:
 
     # Count number of tile shapes
     rv2loops = {r: rv_spatial_count[r] + rv_temporal_count[r] for r in rv}
-    n_factorizations = math.prod(_count_factorizations(b, rv2loops[r], imperfect=tile_shape_exploration.IMPERFECT) for r, b in rv.items())
+    n_factorizations = math.prod(_count_factorizations(b, rv2loops[r], imperfect=IMPERFECT) for r, b in rv.items())
     n_temporal_loop_orders = math.prod(math.factorial(n) for n in temporal_n_loops)
 
     n = n_factorizations
@@ -215,37 +210,16 @@ def assert_all_jobs_have_same_symbols(
     ), "All jobs must have the same symbols for compatibility n_iterations"
 
 
-def generate_pmappings_new(
+def make_pmappings_from_templates(
     jobs_with_similar_compatibilities: SameCompatibilityJobs,
-) -> tuple[EinsumName, list[SIM], dict[UUID, Mapping], SameCompatibilityJobs]:
+) -> tuple[EinsumName, list[PmappingGroup], dict[UUID, Mapping], SameCompatibilityJobs]:
     jwsc = jobs_with_similar_compatibilities
-    prev_jobs = copy.deepcopy(jwsc)
-
-    # # Ensure that all the symbols are the same
-    # symbols: set[tuple[tuple[RankVariableName, tuple[str, ...]]]] = set()
-    # for job in jwsc:
-    #     cur_symbols = []
-    #     for node in job.mapping.nodes:
-    #         if not isinstance(node, Iteration):
-    #             continue
-    #         if not node._fused:
-    #             break
-    #         cur_symbols.append(
-    #             (
-    #                 node.rank_variable,
-    #                 tuple(sorted(node.tile_pattern.symbols_as_strings())),
-    #             )
-    #         )
-    #     symbols.add(tuple(cur_symbols))
-
-    # if len(symbols) > 1:
-    #     raise ValueError(f"Symbols are not the same: {symbols}")
 
     results = []
 
     for job in jobs_with_similar_compatibilities:
         try:
-            result = explore_tile_shapes(job)
+            result = make_tile_shapes(job)
         except Exception as e:
             e.add_note(f"Einsum {jwsc.einsum_name} compatibility {job.compatibility}")
             raise
@@ -287,12 +261,12 @@ def generate_pmappings_new(
     limit_capacity_drop_valid_reservations = not (Metrics.RESOURCE_USAGE & metrics)
     compatibility = jwsc.compatibility
 
-    # Creating a PmappingGroup fills in reservation columns since different pmappings
+    # Creating a PmappingDataframe fills in reservation columns since different pmappings
     # have different ones.
     next_shared_loop_index = compatibility.n_loops - 1
-    df = PmappingGroup.concat(
+    df = PmappingDataframe.concat(
         [
-            PmappingGroup(
+            PmappingDataframe(
                 r,
                 skip_pareto=True,
                 next_shared_loop_index=next_shared_loop_index,
@@ -347,7 +321,7 @@ def generate_pmappings_new(
         j.valid_pmappings for j in jobs_with_similar_compatibilities
     ) / len(groups)
 
-    sims = []
+    pmapping_groups = []
     for _, mappings in groups:
         compatibility = jwsc.compatibility
         fused_loop_indices = []
@@ -399,7 +373,7 @@ def generate_pmappings_new(
         # Skip pareto because we already did it above
         # prev_len = len(mappings)
         next_shared_loop_index_this_group = compatibility.n_loops - 1
-        partial_mappings = PmappingGroup(
+        partial_mappings = PmappingDataframe(
             mappings,
             next_shared_loop_index=next_shared_loop_index_this_group,
             total_pmappings=total_pmappings_per_group,
@@ -408,8 +382,7 @@ def generate_pmappings_new(
             limit_capacity_drop_valid_reservations=limit_capacity_drop_valid_reservations,
             no_drop_reservations_for=job.no_drop_reservations_for,
         )
-        sim = SIM(compatibility, partial_mappings)
-        sims.append(sim)
+        pmapping_groups.append(PmappingGroup(compatibility, partial_mappings))
 
     # Significant amount of time is spent pickling these objects
     for job in jobs_with_similar_compatibilities:
@@ -417,12 +390,4 @@ def generate_pmappings_new(
         job.mapping = None
         job.flattened_arch = None
 
-    return einsum_name, sims, pmapping_objects, jobs_with_similar_compatibilities
-
-
-def generate_pmappings(
-    jobs_with_similar_compatibilities: SameCompatibilityJobs,
-) -> tuple[EinsumName, list[SIM], dict[UUID, Mapping], SameCompatibilityJobs]:
-    if EXPERIMENTAL_TILE_SHAPE_EXPLORATION:
-        return generate_pmappings_new(jobs_with_similar_compatibilities)
-    return generate_pmappings_old(jobs_with_similar_compatibilities)
+    return einsum_name, pmapping_groups, pmapping_objects, jobs_with_similar_compatibilities

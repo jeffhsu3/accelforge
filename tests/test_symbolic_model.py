@@ -6,11 +6,11 @@ from fastfusion.frontend import Specification
 from fastfusion.frontend.mapping import Mapping
 from fastfusion.frontend.workload import Workload
 
-from fastfusion.mapper.FFM._make_pmappings.mapper_one_einsum.mapper_job import Job
+from fastfusion.mapper.FFM._make_pmappings.pmapper_job import Job
 from fastfusion.model.looptree.accesses import isl_buffer_accesses_from_buffet_actions, Accesses
 from fastfusion.model.looptree.energy import gather_actions
 from fastfusion.model.looptree.latency import get_latency
-from fastfusion.model.looptree.reuse.summarized.symbolic import BuffetStats, analyze_reuse_and_add_reservations_to_mapping, Compute, Buffet
+from fastfusion.model.looptree.reuse.symbolic import BuffetStats, analyze_reuse_and_add_reservations_to_mapping, Compute, Buffet
 
 
 PARENT_DIR = Path(__file__).parent

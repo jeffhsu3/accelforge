@@ -6,7 +6,7 @@ from numbers import Real
 from fastfusion.frontend import arch
 from fastfusion.frontend.component_energy import ComponentEnergy
 from fastfusion.frontend.specification import Specification
-from fastfusion.model.looptree.reuse.summarized.symbolic import SummarizedAnalysisOutput
+from fastfusion.model.looptree.reuse.symbolic import SymbolicAnalysisOutput
 from fastfusion.frontend.workload import Workload
 from fastfusion.frontend.mapping import Mapping
 
@@ -20,7 +20,7 @@ class ActionCount:
         return ActionCount(0, 0)
 
 
-def gather_actions(looptree_results: SummarizedAnalysisOutput, bindings: dict[str, str], use_name=False):
+def gather_actions(looptree_results: SymbolicAnalysisOutput, bindings: dict[str, str], use_name=False):
     actions: dict[tuple[str, str], ActionCount] = {}
     compute_levels = set(c.level for c in looptree_results.compute_stats)
 

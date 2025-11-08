@@ -3,11 +3,11 @@ import pickle
 import unittest
 
 from fastfusion.frontend import Specification
-from fastfusion.mapper.FFM._make_pmappings.mapper_multi_einsum import get_sims
-from fastfusion.mapper.FFM._join_pmappings.compatibility_util import join_compatibilities, sims2untiled_compats
-from fastfusion.mapper.FFM._join_pmappings.join_pmappings import join_sims
+from fastfusion.mapper.FFM._make_pmappings.pmapper_multi_einsum import make_pmappings
+from fastfusion.mapper.FFM._join_pmappings.compatibility_util import join_compatibilities, pmappings2untiled_compatibilities
+from fastfusion.mapper.FFM._join_pmappings.join_pmappings import join_pmappings
 
-from simcache import make_sim_pickle_cache
+from pmappingcache import make_pmapping_pickle_cache
 
 
 PARENT_DIR = Path(__file__).parent
@@ -24,15 +24,15 @@ class TestPreJoin(unittest.TestCase):
         spec = Specification.from_yaml(*paths)
         flattened_arch = spec.get_flattened_architecture()
 
-        sim_cache = make_sim_pickle_cache(config_names)
-        sims, decompress_data = sim_cache.get(lambda: get_sims(spec, flattened_arch))
+        pmapping_cache = make_pmapping_pickle_cache(config_names)
+        pmapping_groups, decompress_data = pmapping_cache.get(lambda: make_pmappings(spec, flattened_arch))
 
-        untiled_compats = sims2untiled_compats(sims)
+        untiled_compats = pmappings2untiled_compatibilities(pmapping_groups)
         einsum2important_compats = join_compatibilities(untiled_compats, spec)
 
         for einsum, compats in untiled_compats.items():
-            before_size = sum(len(sim.mappings.data.index) for sim in sims[einsum])
-            after_size = sum(len(sim.mappings.data.index) for sim in einsum2pruned_sims[einsum])
+            before_size = sum(len(pm.mappings.data.index) for pm in pmapping_groups[einsum])
+            after_size = sum(len(pm.mappings.data.index) for pm in einsum2pruned_pmappings[einsum])
 
             print(f"{einsum} has {len(einsum2important_compats[einsum])}"
                   f"/{len(compats)} compatibilities left and "
@@ -48,8 +48,8 @@ class TestJoin(unittest.TestCase):
         )
 
         flattened_arch = spec.get_flattened_architecture()
-        sims, decompress_data = get_sims(spec, flattened_arch)
-        mappings = join_sims(sims, spec, flattened_arch, drop_valid_reservations=False)
+        pmapping_groups, decompress_data = make_pmappings(spec, flattened_arch)
+        mappings = join_pmappings(pmapping_groups, spec, flattened_arch, drop_valid_reservations=False)
 
     def test_mha_full(self):
         config_names = [
@@ -61,10 +61,10 @@ class TestJoin(unittest.TestCase):
         spec = Specification.from_yaml(*paths)
         flattened_arch = spec.get_flattened_architecture()
 
-        sim_cache = make_sim_pickle_cache(config_names)
-        sims, decompress_data = sim_cache.get(lambda: get_sims(spec, flattened_arch))
+        pmapping_cache = make_pmapping_pickle_cache(config_names)
+        pmapping_groups, decompress_data = pmapping_cache.get(lambda: make_pmappings(spec, flattened_arch))
 
-        mappings = join_sims(sims, spec, flattened_arch)
+        mappings = join_pmappings(pmapping_groups, spec, flattened_arch)
 
     def test_mha_full_with_prejoin_pruning(self):
         config_names = [
@@ -76,13 +76,13 @@ class TestJoin(unittest.TestCase):
         spec = Specification.from_yaml(*paths)
         flattened_arch = spec.get_flattened_architecture()
 
-        sim_cache = make_sim_pickle_cache(config_names)
-        sims, decompress_data = sim_cache.get(lambda: get_sims(spec, flattened_arch))
+        pmapping_cache = make_pmapping_pickle_cache(config_names)
+        pmapping_groups, decompress_data = pmapping_cache.get(lambda: make_pmappings(spec, flattened_arch))
 
-        untiled_compats = sims2untiled_compats(sims)
+        untiled_compats = pmappings2untiled_compatibilities(pmapping_groups)
         einsum2important_compats = join_compatibilities(untiled_compats, spec)
 
-        mappings = join_sims(einsum2pruned_sims, spec, flattened_arch)
+        mappings = join_pmappings(einsum2pruned_pmappings, spec, flattened_arch)
 
     def test_mobilenet(self):
         config_names = [
@@ -93,7 +93,7 @@ class TestJoin(unittest.TestCase):
         spec = Specification.from_yaml(*paths)
         flattened_arch = spec.get_flattened_architecture()
 
-        sim_cache = make_sim_pickle_cache(config_names)
-        sims, decompress_data = sim_cache.get(lambda: get_sims(spec))
+        pmapping_cache = make_pmapping_pickle_cache(config_names)
+        pmapping_groups, decompress_data = pmapping_cache.get(lambda: make_pmappings(spec))
 
-        mappings = join_sims(sims, spec, flattened_arch)
+        mappings = join_pmappings(pmapping_groups, spec, flattened_arch)

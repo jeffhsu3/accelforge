@@ -10,7 +10,7 @@ from sympy import factorint
 from fastfusion.accelerated_imports import np
 from fastfusion.util.util import parallel
 
-from .df_convention import (
+from fastfusion.mapper.FFM._pareto_df.df_convention import (
     col_used_in_pareto,
     is_fused_loop_col,
     is_n_iterations_col,

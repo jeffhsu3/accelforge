@@ -5,8 +5,8 @@ import time
 
 from fastfusion.frontend.specification import Specification, Mapping
 from fastfusion.mapper.FFM._make_pmappings.contraints.constraints import MappingConstraints
-from fastfusion.mapper.FFM._make_pmappings.mapper_one_einsum.mapper_job import Job
-from fastfusion.mapper.FFM._make_pmappings.mapper_one_einsum import *
+from fastfusion.mapper.FFM._make_pmappings.pmapper_job import Job
+from fastfusion.mapper.FFM._make_pmappings.make_pmappings import make_tile_shapes
 from fastfusion.frontend.mapper.metrics import Metrics
 from fastfusion.frontend import arch
 
@@ -37,7 +37,7 @@ class TestTileShapeExploration(unittest.TestCase):
             memories_track_pmappings_only=memories_track_pmappings_only,
         )
 
-        result = explore_tile_shapes(job)
+        result = make_tile_shapes(job)
         data, total_pmappings = result
         self.assertTrue('Total_latency' in data.columns)
 

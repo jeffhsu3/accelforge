@@ -11,7 +11,7 @@ from fastfusion.frontend.mapping import (
 )
 
 
-class SymbolValueRelations:
+class SymbolRelations:
     def __init__(self):
         self.what_tiles_symbol: list[tuple[Symbol | int, Symbol | int]] = []
         self.stride_and_initial: list[tuple[Symbol | int, Symbol | int]] = []
@@ -93,12 +93,12 @@ class SymbolValueRelations:
     @staticmethod
     def from_pmapping_and_shape(
         pmapping: Mapping, shape: dict[str, int], workload: Workload
-    ) -> "SymbolValueRelations":
+    ) -> "SymbolRelations":
         initial_delta_choices = get_initial_delta_choices(
             pmapping.nodes[-1].einsum, workload
         )
 
-        relation = SymbolValueRelations()
+        relation = SymbolRelations()
         last_seen_loop_per_rank_var: dict[str, Symbol | int] = dict(shape)
         for node in pmapping.nodes:
             if not isinstance(node, Iteration):

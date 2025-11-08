@@ -5,10 +5,10 @@ from fastfusion.frontend import Specification, Workload
 
 from fastfusion.mapper import Metrics
 from fastfusion.mapper.FFM import make_pmappings
-from fastfusion.mapper.FFM._make_pmappings.mapper_multi_einsum import get_sims
-from fastfusion.mapper.FFM._pmapping_group import nameloop2col
+from fastfusion.mapper.FFM._make_pmappings.pmapper_multi_einsum import make_pmappings
+from fastfusion.mapper.FFM._join_pmappings.pmapping_dataframe import nameloop2col
 
-from .simcache import make_sim_pickle_cache
+from .pmappingcache import make_pmapping_pickle_cache
 
 
 PARENT_DIR = Path(__file__).parent
@@ -33,16 +33,16 @@ class TestPmappingExploration(unittest.TestCase):
         paths = [PARENT_DIR / f"{config_name}.yaml" for config_name in config_names]
         spec = Specification.from_yaml(*paths)
 
-        sim_cache = make_sim_pickle_cache(config_names)
+        pmapping_cache = make_pmapping_pickle_cache(config_names)
 
-        sims, decompress_data = sim_cache.set(get_sims(spec))
-        for per_einsum_sims in sims.values():
-            for sim in per_einsum_sims:
-                for resource, levels in sim.mappings.right_reservations.items():
+        pmapping_groups, decompress_data = pmapping_cache.set(make_pmappings(spec))
+        for per_einsum_pmappings in pmapping_groups.values():
+            for pmapping_group in per_einsum_pmappings:
+                for resource, levels in pmapping_group.mappings.right_reservations.items():
                     for level in levels:
                         self.assertTrue(
-                            nameloop2col(resource, level) in sim.mappings.data.columns,
-                            f"{resource} at {level} not in {sim.mappings.data.columns}. Compatibility: {sim.compatibility}"
+                            nameloop2col(resource, level) in pmapping_group.mappings.data.columns,
+                            f"{resource} at {level} not in {pmapping_group.mappings.data.columns}. Compatibility: {pmapping_group.compatibility}"
                         )
 
     def test_mha_with_tags(self):
@@ -52,7 +52,7 @@ class TestPmappingExploration(unittest.TestCase):
             PARENT_DIR / "mha.renames.yaml",
         )
 
-        sims, decompress_data = get_sims(spec, einsum_names=["Q"])
+        pmapping_groups, decompress_data = make_pmappings(spec, einsum_names=["Q"])
 
     def test_conv_with_snowcat(self):
         spec = Specification.from_yaml(
@@ -66,12 +66,12 @@ class TestPmappingExploration(unittest.TestCase):
         paths = [PARENT_DIR / f"{config_name}.yaml" for config_name in config_names]
         spec = Specification.from_yaml(*paths)
 
-        sim_cache = make_sim_pickle_cache(config_names)
+        pmapping_cache = make_pmapping_pickle_cache(config_names)
 
-        sims, decompress_data = sim_cache.set(get_sims(spec))
-        for per_einsum_sims in sims.values():
-            for sim in per_einsum_sims:
-                print(sim.compatibility)
+        pmapping_groups, decompress_data = pmapping_cache.set(make_pmappings(spec))
+        for per_einsum_pmappings in pmapping_groups.values():
+            for pmapping_group in per_einsum_pmappings:
+                print(pmapping_group.compatibility)
 
 
 class TestInitialDeltaGeneration(unittest.TestCase):
