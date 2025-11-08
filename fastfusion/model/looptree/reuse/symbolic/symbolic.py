@@ -1261,7 +1261,9 @@ def insert_sympy_symbols(mapping: list[MappingNode], job: Job):
             node.initial_tile_shape = initial_tile_shape
 
         # TODO: Check for 0 < shape < 1 for loop bound target
-        if node.stride == SYMBOL:
+        if job.rank_variable_bounds[node.rank_variable] == 1:
+            node.stride = 1
+        elif node.stride == SYMBOL:
             stride = sympy.symbols(f"stride{loop_idx}", positive=True, integer=True)
             symbols.append(stride)
             node.stride = stride
