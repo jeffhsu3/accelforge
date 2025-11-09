@@ -28,13 +28,7 @@ from fastfusion.mapper.FFM._pareto_df.df_convention import (
     iterations2col,
 )
 from fastfusion.mapper.FFM._pareto_df.pareto import makepareto_numpy
-from fastfusion.model.looptree.reuse.symbolic import (
-    analyze_reuse_and_add_reservations_to_mapping,
-    IMPERFECT,
-)
-from fastfusion.model.looptree.energy import compute_energy_from_actions, gather_actions
-from fastfusion.model.looptree.latency import get_latency
-from fastfusion.model.looptree.latency.memory import component_latency
+from fastfusion.model.looptree.reuse.symbolic import IMPERFECT
 from fastfusion.mapper.FFM._join_pmappings.pmapping_dataframe import (
     nameloop2col,
     tensor2col,
@@ -45,13 +39,13 @@ from fastfusion.util.util import fzs
 import math
 import sympy
 import numpy as np
-import paretoset
 from numbers import Number
 
 from fastfusion.mapper.FFM._make_pmappings.make_pmappings.symbol_relations import (
     SymbolRelations,
 )
 from fastfusion.util.sympy.broadcast_max import Max
+from fastfusion.mapper.FFM._make_pmappings.make_pmappings.run_model import run_model
 
 
 class ComparisonResult(Enum):
@@ -103,7 +97,7 @@ def geq_leq_than_zero(f: Expr, bounds: tuple[tuple[Symbol, int, int], ...]):
 
     functions = [f]
     for s, lo, hi in bounds:
-        if len(functions) >= 64:  # Starts getting slow if we have too many functions
+        if len(functions) >= 8:  # Starts getting slow if we have too many functions
             break
         if s not in f.free_symbols:
             continue
@@ -151,129 +145,6 @@ def geq_leq_than_zero(f: Expr, bounds: tuple[tuple[Symbol, int, int], ...]):
             pass
 
     return ComparisonResult.UNKNOWN
-
-
-def run_model(
-    job: Job,
-) -> tuple[list[Symbol], dict[str, float], dict[str, float], dict[str, float]]:
-    pmapping = job.mapping
-    spec = job.spec
-    metrics = job.metrics
-    is_copy_op = job.is_copy_operation
-    workload = spec.workload
-
-    component_to_max_fanout = {}
-    memory_to_size = {}
-    for node in job.flattened_arch:
-        if isinstance(node, arch.TensorHolder):
-            if isinstance(node, arch.Memory):
-                memory_to_size[node.name] = node.attributes.size
-        component_to_max_fanout[node.name] = {s.name: s.fanout for s in node.spatial}
-
-    df = {}
-
-    reuse = analyze_reuse_and_add_reservations_to_mapping(job)
-    # overall_latency, comp_latency, mem_latency = get_latency(
-    #     reuse, pmapping, workload, job.flattened_arch
-    # )
-
-    latency = component_latency(reuse, job.flattened_arch, pmapping, spec)
-    try:
-        overall_latency = Max(*latency.values()) if latency else 0
-    except Exception as e:
-        for k, v in latency.items():
-            if not isinstance(v, (Number, sympy.Symbol, sympy.Expr)):
-                raise ValueError(
-                    f"Invalid type for latency: {k}: {type(v)} {str(v).strip()}"
-                )
-
-        raise ValueError(
-            f"Error calculating latency for {job.einsum_name}. Could not calculate "
-            f"a symbolic max of the following latencies:\n\t"
-            + "\n\t".join(
-                [f"{k}: {type(v)} {str(v).strip()}" for k, v in latency.items()]
-            )
-        )
-
-    actions = gather_actions(reuse, None, use_name=True)
-    energy = compute_energy_from_actions(spec, actions, overall_latency)
-
-    fusable_tensors = workload.fusable_tensor_names
-    tensor_to_backing = {}
-    for node in pmapping.nodes:
-        if isinstance(node, TensorHolder):
-            for tensor in node.tensors:
-                if tensor not in tensor_to_backing and tensor in fusable_tensors:
-                    tensor_to_backing[tensor] = node.component
-
-    total_occupancy = {}
-    compute_unit = pmapping.nodes[-1].compute
-
-    n_instances = workload.n_instances * workload.einsums[job.einsum_name].n_instances
-
-    n_loop_options = set()
-    for buffet, stats in reuse.buffet_stats.items():
-        if buffet.level == compute_unit:
-            continue
-
-        occupancy = stats.max_occupancy
-
-        if occupancy == 0:
-            continue
-        if stats.persistent:
-            occupancy *= n_instances
-
-        for tensor, backing in tensor_to_backing.items():
-            if (is_copy_op or buffet.tensor == tensor) and buffet.level == backing:
-                df[tensor2col(tensor)] = occupancy
-
-        total_occupancy.setdefault(buffet.level, {}).setdefault(stats.n_loops_above, 0)
-        total_occupancy[buffet.level][stats.n_loops_above] += occupancy
-        n_loop_options.add(stats.n_loops_above)
-
-    for memory, occupancies in total_occupancy.items():
-        if memory not in job.memories_track_all:
-            continue
-        running_total = 0
-        for n_loop in n_loop_options:
-            if n_loop in occupancies:
-                running_total += occupancies[n_loop]
-                df[nameloop2col(memory, n_loop)] = running_total
-
-    if metrics & Metrics.LATENCY:
-        df[f"Total<SEP>latency"] = overall_latency * n_instances
-        # df[f"latency<SEP>compute"] = comp_latency * n_instances
-        # For first latency, we'll follow the convention of treating compute
-        # as a component, similarly to memory (see below).
-        for compute_level, stats in reuse.compute_stats.items():  # FIRST LATENCY
-            for idx, max_first_latency in stats.max_first_latency.items():
-                df[firstlatency2col(compute_level.level, idx)] = (
-                    max_first_latency * n_instances
-                )
-        for component, cur_latency in latency.items():
-            df[f"latency<SEP>{component}"] = cur_latency * n_instances
-
-    if metrics & Metrics.ENERGY:
-        df[f"Total<SEP>energy"] = sum(energy.values()) * n_instances
-        for (component, action), energy in energy.items():
-            df[f"energy<SEP>{component}<SEP>{action}"] = energy * n_instances
-
-    # if metrics & Metrics.RESERVATIONS:
-    #     for memory, occupancies in total_occupancy.items():
-    #         df[f"reservations<SEP>{memory}"] = sum(occupancies.values())
-
-    per_memory_usage_df = {}
-    for memory, occupancies in total_occupancy.items():
-        per_memory_usage_df[memory] = sum(occupancies.values()) / memory_to_size[memory]
-
-    utilization_df = {}
-    for (component, einsum), per_dim_fanout in reuse.fanout.items():
-        for dim, fanout in per_dim_fanout.items():
-            utilization_df[f"utilization<SEP>{component}<SEP>{dim}"] = (
-                fanout / component_to_max_fanout[component][dim]
-            )
-
-    return reuse.symbols, df, per_memory_usage_df, utilization_df
 
 
 def compile_dict(symbols, dictionary):
@@ -672,21 +543,23 @@ def coalesce_symbols(
             # compare and the derivative of the formula WRT the symbol does not change
             # sign (i.e., the formula is monotonic WRT the symbol), then we can drop it
             # because it won't affect comparisons.
+
+            # If it's a function of a non-enumerated symbol &
             for s in formula.free_symbols:
-                goal_str = latest(s).goal if s in latest() else None
-                # If we don't know the symbol yet, we can't compare it
-                if s not in symbols_enumerated:
-                    goal_str = "diff"
+                if s in symbols_enumerated:
+                    continue
 
                 try:
                     diff_result = diff_geq_leq_than_zero(formula, s, bounds)
                     # If this symbol doesn't change the derivative sign & we can't
                     # compare it, then don't include it here.
-                    if diff_result != ComparisonResult.UNKNOWN and goal_str == "diff":
+                    if diff_result != ComparisonResult.UNKNOWN:
                         log_message(
-                            "coalesce symbols", f"dropping symbol {s}: {formula}"
+                            "coalesce symbols", f"dropping non-comparable symbol based on derivative {s}: {formula}"
                         )
                         formula = formula.subs(s, 1)
+                    else:
+                        log_message("coalesce symbols", f"not dropping symbol based on derivative {s}: {formula}")
                 except TypeError:
                     pass
 
@@ -714,13 +587,15 @@ def coalesce_symbols(
                     formula = 1 / formula
                     goal = ~goal
 
-            # If a symbol does not affect the formula, we can remove it
-            for s in formula.free_symbols:
-                diff_result = diff_geq_leq_than_zero(formula, s, bounds)
-                if diff_result == ComparisonResult.EQUAL_TO_ZERO:
-                    formula = formula.subs(s, 1)
-                    log_message("coalesce symbols", f"dropping symbol {s}: {formula}")
-                    continue
+            # # If a symbol does not affect the formula, we can remove it
+            # for s in formula.free_symbols:
+            #     diff_result = diff_geq_leq_than_zero(formula, s, bounds)
+            #     if diff_result == ComparisonResult.EQUAL_TO_ZERO:
+            #         formula = formula.subs(s, 1)
+            #         log_message("coalesce symbols", f"dropping symbol based on derivative == 0: {s}: {formula}")
+            #         continue
+            #     else:
+            #         log_message("coalesce symbols", f"not dropping symbol based on derivative == 0: {s}: {formula}")
 
             # If a formula agrees entirely with other goals, then we can remove it
             disagrees = []
@@ -789,7 +664,7 @@ def get_tile_shape_choices(
     # the outer loops, so it does those symbols (which end up multiplying our choices)
     # last. Outer to inner is faster if there's no symbols to keep because that's what
     # happened on exactly one workload that Tanner tested.
-    TILE_SHAPE_ORDER = "inner_to_outer" if keep_symbols else "outer_to_inner"
+    TILE_SHAPE_ORDER = "inner_to_outer_one_rv_at_a_time"# if keep_symbols else "outer_to_inner_one_rv_at_a_time"
 
     # For imperfect, we make inner tile shapes, then create outer tile shapes that are
     # multiples of the non-residual part of the inner tile shape. This way, the very last
@@ -797,7 +672,7 @@ def get_tile_shape_choices(
     # shape, and we don't have any cases where there are residuals stacking across multiple
     # loop levels.
     if IMPERFECT:
-        assert TILE_SHAPE_ORDER == "inner_to_outer"
+        assert TILE_SHAPE_ORDER == "inner_to_outer_one_rv_at_a_time"
 
     paretoed_by = []
 
@@ -843,6 +718,9 @@ def get_tile_shape_choices(
         # TODO: Maybe start with a symbol that would result in more pruning up front?
         # Maximize the # of choices that can be resolved easily
         if TILE_SHAPE_ORDER == "inner_to_outer":
+            return symbols_remaining.pop()
+
+        if TILE_SHAPE_ORDER == "inner_to_outer_one_rv_at_a_time":
             # Continue with a symbol representing the parent tile of the last symbol
             # if possible. Otherwise (see return), just grab any symbol.
             choice = what_tiles_symbol.get_outer_tiles(prev_symbol, none_if_fail=True)
@@ -863,7 +741,7 @@ def get_tile_shape_choices(
                             max_size = what_tiles_symbol.get_max_size(s)
                 choice = symbols_remaining.index(strides[choice])
             return symbols_remaining.pop(choice)
-        elif TILE_SHAPE_ORDER == "outer_to_inner":
+        elif TILE_SHAPE_ORDER == "outer_to_inner_one_rv_at_a_time":
             # Continue with a symbol representing the child tile of the last symbol
             # if possible. Otherwise (see return), just grab any symbol.
             choice = what_tiles_symbol.get_inner_tiles(prev_symbol, none_if_fail=True)
@@ -1261,7 +1139,7 @@ def get_tile_shape_choices(
             to_pareto = to_pareto[
                 :, [i for i in range(to_pareto.shape[1]) if i not in drop_cols]
             ]
-            keep = makepareto_numpy(to_pareto, pareto_goals)
+            keep = makepareto_numpy(to_pareto, pareto_goals, dirty=True)
             prev_size = choices_enumerated.shape[0]
             choices_enumerated = choices_enumerated[keep]
             job.log_porp_pmappings_kept(
@@ -1322,6 +1200,11 @@ def set_last_tile_shape_to_one(pmapping):
     for last_node in rank_var_to_last_node.values():
         last_node.initial_tile_shape = None
         last_node.stride = 1
+
+
+# This was made only so we could do some counting of the time.
+def call_compiled_objective(f, *args):
+    return f(*args)
 
 
 def _make_tile_shapes_new(job: "Job"):
@@ -1432,7 +1315,7 @@ def _make_tile_shapes_new(job: "Job"):
 
     t0 = time.time()
     for key in compiled_df:
-        df[key] = compiled_df[key](*choices_float.T)
+        df[key] = call_compiled_objective(compiled_df[key], *choices_float.T)
         if "latency" in key and "first_latency" not in key:
             val = [df[key]] if isinstance(df[key], Number) else df[key]
             if any(l < 0 for l in val):
@@ -1441,9 +1324,6 @@ def _make_tile_shapes_new(job: "Job"):
             val = [df[key]] if isinstance(df[key], Number) else df[key]
             if any(l < 0 for l in val):
                 raise ValueError(f"Negative energy for {key}: {val}")
-    df_time = time.time() - t0
-    n_pmappings = choices_enumerated.shape[0]
-    # print(f"Model time: {model_time:.2f}s, ratio: {model_time * n_pmappings / df_time:.2f} for {n_pmappings} pmappings")
 
     # Some initial tile shapes are invalid
     for nloops, n in enumerate(
