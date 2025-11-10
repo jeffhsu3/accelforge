@@ -1,4 +1,5 @@
 import functools
+from math import prod
 import time
 
 import pandas as pd
@@ -278,6 +279,149 @@ def prime_factor_counts(arr: np.ndarray) -> np.ndarray:
     return result
 
 
+def paretoset_grouped_dirty(df: pd.DataFrame, sense: list[str]):
+    # return paretoset(df, sense=sense)
+
+    assert all(i == c for i, c in enumerate(df.columns))
+    assert len(sense) == len(df.columns)
+
+    from paretoset.algorithms_numba import paretoset_jit
+    from paretoset.algorithms_numba import BNL
+
+    for c in df.columns:
+        if sense[c] == "max":
+            df[c] = -df[c]
+            sense[c] = "min"
+
+    GROUP_SIZE = 128
+
+    group_by = [c for c in df.columns if sense[c] == "diff"]
+    n_groups = prod(len(df[c].unique()) for c in group_by)
+
+    if len(df) / n_groups < GROUP_SIZE:
+        return paretoset(df, sense=sense)
+
+    c2unique = {c: len(df[c].unique()) for c in df.columns if c not in group_by}
+    while c2unique:
+        col, n = min(c2unique.items(), key=lambda x: x[1])
+        c2unique.pop(col)
+        n_groups *= n
+        if len(df) / n_groups < GROUP_SIZE:
+            break
+        group_by.append(col)
+
+    n_diffs = sum(x == "diff" for x in sense)
+    if len(group_by) < 2 or len(group_by) == n_diffs:
+        return paretoset(df, sense=sense)
+
+    def _row_from_group(mins, group):
+        per_col_mins = group.min(axis=0)
+        per_col_maxs = group.max(axis=0)
+        good_row = group.iloc[np.argmin(group.prod(axis=1))]
+        return [mins, per_col_mins, per_col_maxs, good_row, group]
+
+    groups = list(df.groupby(group_by))
+    groups_by_diff = {}
+    keepcols = [c for c in df.columns if c not in group_by]
+    for x, group in groups:
+        diffs, mins = x[:n_diffs], x[n_diffs:]
+        group = group[keepcols]
+        groups_by_diff.setdefault(diffs, []).append(_row_from_group(mins, group))
+
+    # print(f'Grouped into {len(groups)} groups using {len(group_by)} columns')
+    # orig_size = len(df)
+    # n_groups = len(groups)
+    # n_cols = len(keepcols)
+    # new_size = sum(len(g2) for g in groups_by_diff.values() for _, _, _, g2 in g)
+    # print(f'Grouped into {n_groups} groups, {orig_size} -> {new_size} rows, {n_cols} columns. Remaining {len(keepcols)} columns')
+
+    for groups in groups_by_diff.values():
+        for i, (mins_a, per_col_mins_a, per_col_maxs_a, good_row_a, group_a) in enumerate(groups):
+            if group_a is None:
+                continue
+
+            for j, (mins_b, per_col_mins_b, per_col_maxs_b, good_row_b, group_b) in enumerate(groups):
+                if group_b is None or i == j:
+                    continue
+
+                # a can only dominate b if all of the min columns dominate
+                a_may_dom = all(a <= b for a, b in zip(mins_a, mins_b))
+                if not a_may_dom:
+                    continue
+
+                if all(a <= b for a, b in zip(good_row_a, per_col_mins_b)):
+                    groups[j][-1] = None
+                    continue
+
+                if all(a <= b for a, b in zip(good_row_a, good_row_b)):
+                    # The good row of a dominates the good row of b. It'll likely
+                    # dominate many b!
+                    group_b = group_b[(group_b < good_row_a).any(axis=1)]
+                    if len(group_b) == 0:
+                        groups[j][-1] = None
+                        continue
+                    groups[j].clear()
+                    groups[j].extend(_row_from_group(mins_b, group_b))
+
+                # # Check if any b beats all a. If so, continue.
+                # if any(a > b for a, b in zip(per_col_mins_a, per_col_maxs_b)):
+                #     continue
+
+                # # # Check if any a beats every b. If so, get rid of b.
+                # # a_doms = all(a <= b for a, b in zip(per_col_maxs_a, per_col_mins_b))
+                # # if a_doms:
+                # #     groups[j][-1] = None
+                # #     # print(f'Dropping dominated group {j}')
+                # #     continue
+
+                # row_a = group_a.iloc[np.random.randint(len(group_a))]
+                # if all(a <= b for a, b in zip(row_w_min_first_obj_b, per_col_mins_b)):
+                #     groups[j][-1] = None
+
+                # Everything below just ended up making things slower
+
+                # if any(a > b for a, b in zip(row_a, per_col_maxs_b)):
+                #     continue
+
+                # continue
+
+                # # Grab a random a. Get rid of all b that are dominated by it.
+                # a_lt_b_maxes = group_a.iloc[
+                #     np.where(np.all(group_a <= per_col_maxs_b, axis=1))[0]
+                # ]
+                # if len(a_lt_b_maxes) == 0:
+                #     continue
+
+                # row_a = a_lt_b_maxes.iloc[np.random.randint(len(a_lt_b_maxes))]
+
+                # b_idx = np.where(np.any(group_b < row_a, axis=1))[0]
+                # if len(b_idx) == 0:
+                #     groups[j][-1] = None
+                # else:
+                #     groups[j][-1] = group_b.iloc[b_idx]
+                #     groups[j][1] = group_b.iloc[b_idx].min(axis=0)
+                #     groups[j][2] = group_b.iloc[b_idx].max(axis=0)
+
+                # # Now we're in a case where a may dominate b. Update b.
+                # catted = pd.concat([group_a, group_b], axis=0)
+                # mask = np.concatenate([
+                #     np.zeros(len(group_a), dtype=bool),
+                #     np.ones(len(group_b), dtype=bool)
+                # ])
+                # catted = catted[paretoset_jit(catted.to_numpy()) & mask]
+                # groups[j][1] = catted.min(axis=0)
+                # groups[j][2] = catted.max(axis=0)
+                # groups[j][3] = catted
+
+    result = np.zeros(len(df), dtype=bool)
+    for group in groups_by_diff.values():
+        for _, _, _, _, group in group:
+            if group is not None:
+                result[group[paretoset_jit(group.to_numpy())].index] = True
+
+    return result
+
+
 def makepareto_numpy(
     mappings: np.ndarray,
     goals: list[str],
@@ -292,9 +436,9 @@ def makepareto_numpy(
             continue
 
         goal = goals[c]
-        if goal != "diff" and dirty and len(np.unique(mappings[:, c])) < np.log2(mappings.shape[0]):
-            # print(f"Changed {goal} to diff because there are {len(np.unique(mappings[:, c]))} unique values for {mappings.shape[0]} rows")
-            goal = "diff"
+        # if goal != "diff" and dirty and len(np.unique(mappings[:, c])) < np.log2(mappings.shape[0]):
+        #     # print(f"Changed {goal} to diff because there are {len(np.unique(mappings[:, c]))} unique values for {mappings.shape[0]} rows")
+        #     goal = "diff"
 
         if goal in ["min", "max"]:
             l = logify(mappings[:, c].reshape((-1, 1)))
@@ -314,4 +458,8 @@ def makepareto_numpy(
     if not to_pareto:
         return mappings[:1]
 
-    return paretoset(np.concatenate(to_pareto, axis=1), sense=new_goals)
+    df = pd.DataFrame(np.concatenate(to_pareto, axis=1), columns=range(len(to_pareto)))
+
+    if dirty:
+        return paretoset_grouped_dirty(df, sense=new_goals)
+    return paretoset(df, sense=new_goals)
