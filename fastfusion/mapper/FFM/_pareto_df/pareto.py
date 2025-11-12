@@ -317,7 +317,7 @@ def paretoset_grouped_dirty(df: pd.DataFrame, sense: list[str]):
     def _row_from_group(mins, group):
         per_col_mins = group.min(axis=0)
         per_col_maxs = group.max(axis=0)
-        good_row = group.iloc[np.argmin(group.prod(axis=1))]
+        good_row = group.iloc[np.argmin((group ** (1 / len(group.columns))).prod(axis=1))]
         return [mins, per_col_mins, per_col_maxs, good_row, group]
 
     groups = list(df.groupby(group_by))
@@ -448,10 +448,25 @@ def makepareto_numpy(
             to_pareto.append(mappings[:, c].reshape((-1, 1)))
             new_goals.append("diff")
         elif goal == "min_per_prime_factor":
-            counts = prime_factor_counts(mappings[:, c])
-            for i in range(counts.shape[1]):
-                to_pareto.append(counts[:, i].reshape((-1, 1)))
-                new_goals.append("min_per_prime_factor")
+            if not dirty:
+                # Paretoset tends to be faster with these as diffs
+                to_pareto.append(mappings[:, c].reshape((-1, 1)))
+                new_goals.append("diff")
+            else:
+                counts = prime_factor_counts(mappings[:, c])
+                for i in range(counts.shape[1]):
+                    to_pareto.append(counts[:, i].reshape((-1, 1)))
+                    new_goals.append("min")
+        elif goal == "max_per_prime_factor":
+            if not dirty:
+                # Paretoset tends to be faster with these as diffs
+                to_pareto.append(mappings[:, c].reshape((-1, 1)))
+                new_goals.append("diff")
+            else:
+                counts = prime_factor_counts(mappings[:, c])
+                for i in range(counts.shape[1]):
+                    to_pareto.append(counts[:, i].reshape((-1, 1)))
+                    new_goals.append("max")
         else:
             raise ValueError(f"Unknown goal: {goal}")
 

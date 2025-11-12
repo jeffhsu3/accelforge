@@ -6,7 +6,7 @@ import re
 import resource
 import time
 from typing import Callable, Optional, Union
-from sympy import Expr, Symbol, lambdify
+from sympy import Expr, Symbol, factorint, lambdify
 from fastfusion import util
 from fastfusion.accelerated_imports import np
 from fastfusion.accelerated_imports import pd
@@ -97,7 +97,7 @@ def geq_leq_than_zero(f: Expr, bounds: tuple[tuple[Symbol, int, int], ...]):
 
     functions = [f]
     for s, lo, hi in bounds:
-        if len(functions) >= 8:  # Starts getting slow if we have too many functions
+        if len(functions) >= 16:  # Starts getting slow if we have too many functions
             break
         if s not in f.free_symbols:
             continue
@@ -130,6 +130,17 @@ def geq_leq_than_zero(f: Expr, bounds: tuple[tuple[Symbol, int, int], ...]):
         for f in functions:
             if isinstance(f, (sympy.Min, sympy.Max)):
                 new_functions.extend(f.args)
+            # If there's a Heaviside in the function, replace it with 0 and with 1
+            elif f.has(sympy.Heaviside):
+                a = f.replace(
+                    lambda expr: expr.is_Function and expr.func == sympy.Heaviside,
+                    lambda expr: 1,
+                )
+                b = f.replace(
+                    lambda expr: expr.is_Function and expr.func == sympy.Heaviside,
+                    lambda expr: 0,
+                )
+                new_functions.extend((a, b))
             else:
                 new_functions.append(f)
         functions = new_functions
@@ -160,7 +171,7 @@ class Goal:
     X subset Y means that Y will block pruning for all cases that X will block pruning.
 
     - min is a subset of min_per_prime_factor is a subset of diff
-    - max is a subset of diff
+    - max is a subset of max_per_prime_factor is a subset of diff
 
     If we're combining goals and they disagree, use the larger space.
     """
@@ -171,8 +182,6 @@ class Goal:
         max_value: Optional[float] = None,
         only_care_if_valid: bool = False,
     ):
-        if goal == "min_per_prime_factor" and IMPERFECT:
-            goal = "min"
         self.goal = goal
         self.max_value = max_value
         self.only_care_if_valid = only_care_if_valid
@@ -192,8 +201,12 @@ class Goal:
             return Goal(self.goal, max_value=mv, only_care_if_valid=care)
 
         # min_per_prime_factor is a superset of min, so we can just keep the min_per_prime_factor goal
-        if self.goal == "min_per_prime_factor" and other.goal == "min":
+        if {self.goal, other.goal} == {"min", "min_per_prime_factor"}:
             return Goal("min_per_prime_factor", max_value=mv, only_care_if_valid=care)
+
+        # max_per_prime_factor is a superset of max, so we can just keep the max_per_prime_factor goal
+        if {self.goal, other.goal} == {"max", "max_per_prime_factor"}:
+            return Goal("max_per_prime_factor", max_value=mv, only_care_if_valid=care)
 
         # Otherwise, there's a disagreement and the only space we're both in can be diff
         return Goal("diff", max_value=mv, only_care_if_valid=care)
@@ -211,6 +224,8 @@ class Goal:
             return Goal("min", self.max_value, self.only_care_if_valid)
         elif self.goal == "min_per_prime_factor":
             raise ValueError("Can't invert min_per_prime_factor")
+        elif self.goal == "max_per_prime_factor":
+            raise ValueError("Can't invert max_per_prime_factor")
         else:
             return copy.copy(self)
 
@@ -276,6 +291,10 @@ def _try_replace_single_term(
     return t, None
 
 
+def try_replace_single_term(t: Expr, symbols_enumerated: fzs[Symbol], bounds: tuple[tuple[Symbol, int, int], ...]):
+    return _try_replace_single_term(t, symbols_enumerated & t.free_symbols, bounds)
+
+
 @lru_cache(maxsize=10000)
 def _partition_formula(
     f: Expr,
@@ -306,7 +325,9 @@ def _partition_formula(
         return t
 
     def _recombine_terms(terms: list[Expr]):
-        symbols2terms = {}
+        can_evaluate = []
+        no_relation = []
+        others = {}
         for t in terms:
             t = _try_replace_unknowns(t)
             try:
@@ -314,10 +335,23 @@ def _partition_formula(
                     continue
             except (TypeError, ValueError):
                 pass
-            symbols2terms.setdefault(
-                fzs(t.free_symbols - symbols_enumerated), []
-            ).append(t)
-        return [type(f)(*terms) for terms in symbols2terms.values()]
+            if t.free_symbols.issubset(symbols_enumerated):
+                can_evaluate.append(t)
+            elif t.free_symbols.isdisjoint(symbols_enumerated):
+                no_relation.append(t)
+            else:
+                others.setdefault(
+                    fzs(t.free_symbols - symbols_enumerated), []
+                ).append(t)
+
+        # Grab the terms that we can evaluate directly first
+        chosen = []
+        if can_evaluate:
+            chosen.append(type(f)(*can_evaluate))
+        # Ignore no relation
+        chosen.extend([x for v in others.values() for x in v])
+
+        return chosen
 
     if isinstance(f, (sympy.Max, sympy.Min, sympy.Add, sympy.ceiling)):
         terms = _recombine_terms(f.args)
@@ -338,7 +372,7 @@ def _partition_formula(
         terms = [_try_replace_unknowns(f)]
 
     for term in terms:
-        term, goal = _try_replace_single_term(term, fzs(symbols_enumerated), bounds)
+        term, goal = try_replace_single_term(term, fzs(symbols_enumerated), bounds)
         if goal is not None:
             update_goal(term, goal.goal)
             continue
@@ -369,6 +403,11 @@ def _partition_formula(
             v.goal = "diff"
 
     return goals
+
+
+# @lru_cache(maxsize=10000)
+def _get_n_prime_factors(n: int) -> int:
+    return len(factorint(n))
 
 
 def partition_formula(
@@ -546,7 +585,7 @@ def coalesce_symbols(
 
             # If it's a function of a non-enumerated symbol &
             for s in formula.free_symbols:
-                if s in symbols_enumerated:
+                if s in symbols_enumerated and latest().get(s, Goal()).goal != "diff":
                     continue
 
                 try:
@@ -566,7 +605,7 @@ def coalesce_symbols(
             # If there's only one symbol in the formula, we can try to replace it with
             # just the symbol.
             if len(formula.free_symbols & sym_enumerated_set) == 1:
-                formula, new_goal = _try_replace_single_term(
+                formula, new_goal = try_replace_single_term(
                     formula, fzs(symbols_enumerated), bounds
                 )
                 if new_goal is not None:
@@ -664,7 +703,9 @@ def get_tile_shape_choices(
     # the outer loops, so it does those symbols (which end up multiplying our choices)
     # last. Outer to inner is faster if there's no symbols to keep because that's what
     # happened on exactly one workload that Tanner tested.
-    TILE_SHAPE_ORDER = "inner_to_outer_one_rv_at_a_time"# if keep_symbols else "outer_to_inner_one_rv_at_a_time"
+    # TILE_SHAPE_ORDER = "inner_to_outer_one_rv_at_a_time" if keep_symbols else "outer_to_inner_one_rv_at_a_time"
+    TILE_SHAPE_ORDER = "inner_to_outer_one_rv_at_a_time"
+    # TILE_SHAPE_ORDER = "inner_to_outer"
 
     # For imperfect, we make inner tile shapes, then create outer tile shapes that are
     # multiples of the non-residual part of the inner tile shape. This way, the very last
@@ -718,7 +759,9 @@ def get_tile_shape_choices(
         # TODO: Maybe start with a symbol that would result in more pruning up front?
         # Maximize the # of choices that can be resolved easily
         if TILE_SHAPE_ORDER == "inner_to_outer":
-            return symbols_remaining.pop()
+            return symbols_remaining.pop(-1)
+        if TILE_SHAPE_ORDER == "outer_to_inner":
+            return symbols_remaining.pop(0)
 
         if TILE_SHAPE_ORDER == "inner_to_outer_one_rv_at_a_time":
             # Continue with a symbol representing the parent tile of the last symbol
@@ -969,16 +1012,16 @@ def get_tile_shape_choices(
         # being dominated by another point.
 
         for s in symbols_enumerated:
+            per_prime_factor = not (IMPERFECT or _get_n_prime_factors(what_tiles_symbol.get_max_size(s)) == 1)
             tiles = what_tiles_symbol.get_outer_tiles(s, none_if_fail=True)
             if isinstance(tiles, Symbol) and tiles not in symbols_enumerated:
-                # update_symbol2goal(s, Goal("min_per_prime_factor"))
-                update_symbol2goal(s, Goal("diff"))
+                update_symbol2goal(s, Goal("min_per_prime_factor" if per_prime_factor else "min"))
+                # update_symbol2goal(s, Goal("diff"))
 
-        # Same for inner loops depending on us, but maximize if we're imperfect
-        for s in symbols_enumerated:
+            # Same for inner loops depending on us, but maximize if we're imperfect
             tiled_by = what_tiles_symbol.get_inner_tiles(s, none_if_fail=True)
             if isinstance(tiled_by, Symbol) and tiled_by not in symbols_enumerated:
-                update_symbol2goal(s, Goal("diff"))
+                update_symbol2goal(s, Goal("max_per_prime_factor" if per_prime_factor else "max"))
 
         # If we need to keep this symbol, must preserve all choices for it
         for s in set(symbols_enumerated) & set(keep_symbols):
