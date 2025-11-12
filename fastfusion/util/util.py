@@ -1,11 +1,13 @@
 import itertools
 from numbers import Number
+import tempfile
 from typing import Generic, TypeVar
 
 import pydot
 import sympy
 
 from joblib import Parallel, delayed
+import joblib
 import sys
 import os
 from tqdm import tqdm
@@ -213,3 +215,9 @@ class ProfilePrint:
 class SVGJupyterRender(str):
     def _repr_svg_(self):
         return self
+
+
+def memmap_read(x):
+    f = tempfile.NamedTemporaryFile(delete=False, suffix=".pkl")
+    joblib.dump(x, f.name)
+    return joblib.load(f.name, mmap_mode="r")

@@ -394,12 +394,6 @@ def make_pmappings_from_templates(
         )
         pmapping_groups.append(PmappingGroup(compatibility, partial_mappings))
 
-    # Significant amount of time is spent pickling these objects
-    for job in jobs_with_similar_compatibilities:
-        job.spec = None
-        job.mapping = None
-        job.flattened_arch = None
-
     return (
         einsum_name,
         pmapping_groups,

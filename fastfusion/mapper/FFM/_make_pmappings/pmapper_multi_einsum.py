@@ -93,7 +93,9 @@ def get_jobs(
 
         return einsum_name, jobs
 
-    einsum2jobs = {}
+    spec = util.memmap_read(spec)
+    flattened_arches = [util.memmap_read(f) for f in flattened_arches]
+
     for einsum_name, jobs in parallel(
         [
             delayed(make_jobs_for_einsum)(einsum_name, flattened_arch)
@@ -103,8 +105,6 @@ def get_jobs(
         pbar="Generating jobs",
         return_as="generator",
     ):
-        # n_jobs = sum(len(j) for j in jobs.values())
-        # print(f"Generated {n_jobs} job{'s'[:n_jobs != 1]} for {einsum_name}")
         einsum2jobs.setdefault(einsum_name, {})
         for compatibility, job_list in jobs.items():
             einsum2jobs[einsum_name].setdefault(
@@ -287,6 +287,9 @@ def make_pmappings(
         return max([len(j2.mapping.nodes) for j2 in j])
 
     calls = sorted(calls, key=get_longest_mapping_length, reverse=True)
+    # # Randomly permute the calls
+    # import random
+    # random.shuffle(calls)
 
     pmapping_objects = {}
     pmapping_groups = {einsum_name: [] for einsum_name in spec.workload.einsum_names}
