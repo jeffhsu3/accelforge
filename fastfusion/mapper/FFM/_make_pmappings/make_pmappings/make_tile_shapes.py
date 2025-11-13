@@ -5,7 +5,7 @@ import copy
 import re
 import resource
 import time
-from typing import Callable, Optional, Union
+from typing import Callable, Iterator, Optional, Union
 from sympy import Expr, Symbol, factorint, lambdify
 from fastfusion import util
 from fastfusion.accelerated_imports import np
@@ -49,135 +49,141 @@ from fastfusion.mapper.FFM._make_pmappings.make_pmappings.run_model import run_m
 
 
 class ComparisonResult(Enum):
-    GREATER_THAN_ZERO = "greater_than_zero"
-    LESS_THAN_ZERO = "less_than_zero"
-    EQUAL_TO_ZERO = "equal_to_zero"
+    ALWAYS_GEQ_THAN_ZERO = "ALWAYS_GEQ_THAN_ZERO"
+    ALWAYS_LEQ_THAN_ZERO = "ALWAYS_LEQ_THAN_ZERO"
+    ALWAYS_EQUAL_TO_ZERO = "ALWAYS_EQUAL_TO_ZERO"
     UNKNOWN = "unknown"
 
     def __or__(self, other: "ComparisonResult"):
         if self == other:
             return self
-        if self == ComparisonResult.EQUAL_TO_ZERO:
+        if self == ComparisonResult.ALWAYS_EQUAL_TO_ZERO:
             return other
-        if other == ComparisonResult.EQUAL_TO_ZERO:
+        if other == ComparisonResult.ALWAYS_EQUAL_TO_ZERO:
             return self
         return ComparisonResult.UNKNOWN
 
 
-@lru_cache(maxsize=10000)
-def diff_geq_leq_than_zero(
+@lru_cache(maxsize=1000)
+def diff(f: Expr, s: Symbol):
+    return sympy.diff(f, s)
+
+
+@lru_cache(maxsize=1000)
+def diff_geq_leq_zero(
     f: Expr, s: Symbol, bounds: tuple[tuple[Symbol, int, int], ...]
 ):
-    # If it's a max or a min, we can just take the derivative of each arg
-    if isinstance(f, (sympy.Max, sympy.Min)):
-        r = None
-        for a in f.args:
-            new = diff_geq_leq_than_zero(a, s, bounds)
-            if r is None:
-                r = new
-            else:
-                r = r | new
-            if r == ComparisonResult.UNKNOWN:
-                return r
-        return r
-
     # Assume ceiling won't affect the sign of the derivative. Changing from positive to
     # zero or negative to zero is OK and does not count as changing the sign.
     f = f.replace(
         lambda expr: expr.is_Function and expr.func == sympy.ceiling,
         lambda expr: expr.args[0],
     )
-    return geq_leq_than_zero(sympy.diff(f, s), bounds)
+    return geq_leq_zero(diff(f, s), bounds)
 
 
-@lru_cache(maxsize=10000)
-def frange(f: Expr, s: Symbol, lo: int, hi: int):
+@lru_cache(maxsize=1000)
+def function_range(f: Expr, s: Symbol, lo: int, hi: int):
     return sympy.calculus.util.function_range(f, s, domain=sympy.Interval(lo, hi))
 
 
-@lru_cache(maxsize=10000)
-def geq_leq_than_zero(f: Expr, bounds: tuple[tuple[Symbol, int, int], ...]):
-    # Assume ceiling won't affect the sign. Changing from positive to zero or negative
-    # to zero is OK and does not count as changing the sign.
+def expr_replace(f: Expr, old: sympy.Function, new: Expr) -> Expr:
+    return f.replace(
+        lambda expr: expr.is_Function and expr.func == old,
+        lambda expr: new,
+    )
+
+
+def partition_heaviside(f: Expr) -> tuple[Expr, ...]:
+    if f.has(sympy.Heaviside):
+        return expr_replace(f, sympy.Heaviside, 1), expr_replace(f, sympy.Heaviside, 0)
+    return (f,)
+
+
+@lru_cache(maxsize=1000)
+def _compare_to_zero(
+    f: Expr,
+    bounds: tuple[tuple[Symbol, int, int], ...],
+    check_lt_zero: bool
+) -> bool:
+    """
+    Returns True if the function may possibly be less than zero or greater than zero.
+
+    If check_lt_zero is True, then we're checking if the function may possibly be less
+    than zero. Otherwise, we're checking if the function may possibly be greater than
+    zero.
+
+    If we can't tell, then conservatively return True.
+    """
     f = f.replace(
         lambda expr: expr.is_Function and expr.func == sympy.ceiling,
         lambda expr: expr.args[0],
     )
 
+    fs = list(partition_heaviside(f))
+
+    if len(fs) > 1:
+        return any(_compare_to_zero(f2, bounds, check_lt_zero) for f2 in fs)
+
+    f = fs[0]
     try:
-        if f == 0:
-            return ComparisonResult.EQUAL_TO_ZERO
-        if f >= 0:
-            return ComparisonResult.GREATER_THAN_ZERO
-        if f <= 0:
-            return ComparisonResult.LESS_THAN_ZERO
+        if check_lt_zero:
+            # Less than zero anywhere == NOT geq zero everywhere
+            return not f >= 0
+        else:
+            # Greater than zero anywhere == NOT leq zero everywhere
+            return not f <= 0
     except TypeError:
         pass
 
-    lt_zero = False
-    gt_zero = False
+    min_check, max_check = (any, all) if check_lt_zero else (all, any)
+    if isinstance(f, sympy.Min):
+        return min_check(_compare_to_zero(g, bounds, check_lt_zero) for g in f.args)
+    if isinstance(f, sympy.Max):
+        return max_check(_compare_to_zero(g, bounds, check_lt_zero) for g in f.args)
 
-    functions = [f]
+    # Tried this on one workload and had marginally faster speeds with choosing the
+    # symbol that appears the least times. Also tried the symbol that appears the most
+    # times and the symbol that appears first in the bounds list. They had equivalent
+    # speeds, approx. 3% slower overall tile shape exploration than min.
+    chosen_s = min(f.free_symbols, key=lambda s: f.count(s))
     for s, lo, hi in bounds:
-        if len(functions) >= 16:  # Starts getting slow if we have too many functions
+        if s == chosen_s:
             break
-        if s not in f.free_symbols:
-            continue
-        new_functions = []
-        for f in functions:
-            try:
-                if f < 0:
-                    lt_zero = True
-                    continue
-                if f > 0:
-                    gt_zero = True
-                    continue
-                if f == 0:
-                    continue
-            except TypeError:
-                pass
-            try:
-                cur_f = frange(f, s, lo, hi)
-            except NotImplementedError:
-                return ComparisonResult.UNKNOWN
-            if isinstance(cur_f, sympy.FiniteSet):
-                new_functions.extend(cur_f)
-            elif cur_f.left == cur_f.right:
-                new_functions.append(cur_f.left)
-            else:
-                new_functions.extend((cur_f.left, cur_f.right))
-        functions = new_functions
+    else:
+        raise ValueError(f"Symbol {chosen_s} not found in bounds")
 
-        new_functions = []
-        for f in functions:
-            if isinstance(f, (sympy.Min, sympy.Max)):
-                new_functions.extend(f.args)
-            # If there's a Heaviside in the function, replace it with 0 and with 1
-            elif f.has(sympy.Heaviside):
-                a = f.replace(
-                    lambda expr: expr.is_Function and expr.func == sympy.Heaviside,
-                    lambda expr: 1,
-                )
-                b = f.replace(
-                    lambda expr: expr.is_Function and expr.func == sympy.Heaviside,
-                    lambda expr: 0,
-                )
-                new_functions.extend((a, b))
-            else:
-                new_functions.append(f)
-        functions = new_functions
+    try:
+        f_range = function_range(f, s, lo, hi)
+    except (NotImplementedError, TypeError):
+        return True
 
-        try:
-            if all(f2 == 0 for f2 in functions) and not lt_zero and not gt_zero:
-                return ComparisonResult.EQUAL_TO_ZERO
-            if all(f2 >= 0 for f2 in functions) and not lt_zero:
-                return ComparisonResult.GREATER_THAN_ZERO
-            if all(f2 <= 0 for f2 in functions) and not gt_zero:
-                return ComparisonResult.LESS_THAN_ZERO
-        except TypeError:
-            pass
+    if isinstance(f_range, sympy.FiniteSet):
+        return any(_compare_to_zero(f2, bounds, check_lt_zero) for f2 in f_range)
+    else:
+        return _compare_to_zero(
+            f_range.left if check_lt_zero else f_range.right,
+            bounds,
+            check_lt_zero,
+        )
 
-    return ComparisonResult.UNKNOWN
+
+@lru_cache(maxsize=1000)
+def geq_leq_zero(
+    f: Expr,
+    bounds: tuple[tuple[Symbol, int, int], ...],
+):
+    # return geq_leq_than_zero(f, bounds)
+    lt_zero = _compare_to_zero(f, bounds, check_lt_zero=True)
+    gt_zero = _compare_to_zero(f, bounds, check_lt_zero=False)
+
+    if lt_zero and gt_zero:
+        return ComparisonResult.UNKNOWN
+    if lt_zero and not gt_zero:
+        return ComparisonResult.ALWAYS_LEQ_THAN_ZERO
+    if gt_zero and not lt_zero:
+        return ComparisonResult.ALWAYS_GEQ_THAN_ZERO
+    return ComparisonResult.ALWAYS_EQUAL_TO_ZERO
 
 
 def compile_dict(symbols, dictionary):
@@ -186,7 +192,6 @@ def compile_dict(symbols, dictionary):
         return x
 
     return {k: lambdify(symbols, v) for k, v in dictionary.items()}
-
 
 class Goal:
     """
@@ -289,7 +294,7 @@ def is_constant(f: Expr) -> bool:
         return all(is_constant(arg) for arg in f.args)
 
 
-@lru_cache(maxsize=10000)
+@lru_cache(maxsize=1000)
 def _try_replace_single_term(
     t: Expr,
     symbols_enumerated: fzs[Symbol],
@@ -299,13 +304,17 @@ def _try_replace_single_term(
     if len(t.free_symbols & symbols_enumerated) == 1:
         s = next(iter(t.free_symbols & symbols_enumerated))
         try:
-            diff_result = diff_geq_leq_than_zero(t, s, bounds)
-            if diff_result == ComparisonResult.GREATER_THAN_ZERO:
+            diff_result = diff_geq_leq_zero(t, s, bounds)
+            if diff_result == ComparisonResult.ALWAYS_GEQ_THAN_ZERO:
                 goal = Goal("min")
-            elif diff_result == ComparisonResult.LESS_THAN_ZERO:
+            elif diff_result == ComparisonResult.ALWAYS_LEQ_THAN_ZERO:
                 goal = Goal("max")
             elif diff_result == ComparisonResult.UNKNOWN:
                 goal = Goal("diff")
+            elif diff_result == ComparisonResult.ALWAYS_EQUAL_TO_ZERO:
+                pass
+            else:
+                raise ValueError(f"Comparison result {diff_result} is not a valid comparison result")
             t = t.subs(s, 1)
             return s, goal
         except (TypeError, ValueError):
@@ -317,7 +326,7 @@ def try_replace_single_term(t: Expr, symbols_enumerated: fzs[Symbol], bounds: tu
     return _try_replace_single_term(t, symbols_enumerated & t.free_symbols, bounds)
 
 
-@lru_cache(maxsize=10000)
+@lru_cache(maxsize=1000)
 def _partition_formula(
     f: Expr,
     symbols_enumerated: set[Symbol],
@@ -338,7 +347,7 @@ def _partition_formula(
             if s in symbols_enumerated:
                 continue
             try:
-                diff_result = diff_geq_leq_than_zero(t, s, bounds)
+                diff_result = diff_geq_leq_zero(t, s, bounds)
                 # Won't change the derivative sign, so we can just replace it with 1.
                 if diff_result != ComparisonResult.UNKNOWN:
                     t = t.subs(s, 1)
@@ -384,12 +393,18 @@ def _partition_formula(
         # - For non-constant factors, if they're >1 then we can keep the max.
         #   Otherwise we have to drop it.
         for t in f.args:
-            geq_result = geq_leq_than_zero(t, bounds)
-            if geq_result == ComparisonResult.LESS_THAN_ZERO:
+            geq_result = geq_leq_zero(t, bounds)
+            if geq_result == ComparisonResult.ALWAYS_LEQ_THAN_ZERO:
                 negate = not negate
             elif geq_result == ComparisonResult.UNKNOWN:
                 negate = None
                 break
+            elif geq_result == ComparisonResult.ALWAYS_GEQ_THAN_ZERO:
+                pass
+            elif geq_result == ComparisonResult.ALWAYS_EQUAL_TO_ZERO:
+                pass
+            else:
+                raise ValueError(f"Comparison result {geq_result} is not a valid comparison result")
     else:
         terms = [_try_replace_unknowns(f)]
 
@@ -427,7 +442,7 @@ def _partition_formula(
     return goals
 
 
-# @lru_cache(maxsize=10000)
+@lru_cache(maxsize=1000)
 def _get_n_prime_factors(n: int) -> int:
     return len(factorint(n))
 
@@ -480,20 +495,19 @@ def get_padded_choices(
     for symbol in symbols_non_enumerated_set:
         choices_padded[symbol] = ones
         if minimize_formula is not None:
-            diff_result = diff_geq_leq_than_zero(
+            diff_result = diff_geq_leq_zero(
                 minimize_formula, symbol, what_tiles_symbol.bounds
             )
-            if diff_result == ComparisonResult.LESS_THAN_ZERO:
+            if diff_result == ComparisonResult.ALWAYS_LEQ_THAN_ZERO:
                 choices_padded[symbol] = ones * what_tiles_symbol.get_max_size(symbol)
-            elif diff_result == ComparisonResult.GREATER_THAN_ZERO:
+            elif diff_result == ComparisonResult.ALWAYS_GEQ_THAN_ZERO:
                 pass
-            elif diff_result == ComparisonResult.EQUAL_TO_ZERO:
+            elif diff_result == ComparisonResult.ALWAYS_EQUAL_TO_ZERO:
                 pass
-            else:
-                diff_geq_leq_than_zero(
-                    minimize_formula, symbol, what_tiles_symbol.bounds
-                )
+            elif diff_result == ComparisonResult.UNKNOWN:
                 raise ValueError(f"Can't tell if {symbol} is increasing or decreasing")
+            else:
+                raise ValueError(f"Comparison result {diff_result} is not a valid comparison result")
 
     return choices_padded
 
@@ -611,7 +625,7 @@ def coalesce_symbols(
                     continue
 
                 try:
-                    diff_result = diff_geq_leq_than_zero(formula, s, bounds)
+                    diff_result = diff_geq_leq_zero(formula, s, bounds)
                     # If this symbol doesn't change the derivative sign & we can't
                     # compare it, then don't include it here.
                     if diff_result != ComparisonResult.UNKNOWN:
@@ -650,8 +664,8 @@ def coalesce_symbols(
 
             # # If a symbol does not affect the formula, we can remove it
             # for s in formula.free_symbols:
-            #     diff_result = diff_geq_leq_than_zero(formula, s, bounds)
-            #     if diff_result == ComparisonResult.EQUAL_TO_ZERO:
+            #     diff_result = diff_geq_leq_zero(formula, s, bounds)
+            #     if diff_result == ComparisonResult.ALWAYS_EQUAL_TO_ZERO:
             #         formula = formula.subs(s, 1)
             #         log_message("coalesce symbols", f"dropping symbol based on derivative == 0: {s}: {formula}")
             #         continue
@@ -663,13 +677,18 @@ def coalesce_symbols(
             for s in formula.free_symbols:
                 g = latest(s).goal if s in latest() else None
                 if g in ["min", "max"]:
-                    diff_result = diff_geq_leq_than_zero(formula, s, bounds)
-                    if diff_result == ComparisonResult.LESS_THAN_ZERO:
+                    diff_result = diff_geq_leq_zero(formula, s, bounds)
+                    if diff_result == ComparisonResult.ALWAYS_LEQ_THAN_ZERO:
                         this_goal = (~goal).goal
-                    elif diff_result == ComparisonResult.GREATER_THAN_ZERO:
+                    elif diff_result == ComparisonResult.ALWAYS_GEQ_THAN_ZERO:
                         this_goal = (goal).goal
                     elif diff_result == ComparisonResult.UNKNOWN:
                         break
+                    elif diff_result == ComparisonResult.ALWAYS_EQUAL_TO_ZERO:
+                        this_goal = g # Make it agree
+                    else:
+                        diff_geq_leq_zero(formula, s, bounds)
+                        raise ValueError(f"Comparison result {diff_result} is not a valid comparison result")
                     if g != this_goal:
                         disagrees.append(s)
                     continue
