@@ -578,7 +578,6 @@ def check_max_fused_loops_per_rank(
 
 
 def coalesce_symbols(
-    symbols: list[Symbol],
     update_symbol2goal: Callable,
     symbols_enumerated: list[Symbol],
     symbol2goal: dict[Symbol, Goal],
@@ -646,18 +645,18 @@ def coalesce_symbols(
                 if s in symbols_enumerated and latest().get(s, Goal()).goal != "diff":
                     continue
 
-
                 if not affects_comparison(formula, s, sym_enumerated_set):
                     formula = formula.subs(s, 1)
                     log_message("coalesce symbols", f"dropping non-comparable symbol that does not affect comparison {s}: {formula}")
                     continue
                 else:
                     log_message("coalesce symbols", f"keeping dropping symbol that affects comparison {s}: {formula}")
+
             # If there's only one symbol in the formula, we can try to replace it with
             # just the symbol.
             if len(formula.free_symbols & sym_enumerated_set) == 1:
                 formula, new_goal = try_replace_single_term(
-                    formula, fzs(symbols_enumerated), bounds
+                    formula, sym_enumerated_set, bounds
                 )
                 if new_goal is not None:
                     log_message("coalesce symbols", f"replacing single term: {formula}")
@@ -1185,7 +1184,6 @@ def get_tile_shape_choices(
         # partially-unknown goals into fully-known and/or fully-unknown goals.
         # ==============================================================================
         symbol2goal = coalesce_symbols(
-            symbols=symbols,
             symbols_enumerated=symbols_enumerated,
             symbol2goal=symbol2goal,
             update_symbol2goal=update_symbol2goal,
