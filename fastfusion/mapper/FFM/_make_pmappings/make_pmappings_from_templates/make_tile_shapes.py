@@ -64,12 +64,12 @@ class ComparisonResult(Enum):
         return ComparisonResult.UNKNOWN
 
 
-@lru_cache(maxsize=1000)
+@lru_cache(maxsize=10000)
 def diff(f: Expr, s: Symbol):
     return sympy.diff(f, s)
 
 
-@lru_cache(maxsize=1000)
+@lru_cache(maxsize=10000)
 def diff_geq_leq_zero(
     f: Expr, s: Symbol, bounds: tuple[tuple[Symbol, int, int], ...]
 ):
@@ -83,7 +83,7 @@ def diff_geq_leq_zero(
     return geq_leq_zero(diff(f, s), bounds)
 
 
-@lru_cache(maxsize=1000)
+@lru_cache(maxsize=10000)
 def function_range(f: Expr, s: Symbol, lo: int, hi: int):
     return sympy.calculus.util.function_range(f, s, domain=sympy.Interval(lo, hi))
 
@@ -101,7 +101,7 @@ def partition_heaviside(f: Expr) -> tuple[Expr, ...]:
     return (f,)
 
 
-@lru_cache(maxsize=1000)
+@lru_cache(maxsize=10000)
 def _compare_to_zero(
     f: Expr,
     bounds: tuple[tuple[Symbol, int, int], ...],
@@ -171,7 +171,7 @@ def _compare_to_zero(
         )
 
 
-@lru_cache(maxsize=1000)
+@lru_cache(maxsize=10000)
 def geq_leq_zero(
     f: Expr,
     bounds: tuple[tuple[Symbol, int, int], ...],
@@ -281,7 +281,7 @@ class Objective:
         if isinstance(formula, Number):
             formula = sympy.Number(formula)
         self.name: str = name
-        self.formula: Expr = formula.simplify()
+        self.formula: Expr = simplify(formula)
         self._symbols: list[str] = symbols
         self.max_value: float = max_value
         self.only_care_if_valid: bool = only_care_if_valid
@@ -297,7 +297,7 @@ def is_constant(f: Expr) -> bool:
         return all(is_constant(arg) for arg in f.args)
 
 
-@lru_cache(maxsize=1000)
+@lru_cache(maxsize=10000)
 def _try_replace_single_term(
     t: Expr,
     symbols_enumerated: fzs[Symbol],
@@ -318,7 +318,6 @@ def _try_replace_single_term(
                 pass
             else:
                 raise ValueError(f"Comparison result {diff_result} is not a valid comparison result")
-            t = t.subs(s, 1)
             return s, goal
         except (TypeError, ValueError):
             pass
@@ -329,7 +328,7 @@ def try_replace_single_term(t: Expr, symbols_enumerated: fzs[Symbol], bounds: tu
     return _try_replace_single_term(t, symbols_enumerated & t.free_symbols, bounds)
 
 
-@lru_cache(maxsize=1000)
+@lru_cache(maxsize=10000)
 def _partition_formula(
     f: Expr,
     symbols_enumerated: set[Symbol],
@@ -346,16 +345,9 @@ def _partition_formula(
         return goals
 
     def _try_replace_unknowns(t: Expr):
-        for s in t.free_symbols:
-            if s in symbols_enumerated:
-                continue
-            try:
-                diff_result = diff_geq_leq_zero(t, s, bounds)
-                # Won't change the derivative sign, so we can just replace it with 1.
-                if diff_result != ComparisonResult.UNKNOWN:
-                    t = t.subs(s, 1)
-            except (TypeError, ValueError):
-                pass
+        for s in t.free_symbols - symbols_enumerated:
+            if not affects_comparison(t, s, symbols_enumerated):
+                t = t.subs(s, 1)
         return t
 
     def _recombine_terms(terms: list[Expr]):
@@ -445,7 +437,7 @@ def _partition_formula(
     return goals
 
 
-@lru_cache(maxsize=1000)
+@lru_cache(maxsize=10000)
 def _get_n_prime_factors(n: int) -> int:
     return len(factorint(n))
 
@@ -480,8 +472,35 @@ def append_vector(matrix: np.ndarray, vector: np.ndarray):
     )
 
 
+@lru_cache(maxsize=10000)
+def simplify(f: Expr):
+    return f.simplify()
+
 def symbol2int(symbol: Symbol):
     return int(re.findall(r"(\d+)", symbol.name)[0])
+
+
+@lru_cache(maxsize=10000)
+def f_minus_other_f(f: Expr, symbols_enumerated: set[Symbol]):
+    f2 = f
+    for s in f.free_symbols & symbols_enumerated:
+        f2 = f2.subs(s, sympy.Symbol(f"{s}_2", integer=True, positive=True))
+    return f2 - f > 0
+
+
+@lru_cache(maxsize=10000)
+def affects_comparison(f: Expr, s: Symbol, symbols_enumerated: set[Symbol]):
+    if not isinstance(f, sympy.Expr):
+        return False
+    delta = f_minus_other_f(f, symbols_enumerated)
+    if not isinstance(delta, sympy.Expr) or s not in delta.free_symbols:
+        return False
+
+    delta = simplify(delta)
+    if s not in delta.free_symbols:
+        return False
+
+    return True
 
 
 def get_padded_choices(
@@ -566,7 +585,7 @@ def coalesce_symbols(
     log_message: Callable,
     bounds: tuple[tuple[Symbol, int, int], ...],
 ):
-    sym_enumerated_set = set(symbols_enumerated)
+    sym_enumerated_set = fzs(symbols_enumerated)
     new_symbol2goal = {}
 
     log_message("coalesce symbols", f"initial")
@@ -627,20 +646,13 @@ def coalesce_symbols(
                 if s in symbols_enumerated and latest().get(s, Goal()).goal != "diff":
                     continue
 
-                try:
-                    diff_result = diff_geq_leq_zero(formula, s, bounds)
-                    # If this symbol doesn't change the derivative sign & we can't
-                    # compare it, then don't include it here.
-                    if diff_result != ComparisonResult.UNKNOWN:
-                        log_message(
-                            "coalesce symbols", f"dropping non-comparable symbol based on derivative {s}: {formula}"
-                        )
-                        formula = formula.subs(s, 1)
-                    else:
-                        log_message("coalesce symbols", f"not dropping symbol based on derivative {s}: {formula}")
-                except TypeError:
-                    pass
 
+                if not affects_comparison(formula, s, sym_enumerated_set):
+                    formula = formula.subs(s, 1)
+                    log_message("coalesce symbols", f"dropping non-comparable symbol that does not affect comparison {s}: {formula}")
+                    continue
+                else:
+                    log_message("coalesce symbols", f"keeping dropping symbol that affects comparison {s}: {formula}")
             # If there's only one symbol in the formula, we can try to replace it with
             # just the symbol.
             if len(formula.free_symbols & sym_enumerated_set) == 1:
