@@ -286,7 +286,7 @@ class MappingNode(ParsableModel, ABC):
 
     def __eq__(self, other: Any):
         return self is other
-    
+
     def __init_subclass__(cls, **kwargs):
         # Let Pydantic build the subclass first.
         super().__init_subclass__(**kwargs)
@@ -1041,24 +1041,34 @@ class Nested(MappingNodeWithChildren):
                         break
 
             if to_add is None:
-                if len(my_loop_group) == 1 and len(other_loop_group) == 1:
-                    print(
-                        f"Warning. Matching loops {my_loop_group[0]} and {other_loop_group[0]}. Need rank variable translation here."
-                    )
-                    l = copy.deepcopy(my_loop_group.pop(0))
-                    l.rank_variable = (
-                        l.rank_variable
-                        if isinstance(l.rank_variable, set)
-                        else set([l.rank_variable])
-                    )
-                    rv2 = other_loop_group.pop(0).rank_variable
-                    rv2 = rv2 if isinstance(rv2, set) else set([rv2])
-                    l.rank_variable = l.rank_variable | rv2
-                    to_add = [l]
+                # TODO: This check for one is only to early catch bugs coming here. The
+                # code below says that if we couldn't find a match, then ignore rank
+                # variables and assume that rank variable translation would fix it.
+                assert len(my_loop_group) == 1 or len(other_loop_group) == 1
+                has_one, may_not_have_one = my_loop_group, other_loop_group
+                if len(has_one) != 1:
+                    has_one, may_not_have_one = other_loop_group, my_loop_group
+
+                l = copy.deepcopy(has_one.pop(0))
+                l.rank_variable = (
+                    l.rank_variable
+                    if isinstance(l.rank_variable, set)
+                    else set([l.rank_variable])
+                )
+                for l2 in may_not_have_one:
+                    if l2.calculated_n_iterations == l.calculated_n_iterations:
+                        break
                 else:
                     raise ValueError(
                         f"No matching loop found for {my_loop_group} and {other_loop_group}"
                     )
+                print(f"Warning. Matching loops {l} and {l2}. Need rank variable translation here.")
+
+                may_not_have_one.remove(l2)
+                rv = l2.rank_variable
+                rv = rv if isinstance(rv, set) else set([rv])
+                l.rank_variable = l.rank_variable | rv
+                to_add = [l]
 
             zipped_groups.append(to_add)
 
