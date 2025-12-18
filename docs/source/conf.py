@@ -1,6 +1,7 @@
 import os
 import sys
-sys.path.insert(0, os.path.abspath('..'))  # Make your repo importable
+sys.path.insert(0, os.path.abspath('_ext'))
+sys.path.insert(0, os.path.abspath('../..'))  # Make your repo importable
 
 import locale
 locale.setlocale(locale.LC_ALL, 'C.UTF-8')
@@ -10,26 +11,17 @@ project = 'MyRepo'
 author = 'Your Name'
 release = '0.1.0'
 
-# -- General configuration ---------------------------------------------------
+# -- HTML output -------------------------------------------------------------
+html_theme = 'sphinx_rtd_theme'
+# html_static_path = ['_static']
+
 extensions = [
     'sphinx.ext.autodoc',            # Pull docstrings
     'sphinx.ext.napoleon',           # NumPy / Google style docstrings
-    'sphinx_autodoc_typehints',      # Include type hints
+    'sphinx.ext.autosummary',        # Generate autodoc summaries
     'sphinx.ext.viewcode',           # Add links to source code
-]
-
-templates_path = ['_templates']
-exclude_patterns = []
-
-# -- HTML output -------------------------------------------------------------
-html_theme = 'alabaster'
-html_static_path = ['_static']
-
-extensions = [
-    'sphinx.ext.autodoc',
-    'sphinx.ext.napoleon',  # handles Google/Numpy
-    'sphinx.ext.autosummary',
-    'sphinx.ext.viewcode',
+    'sphinx_autodoc_typehints',      # Include type hints
+    'include_docstring',             # Include docstrings
 ]
 
 autodoc_default_options = {
@@ -37,3 +29,32 @@ autodoc_default_options = {
     'undoc-members': False,
     'exclude-members': 'model_config,model_fields,__pydantic_fields__,model_post_init'
 }
+
+# ---------- Autodoc settings ----------
+# Show type hints inline in signatures
+autodoc_typehints = "signature"
+autodoc_typehints_format = "short"
+
+# Preserve default values
+autodoc_preserve_defaults = True
+
+# Force multi-line for long constructor signatures (Sphinx 7+)
+autodoc_class_signature = "separated"
+
+# ---------- HTML CSS to wrap signatures ----------
+# Create docs/source/_static/custom.css with:
+# .signature {
+#     white-space: pre-wrap !important;
+#     word-break: break-word;
+# }
+html_static_path = ["_static"]
+# html_css_files = ["custom.css"]
+# html_js_files = ["custom.js"]
+
+# ---------- Optional: Napoleon settings ----------
+# If using Google/NumPy style docstrings
+napoleon_use_param = True
+napoleon_use_rtype = True
+napoleon_use_ivar = True
+
+nitpicky = True

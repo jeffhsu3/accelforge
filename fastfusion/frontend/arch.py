@@ -111,14 +111,11 @@ class Spatial(ParsableModel):
 class LeafAttributes(ComponentAttributes):
     latency: Union[str, int, float] = 0
     """
-    The latency of this component in seconds. This is used to calculate the latency of a
-    given Einsum. Latency, when given as a string, is parsed. Special variables
-    available are:
-
-    - min
-    - max
-    - X_actions, which counts the number of times action "X" is performed. For example,
-      read_actions is the number of times the read action is performed.
+    An expression representing the latency of this component in seconds. This is used to
+    calculate the latency of a given Einsum. Special variables available are min, max,
+    and "X_actions", where X is the name of an action that this component can perform.
+    "X_actions" resolves to the number of times action "X" is performed. For example,
+    read_actions is the number of times the read action is performed.
     """
 
 
@@ -267,15 +264,18 @@ def _parse_tensor2bits(
 
 
 class TensorHolderAttributes(LeafAttributes):
-    """Attributes for a `TensorHolder`. `TensorHolder`s are components that hold tensors
+    """
+    Attributes for a `TensorHolder`. `TensorHolder`s are components that hold tensors
     (usually `Memory`s). When specifying these attributes, it is recommended to
     underscore-prefix attribute names. See `TODO: UNDERSCORE_PREFIX_DISCUSSION`.
     """
 
     datawidth: ParsesTo[Union[dict, int, float]] = {}
-    """ Number of bits per value stored in this `TensorHolder`. If this is a dictionary,
+    """
+    Number of bits per value stored in this `TensorHolder`. If this is a dictionary,
     keys in the dictionary are parsed as expressions and may reference one or more
-    `Tensor`s. """
+    `Tensor`s.
+    """
 
     def model_post_init(self, __context__=None) -> None:
         if not isinstance(self.datawidth, dict):
@@ -301,8 +301,10 @@ class MemoryAttributes(TensorHolderAttributes):
 
 
 class TensorHolder(Component):
-    """A `TensorHolder` is a component that holds tensors. These are usually `Memory`s,
-    but can also be `ProcessingStage`s."""
+    """
+    A `TensorHolder` is a component that holds tensors. These are usually `Memory`s,
+    but can also be `ProcessingStage`s.
+    """
 
     actions: ParsableList[ArchMemoryAction] = MEMORY_ACTIONS
     """ The actions that this `TensorHolder` can perform. """

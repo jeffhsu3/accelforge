@@ -12,7 +12,7 @@ from fastfusion.mapper.FFM._join_pmappings.compress_pmappings import (
 )
 from fastfusion.frontend.workload import EinsumName
 from fastfusion.frontend.mapping import Mapping
-# from fastfusion.mapper.FFM._join_pmappings.sim import PmappingGroup
+from fastfusion.mapper.FFM import PmappingGroup
 from fastfusion.mapper.FFM._pareto_df.df_convention import (
     MAPPING_COLUMN,
     col2nameloop,
@@ -24,7 +24,7 @@ from fastfusion.mapper.FFM._make_pmappings.make_pmappings import (
 from fastfusion.accelerated_imports import pd
 import joblib
 from fastfusion.mapper.FFM._join_pmappings.compatibility import Compatibility
-from fastfusion.mapper.simanneal2.tracking import EvaluationsScoreTracker
+from fastfusion.mapper._simanneal2.tracking import EvaluationsScoreTracker
 
 # Simulated annealing algorithm
 # -----------------------------

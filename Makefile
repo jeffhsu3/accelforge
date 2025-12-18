@@ -49,7 +49,10 @@ build-docker:
 run-docker:
 	docker-compose up
 
+.PHONY: generate-docs
 generate-docs:
     # pip install sphinx-autobuild sphinx_autodoc_typehints sphinx-rtd-theme
-    LC_ALL=C.UTF-8 LANG=C.UTF-8 sphinx-apidoc -o docs fastfusion
-    LC_ALL=C.UTF-8 LANG=C.UTF-8 sphinx-autobuild docs docs/_build/html
+	# rm -r docs/_build
+	LC_ALL=C.UTF-8 LANG=C.UTF-8 sphinx-apidoc -o docs/source/ fastfusion
+	# sphinx-build -nW docs/source docs/_build/html
+	LC_ALL=C.UTF-8 LANG=C.UTF-8 sphinx-autobuild docs/source docs/_build/html

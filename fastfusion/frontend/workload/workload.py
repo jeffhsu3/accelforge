@@ -41,11 +41,11 @@ CLIST_OPERATORS = [
     "OR",
 ]
 
-ISL_REGEX = re.compile(
+_ISL_REGEX = re.compile(
     r"\b(?!(?:" + "|".join(CLIST_OPERATORS) + r")\b)[a-zA-Z#$@][a-zA-Z0-9_]*\b"
 )
 """
-Pattern[AnyStr@compile] ISL_REGEX: A compiled regex pattern that matches
+Pattern[AnyStr@compile] _ISL_REGEX: A compiled regex pattern that matches
 words that are not exactly in CLIST_OPERATORS (case-sensitive), start with a
 letter, `#`, `$`, or `@`, and are followed by zero or more letters, digits,
 or underscores.
@@ -108,7 +108,7 @@ class TensorAccess(ParsableModel):
         return {
             RankName(rank): set(
                 RankVariableName(rank_var)
-                for rank_var in re.findall(ISL_REGEX, projection)
+                for rank_var in re.findall(_ISL_REGEX, projection)
             )
             for rank, projection in self.projection.items()
         }
@@ -117,7 +117,7 @@ class TensorAccess(ParsableModel):
     def rank_variable2ranks(self) -> dict[RankVariableName, set[RankName]]:
         result = {}
         for rank, projection in self.projection.items():
-            for rank_var in re.findall(ISL_REGEX, projection):
+            for rank_var in re.findall(_ISL_REGEX, projection):
                 rank_set: set = result.setdefault(rank_var, set())
                 rank_set.add(rank)
         return result
@@ -131,7 +131,7 @@ class TensorAccess(ParsableModel):
         # Projection values may be expressions, so we need to grab all identifiers
         return set(
             RankVariableName(x)
-            for x in re.findall(ISL_REGEX, " ".join(self.projection.values()))
+            for x in re.findall(_ISL_REGEX, " ".join(self.projection.values()))
         )
 
     @property
@@ -141,7 +141,7 @@ class TensorAccess(ParsableModel):
     @property
     def fully_relevant_rank_variables(self) -> set[RankVariableName]:
         return set(
-            RankVariableName(x) for x in self.projection.values() if ISL_REGEX.match(x)
+            RankVariableName(x) for x in self.projection.values() if _ISL_REGEX.match(x)
         )
 
     @property
@@ -150,7 +150,11 @@ class TensorAccess(ParsableModel):
 
 
 class ImpliedProjection(dict):
-    pass
+    """
+    Holds a projection that has been implied by a list of rank variables. The implied
+    rank names are uppercased versions of the rank variables; for example, [a, b, c] ->
+    {A: a, B: b, C: c}.
+    """
 
 
 def projection_factory(projection: dict | list):
@@ -158,7 +162,7 @@ def projection_factory(projection: dict | list):
         for i, x in enumerate(projection):
             if not isinstance(x, str):
                 raise TypeError(f"Element at index {i} must be a string, got {type(x)}")
-            if not ISL_REGEX.match(x):
+            if not _ISL_REGEX.match(x):
                 raise ValueError(
                     f"Element '{x}' at index {i} is not a valid ISL identifier"
                     f"In a projection list, all elements must be valid ISL identifiers."
@@ -167,16 +171,16 @@ def projection_factory(projection: dict | list):
         projection = ImpliedProjection({x.upper(): x for x in projection})
     elif not isinstance(projection, dict):
         raise TypeError(
-            f"Invalid projection: {projection}. Must be a list of "
-            f"rank variables or a dictionary of rank variable to projection."
+            f"Invalid projection: {projection}. Must be a list of rank variables or a "
+            f"dictionary of rank variable to projection."
         )
     for key in projection:
         if not isinstance(key, str):
             raise TypeError(f"Invalid projection key: {key}. Must be a string.")
         if not key.isidentifier():
             raise ValueError(
-                f"Invalid projection key: {key}. Must be a valid identifier."
-                f"Check with the Python isidentifier() function."
+                f"Invalid projection key: {key}. Must be a valid identifier. Check with "
+                f"the Python isidentifier() function."
             )
     return projection
 
@@ -190,7 +194,7 @@ class Shape(ParsableList):
     def rank_variables(self) -> set[str]:
         if not self:
             return set()
-        return set.union(*[set(re.findall(ISL_REGEX, x)) for x in self])
+        return set.union(*[set(re.findall(_ISL_REGEX, x)) for x in self])
 
 
 class Einsum(ParsableModel):

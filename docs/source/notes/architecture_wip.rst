@@ -1,11 +1,12 @@
 Architecture
 ============
 
-The architecture describes the hardware that is running the workload. An architecture is
-represented as a tree, where branches in the tree represent different compute paths that
-may be taken. For the rest of this section, we will assume that the architecture has
-been *flattened*, meaning that there are no branches in the tree. The flattening
-procedure is described in :ref:`flattening`.
+The architecture, defined by the :py:class:`~fastfusion.frontend.arch.Arch` class,
+describes the hardware that is running the workload. An architecture is represented as a
+tree, where branches in the tree represent different compute paths that may be taken.
+For the rest of this section, we will assume that the architecture has been *flattened*,
+meaning that there are no branches in the tree. The flattening procedure is described in
+:ref:`flattening`.
 
 A flattened architecture is a hierarchy of components with a
 :py:class:`~fastfusion.frontend.arch.Compute` at the bottom. The following components
@@ -17,13 +18,53 @@ are supported:
 - :py:class:`~fastfusion.frontend.arch.Compute` components performs the Einsum's
   computation.
 
-An example architecture is shown below:
+In the architecture file, each component is represented by a YAML dictionary. Component
+types are preceded by the ``!`` character. An example architecture is shown below:
 
-.. include:: ../../examples/arches/tpu_v4i_like.arch.yaml
+.. include:: ../../../examples/arches/tpu_v4i_like.arch.yaml
    :code: yaml
 
+
+Sub-Branches
+------------
+Sub-branches in the architecture can represent different execution paths. The following
+branch types are supported:
+
+- :py:class:`~fastfusion.frontend.arch.Parallel` represents multiple parallel branches,
+  one of which is executed.
+- :py:class:`~fastfusion.frontend.arch.Hierarchical` represents a single hierarchy,
+  where each node is a parent of the following nodes.
+
+Sub-branches are written with the following syntax:
+
+.. code-block:: yaml
+
+  - !Memory
+    ...
+
+  - !Memory
+    ...
+
+  - !Parallel
+    nodes:
+    - !Hierarchical
+      nodes:
+      - ... # First-branch nodes
+    - !Hierarchical
+      nodes:
+      - ... # Second-branch nodes
+
+  # If more nodes go down here, they are children of the outer-level node, not the
+  !Parallel node.
+  - !Memory
+    ...
+
+The top-level :py:class:`~fastfusion.frontend.arch.Arch` is a
+:py:class:`~fastfusion.frontend.arch.Hierarchical`.
+
+
 Flattening
-==========
+----------
 
 A given Einsum may be executed only on a single
 :py:class:`~fastfusion.frontend.arch.Compute`, and it may use hardware objects between
@@ -35,7 +76,7 @@ representing one possible path from the root of the tree to the leaf for that
 
 For example, consider the following architecture:
 
-.. include:: ../../examples/arches/tpu_v4i_like.arch.yaml
+.. include:: ../../../examples/arches/tpu_v4i_like.arch.yaml
    :code: yaml
 
 There are two compute units in the architecture, the ``scalar_unit`` and the ``mac``.
