@@ -455,7 +455,7 @@ def get_yaml(path: str, data: Dict[str, Any] = None) -> ruamel.yaml.YAML:
     ymf = YAMLFileLoader(path, data)
     # yaml.default_flow_style = None
 
-    warnings.simplefilter("ignore", ReusedAnchorWarning)
+    warnings.simple_filter("ignore", ReusedAnchorWarning)
     yaml.constructor.add_constructor("!include_loaded", ymf.include_loaded)
     yaml.constructor.add_constructor("!include", ymf.include)
     yaml.constructor.add_constructor("!includedir", ymf.includedir)

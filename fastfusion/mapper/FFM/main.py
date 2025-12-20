@@ -158,7 +158,19 @@ def join_pmappings(
             f"Einsum {einsum_name} has {total} pmappings with {n_compatibilities} compatibilities"
         )
         if total == 0:
-            raise ValueError(f"Einsum {einsum_name} has no pmappings")
+            if einsum_name in pmappings.einsums_with_pmappings_generated:
+                raise ValueError(
+                    f"Einsum {einsum_name} has no pmappings. This likely means that "
+                    f"no pmappings satisfied constraints for the Einsum. Please check "
+                    f"the stats outputs from the MultiEinsumPmappings object."
+                )
+
+            raise ValueError(
+                f"Einsum {einsum_name} has no pmappings generated. It looks like you "
+                "may have used `make_pmappings` with `einsum_names` set. You may set "
+                "`require_all_einsums=False` to ignore this error and map only the "
+                "Einsums that have pmappings."
+            )
 
     compressed, decompress_data = compress_einsum2pmappings(einsum2pmappings)
     joined = _join_pmappings(

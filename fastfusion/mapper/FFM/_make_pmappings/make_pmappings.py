@@ -169,24 +169,24 @@ def get_memories_to_track(
     memory_to_size = get_memory_to_size(flattened_arches)
     memories_track_all = list(memory_to_size.keys())
     memories_track_pmappings_only = []
-    no_drop_reservations_for = set()
+    ignored_resources = set()
 
     # If we're combining the pmappings from multiple runs, we can't conclude anything
     # about the metrics to track
     if can_combine_multiple_runs:
-        no_drop_reservations_for = set(memory_to_size.keys())
+        ignored_resources = set(memory_to_size.keys())
         return (
             memories_track_all,
             memories_track_pmappings_only,
-            no_drop_reservations_for,
+            ignored_resources,
         )
 
     if metrics.RESOURCE_USAGE in metrics:
-        no_drop_reservations_for = set(memory_to_size.keys())
+        ignored_resources = set(memory_to_size.keys())
         return (
             memories_track_all,
             memories_track_pmappings_only,
-            no_drop_reservations_for,
+            ignored_resources,
         )
 
     def _get_scale(tensor_name: TensorName) -> int:
@@ -223,7 +223,7 @@ def get_memories_to_track(
                 if isinstance(node, TensorHolder) and node.component == m:
                     seen = True
                     if node.persistent:
-                        no_drop_reservations_for.add(m)
+                        ignored_resources.add(m)
                 if isinstance(node, Iteration) and node._fused and seen:
                     must_track = True
 
@@ -235,7 +235,7 @@ def get_memories_to_track(
                 f"reserved across fused loop iterations."
             )
 
-    return memories_track_all, memories_track_pmappings_only, no_drop_reservations_for
+    return memories_track_all, memories_track_pmappings_only, ignored_resources
 
 
 def make_pmappings(
@@ -372,7 +372,7 @@ def _fill_jobs_with_memories_to_track(
         for job_list in compatibility2joblist.values()
         for j in job_list
     ]
-    memories_track_all, memories_track_pmappings_only, no_drop_reservations_for = (
+    memories_track_all, memories_track_pmappings_only, ignored_resources = (
         get_memories_to_track(
             spec,
             flattened_arches,
@@ -384,4 +384,4 @@ def _fill_jobs_with_memories_to_track(
     for j in jobs_flattened:
         j.memories_track_all = memories_track_all
         j.memories_track_pmappings_only = memories_track_pmappings_only
-        j.no_drop_reservations_for = no_drop_reservations_for
+        j.ignored_resources = ignored_resources

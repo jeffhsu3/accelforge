@@ -122,7 +122,7 @@ def pad_with_bottom_loops(mapping: list[MappingNode], einsum: Einsum):
             mapping.append(Temporal(rank_variable=rank_var))
 
 
-def timeloop_style_even(mapping: list[MappingNode]):
+def _timeloop_style_even(mapping: list[MappingNode]):
     # Iterate through the mapping. If there are >2 TensorHolder nodes for the same
     # memory, move all below the 2nd to the same level as the 2nd.
     mapping = copy.deepcopy(mapping)
@@ -249,8 +249,8 @@ def iterate_mappings_no_constraints(
             mapping = copy.deepcopy(mapping)
             insert_spatial_loops(mapping, einsum, arch_flattened)
             mapping = unpack_loops_to_rank_variables(mapping)
-            if spec.mapper.ffm.timeloop_style_even:
-                mapping = timeloop_style_even(mapping)
+            if spec.mapper.ffm._timeloop_style_even:
+                mapping = _timeloop_style_even(mapping)
 
             place_missing_temporal_loops(mapping, einsum)
             label_fused_loops(mapping)

@@ -292,7 +292,7 @@ class Einsum(ParsableModel):
 
     def to_formatted_string(self, compress: bool = False) -> str:
         lhs_join = ",\n" if compress else " , "
-        rhs_join = "  × " if compress else "  × "
+        rhs_join = " \n " if compress else "  "
         lhs = lhs_join.join(
             [t.to_formatted_string() for t in self.tensor_accesses if t.output]
         )
@@ -486,7 +486,7 @@ class Workload(ParsableModel):
                         f"Tensor_{tensor_access.name}", f"Einsum_{einsum.name}"
                     )
                     graph.add_edge(edge)
-        return SVGJupyterRender(graph.create_svg(prog="dot"))
+        return SVGJupyterRender(graph.create_svg(prog="dot").decode('utf-8'))
 
     def get_constraint_symbol_table(
         self,

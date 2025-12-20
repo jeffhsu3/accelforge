@@ -48,7 +48,7 @@ class MultiEinsumPmappings:
         self.einsums_with_pmappings_generated.update(other.einsums_with_pmappings_generated)
         return self
 
-    def filter(
+    def _filter(
         self,
         filter_lambda: Callable[[PmappingGroup], bool],
         einsums_with_pmappings_generated: list[EinsumName] | None = None,
@@ -70,6 +70,14 @@ class MultiEinsumPmappings:
         )
 
     def drop_einsums(self, *einsums_with_pmappings_generated: EinsumName):
+        """
+        Removes all pmappings for the given Einsums.
+
+        Parameters
+        ----------
+        einsums_with_pmappings_generated:
+            The Einsums for which to remove pmappings.
+        """
         for einsum_name in einsums_with_pmappings_generated:
             del self.einsum2pmappings[einsum_name]
             del self.pmapping_objects[einsum_name]
@@ -79,6 +87,20 @@ class MultiEinsumPmappings:
     def pmapping_keep_rates(
         self, per_einsum: bool = False
     ) -> dict[EinsumName, dict[str, float]] | dict[str, float]:
+        """
+        Returns the keep rates for each cause of pmapping removal. For example, if only
+        25% of the pmappings have a valid spatial fanout, then the keep rate for the
+        spatial fanout cause will be 0.25.
+
+        Parameters
+        ----------
+        per_einsum:
+            If True, returns a dictionary of keep rates for each Einsum.
+
+        Returns
+        -------
+        A dictionary of keep rates for each cause of pmapping removal.
+        """
         result = {}
         einsum2npmappings = self.n_total_pmappings(per_einsum=True)
 
@@ -105,6 +127,18 @@ class MultiEinsumPmappings:
         return result
 
     def n_total_pmappings(self, per_einsum: bool = False) -> int | dict[EinsumName, int]:
+        """
+        Returns the number of total pmappings in the mapspace.
+
+        Parameters
+        ----------
+        per_einsum:
+            If True, returns a dictionary of total pmappings for each Einsum.
+
+        Returns
+        -------
+        The number of total pmappings in the mapspace.
+        """
         result = {
             einsum_name: sum(job.n_total_pmappings for job in jobs)
             for einsum_name, jobs in self.einsum2jobs.items()
@@ -114,6 +148,19 @@ class MultiEinsumPmappings:
         return sum(result.values())
 
     def n_valid_pmappings(self, per_einsum: bool = False) -> int | dict[EinsumName, int]:
+        """
+        Returns the number of valid pmappings for each Einsum. A valid pmapping is one
+        that satisfies all constraints and resource usage limits.
+
+        Parameters
+        ----------
+        per_einsum:
+            If True, returns a dictionary of valid pmappings for each Einsum.
+
+        Returns
+        -------
+        The number of valid pmappings in the mapspace.
+        """
         result = {
             einsum_name: sum(job.n_valid_pmappings for job in jobs)
             for einsum_name, jobs in self.einsum2jobs.items()
@@ -125,6 +172,19 @@ class MultiEinsumPmappings:
     def n_pareto_optimal_pmappings(
         self, per_einsum: bool = False
     ) -> int | dict[EinsumName, int]:
+        """
+        Returns the number of Pareto-optimal pmappings for each Einsum. This is the
+        number of mappings that will be returned by the make_pmappings function.
+
+        Parameters
+        ----------
+        per_einsum:
+            If True, returns a dictionary of Pareto-optimal pmappings for each Einsum.
+
+        Returns
+        -------
+        The number of Pareto-optimal pmappings in the mapspace.
+        """
         result = {
             einsum_name: sum(len(p) for p in pmappings)
             for einsum_name, pmappings in self.einsum2pmappings.items()
@@ -136,6 +196,21 @@ class MultiEinsumPmappings:
     def n_evaluated_pmappings(
         self, per_einsum: bool = False
     ) -> int | dict[EinsumName, int]:
+        """
+        Returns the number of pmappings that were evaluated for each Einsum. This is
+        greater than the number of Pareto-optimal pmappings because some mappings are
+        found to be suboptimal after they have been evaluated.
+
+        Parameters
+        ----------
+        per_einsum:
+            If True, returns a dictionary of evaluated pmappings for each Einsum.
+
+        Returns
+        -------
+        The number of evaluated pmappings in the mapspace.
+        """
+
         result = {
             einsum_name: sum(job.n_evaluated_pmappings for job in jobs)
             for einsum_name, jobs in self.einsum2jobs.items()
@@ -145,6 +220,15 @@ class MultiEinsumPmappings:
         return sum(result.values())
 
     def n_pmapping_string(self) -> str:
+        """
+        Returns a string representation of the number of pmappings in the mapspace.
+        Printing this can help diagnose if the mapper is not finding any pmappings or
+        mappings.
+
+        Returns
+        -------
+        A string representation of the number of pmappings in the mapspace.
+        """
         if "Total" in self.einsum2pmappings:
             raise ValueError(
                 f"Cannot print stats for a MultiEinsumPmappings object that has "

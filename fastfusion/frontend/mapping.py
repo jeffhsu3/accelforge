@@ -1349,7 +1349,7 @@ class Mapping(Nested):
                 if (parent_name, child_name) not in added_edges:
                     graph.add_edge(pydot.Edge(parent_name, child_name))
                     added_edges.add((parent_name, child_name))
-        return SVGJupyterRender(graph.create_svg(prog="dot"))
+        return SVGJupyterRender(graph.create_svg(prog="dot").decode('utf-8'))
 
     @classmethod
     def from_pmappings(

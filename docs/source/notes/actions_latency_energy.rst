@@ -1,11 +1,12 @@
-Modeling Steps
-==============
+Modeling Energy, Area, and Latency
+=================================
+
+Energy, area, and latency are calculated in three steps:
 
 1. **Per-Component Energy, Area, and Leakage**: This step models the area and leakage
-   energy of each :py:class:`~fastfusion.frontend.arch.Component` in the architecture.
-   It then generates *per-action energy*, which is used by later steps in the model to
-   find the energy of performing hardware
-   :py:class:`~fastfusion.frontend.arch.Action`s.
+   power of each :py:class:`~fastfusion.frontend.arch.Component` in the architecture. It
+   then generates *per-action energy*, which is used by later steps in the model to find
+   the energy of performing hardware :py:class:`~fastfusion.frontend.arch.Action`s.
 
 2. **Per-Einsum Mapping**: This step generates candidate :ref:`Pmappings`, which each
    map a single Einsum to the hardware. Each pmapping will incur some number of actions,
@@ -16,8 +17,8 @@ Modeling Steps
    :ref:`Mapping`, which maps the entire workload onto the hardware.
 
 
-Calculating Number of Actions
------------------------------
+Calculating Number of Actions from A Pmapping
+---------------------------------------------
 
 .. _calculating-num-actions:
 
@@ -30,20 +31,33 @@ For :py:class:`~fastfusion.frontend.arch.Memory` and
 :py:class:`~fastfusion.frontend.arch.ProcessingStage` components, the number of actions
 depends on the number of accesses to the component. They may be accessed in two ways:
 
-- `read`: The component is read from a lower-level component, or output values are read
+- ``read``: The component is read from a lower-level component, or output values are read
   up to a higher-level component.
-- `write`: The component is written to a lower-level component, or input values are
+- ``write``: The component is written to a lower-level component, or input values are
   written from a higher-level component.
 
 The number of actions incurred by accesses for each tensor are equal to the number of
 values accessed times the datawidth of the tensor (determined by that component's
 :py:class:`~fastfusion.frontend.arch.TensorHolderAttributes`), divided by the
-:py:class:`~fastfusion.frontend.arch.ActionArguments` `bits_per_action` attribute. For
-example, if 1024 values are accessed with a datawidth of 16 bits and `bits_per_action`
+:py:class:`~fastfusion.frontend.arch.ActionArguments` ``bits_per_action`` attribute. For
+example, if 1024 values are accessed with a datawidth of 16 bits and ``bits_per_action``
 is 32, then 1024 * 16 / 32 = 512 actions are incurred.
 
 Read+Modify+Writes (RMWs) to a component are counted as a read and a write. The first
 read of output data is skipped because the value has not been written yet.
+
+
+
+Calculating Latency from a Pmapping
+-----------------------------------
+
+The :py:obj:`~fastfusion.frontend.arch.LeafAttributes.latency` of a component, defined
+in the class's `attributes.latency` field, is a Python expression that is evaluated
+using the component's actions.
+
+The :py:obj:`~fastfusion.frontend.arch.LeafAttributes.latency` field is
+:docstring-lower:`fastfusion.frontend.arch.LeafAttributes.latency`
+
 
 
 Per-Component Energy, Area, and Leakage
@@ -65,45 +79,5 @@ architecture. This uses the following format:
 
 If all necessary energy, area, and leakage values are defined, then the architecture can
 be used in step 2 without any additional information. If energy, area, and/or leakave
-values are not defined, they can be calculated using the `hwcomponents` library:
-
-.. _hwcomponents: https://github.com/Accelergy-Project/hwcomponents
-
-Additional information can be added to the component to help with the calculation of the
-energy, area, and leakage values. To call the `hwcomponents` library, `component_class`
-must be provided, and additional non-underscored:ref:`underscore-discussion` attributes
-can be provided to help the calculation.
-
-TODO: REFERENCE A NOTEBOOK
-
-.. code-block:: python
-
-   spec = ff.Spec.from_yaml("arches/tpu_v4i_like.arch.yaml")
-   spec.calculate_component_energy_area(
-       energy=True,
-       area=True,
-   )
-
-Total energy of a component is calculated by the sum, across all actions, of the energy
-per action times the number of actions incurred as calculated in
-:ref:`calculating-num-actions`.
-
-
-Calculating Latency
--------------------
-
-The :py:obj:`~fastfusion.frontend.arch.LeafAttributes.latency` of a component, defined
-in the class's `attributes.latency` field, is a Python expression that is evaluated
-using the component's actions.
-
-The following describes the :py:obj:`~fastfusion.frontend.arch.LeafAttributes.latency`
-field:
-
-
-.. include-docstring:: fastfusion.frontend.arch.LeafAttributes.latency
-
-The following is an example of a latency expression:
-
-.. code-block:: yaml
-
-  latency: 1e-9 * (read_actions + write_actions) # 1ns per read or write
+values are not defined, they can be calculated using the ``hwcomponents`` library as
+described in :ref:`component-modeling`.

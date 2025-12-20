@@ -78,7 +78,7 @@ def get_memories_to_track(
 
     always_below = set(resource2capacity.keys())
     total_sizes = {}
-    no_drop_reservations_for = set()
+    ignored_resources = set()
 
     for _, einsum_pmapping_groups in pmapping_groups.items():
         max_sizes = {}
@@ -97,7 +97,7 @@ def get_memories_to_track(
 
                 # nloops < 0 means that the reservation will live through all Einsums
                 if nloops < 0:
-                    no_drop_reservations_for.add(name)
+                    ignored_resources.add(name)
 
         for name, size in max_sizes.items():
             total_sizes[name] = total_sizes.get(name, 0) + size
@@ -171,7 +171,7 @@ def join_pmappings(
     metrics = spec.mapper.ffm.metrics
 
     drop_valid_reservations = not (Metrics.RESOURCE_USAGE & metrics)
-    no_drop_reservations_for = set()
+    ignored_resources = set()
 
     if pmapping_row_filter_function is not None:
         n = sum(len(s.mappings.data) for sg in pmapping_groups.values() for s in sg)
@@ -189,7 +189,7 @@ def join_pmappings(
         print(f"Filtered {n} -> {new_n} ({new_n / n:.2%} kept) pmappings")
 
     if drop_valid_reservations:
-        pmapping_groups, no_drop_reservations_for = get_memories_to_track(
+        pmapping_groups, ignored_resources = get_memories_to_track(
             pmapping_groups, resource2capacity
         )
 
@@ -406,7 +406,7 @@ def join_pmappings(
                         drop_valid_reservations=drop_valid_reservations,
                         delay=DELAY,
                         pmapping_row_filter_function=pmapping_row_filter_function,
-                        no_drop_reservations_for=no_drop_reservations_for,
+                        ignored_resources=ignored_resources,
                     )
                 )
                 t1 = time.time()
@@ -492,7 +492,7 @@ def join_pmappings(
         if DELAY:
             mappings = parallel(
                 [c.mappings for c in combined],
-                pbar=f"Merging pmappings for {left_einsum} <--> {right_einsum} ({n_iterations}/{total_iterations})",
+                pbar=f"Joining pmappings for {left_einsum} <--> {right_einsum} ({n_iterations}/{total_iterations})",
                 return_as="generator",
             )
             for c, mapping in zip(combined, mappings):

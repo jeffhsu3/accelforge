@@ -6,16 +6,17 @@ What unit is ... specified in?
 We use un-prefixed units for all values. Joules, seconds, meters, square meters, bits,
 etc.
 
-Why underscore prefixes?
-------------------------
+Why are some attributes underscored?
+------------------------------------
+
 .. _underscore-discussion:
 
 Underscore prefixes are used to indicate that a value is expected by the frontend. They
 are used in places where there may be a mix of expected and unexpected values, such as
-in a :py:class:`~fastfusion.frontend.arch.Component` `attributes` dictionary, where
-`attributes` may contain expected fields (such as
+in a :py:class:`~fastfusion.frontend.arch.Component` ``attributes`` dictionary, where
+``attributes`` may contain expected fields (such as
 :py:obj:`~fastfusion.frontend.components.ComponentAttributes.n_instances`) and
-unexpected fields (a field that may be used by `hwcomponents
+unexpected fields (a field that may be used by ``hwcomponents
 <https://github.com/Accelergy-Project/hwcomponents>`_, but not this package).
 
 When a value is underscored, this package will check whether it is recognized and raise

@@ -41,7 +41,7 @@ class PmappingGroup:
         live_tensors_with_right: set[str],
         aliased_tensors: dict[str, set[str]],
         compatibility_joined: Compatibility,
-        no_drop_reservations_for: set[str],
+        ignored_resources: set[str],
         resource2capacity: dict[str, int],
         drop_valid_reservations: bool = True,
         delay: bool = False,
@@ -79,7 +79,7 @@ class PmappingGroup:
             resource2capacity=resource2capacity,
             drop_valid_reservations=drop_valid_reservations,
             pmapping_row_filter_function=pmapping_row_filter_function,
-            no_drop_reservations_for=no_drop_reservations_for,
+            ignored_resources=ignored_resources,
         )
 
         if not delay:

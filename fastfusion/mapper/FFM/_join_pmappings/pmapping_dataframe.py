@@ -66,7 +66,7 @@ class PmappingDataframe:
         next_shared_loop_index: int = None,
         parallelize_pareto: bool = False,
         limit_capacity_drop_valid_reservations: bool = True,
-        no_drop_reservations_for: set[str] = None,
+        ignored_resources: set[str] = None,
     ):
         self._data: pd.DataFrame = data
         self.right_reservations: dict[set] = None
@@ -79,14 +79,14 @@ class PmappingDataframe:
 
         if next_shared_loop_index is not None:
             assert (
-                no_drop_reservations_for is not None
-            ), "no_drop_reservations_for must be set if next_shared_loop_index is set"
+                ignored_resources is not None
+            ), "ignored_resources must be set if next_shared_loop_index is set"
             self.free_to_loop_index(loop_index=next_shared_loop_index)
             self.limit_capacity(
                 resource2capacity={},
                 next_shared_loop_index=next_shared_loop_index,
                 drop_valid_reservations=limit_capacity_drop_valid_reservations,
-                no_drop_reservations_for=no_drop_reservations_for,
+                ignored_resources=ignored_resources,
             )
             self._check_reservations()
 
@@ -375,7 +375,7 @@ class PmappingDataframe:
         compatibility_left: Compatibility,
         compatibility_right: Compatibility,
         compatibility_joined: Compatibility,
-        no_drop_reservations_for: set[str],
+        ignored_resources: set[str],
         resource2capacity: dict[str, int],
         drop_valid_reservations: bool = True,
         pmapping_row_filter_function: Callable[[pd.Series], bool] | None = None,
@@ -567,6 +567,7 @@ class PmappingDataframe:
         result.adjust_reservations(
             alloc=live_to_alloc,
             free=list(itertools.chain(shared_to_free, duplicated_aliased_tensors)),
+            ignored_resources=ignored_resources,
         )
 
         if CHECK_CORRECTNESS:
@@ -579,7 +580,7 @@ class PmappingDataframe:
                 resource2capacity,
                 next_shared_loop_index,
                 drop_valid_reservations,
-                no_drop_reservations_for=no_drop_reservations_for,
+                ignored_resources=ignored_resources,
             )
         result.max_right_to_left()
         if pmapping_row_filter_function is not None:
@@ -634,11 +635,15 @@ class PmappingDataframe:
                 source = self.get_reservation_or_parent(resource, level - 1)
                 self.data[target] = size + (self.data[source] if source else 0)
 
+            # Assert all reservations are >= 0
+            assert (self.data[target] >= 0).all(), f"Negative reservation: {target}"
+
     @error_check_wrapper
     def adjust_reservations(
         self,
         alloc: Iterable[TensorReservation],
         free: Iterable[TensorReservation],
+        ignored_resources: set[str] = set(),
     ):
         alloc, free = list(alloc), list(free)
         all_resources = {t.resource_name for t in alloc} | {
@@ -646,6 +651,8 @@ class PmappingDataframe:
         }
         # Handle each resource separately
         for resource in all_resources:
+            if resource in ignored_resources:
+                continue
             cur_alloc = [t for t in alloc if t.resource_name == resource]
             cur_free = [t for t in free if t.resource_name == resource]
             if cur_alloc or cur_free:
@@ -704,7 +711,7 @@ class PmappingDataframe:
         resource2capacity: dict[str, Optional[int]],
         next_shared_loop_index: int = None,
         drop_valid_reservations: bool = True,
-        no_drop_reservations_for: set[str] = set(),
+        ignored_resources: set[str] = set(),
     ):
         resource2capacity = resource2capacity or {}
         dropcols = []
@@ -729,7 +736,7 @@ class PmappingDataframe:
                     l == 0
                     and next_shared_loop_index == -1
                     and drop_valid_reservations
-                    and resource not in no_drop_reservations_for
+                    and resource not in ignored_resources
                 ):
                     right_loops.discard(l)
                     dropcols.append(col)
@@ -747,7 +754,7 @@ class PmappingDataframe:
                 if (
                     l == 0
                     and drop_valid_reservations
-                    and resource not in no_drop_reservations_for
+                    and resource not in ignored_resources
                 ):
                     left_loops.discard(l)
                     dropcols.append(col)

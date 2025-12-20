@@ -284,7 +284,7 @@ def make_pmappings_from_templates(
                 limit_capacity_drop_valid_reservations=limit_capacity_drop_valid_reservations,
                 n_total_pmappings=1,  # Unused for now, just making an initial Pareto
                 n_valid_pmappings=1,  # Unused for now, just making an initial Pareto
-                no_drop_reservations_for=job.no_drop_reservations_for,
+                ignored_resources=job.ignored_resources,
             )
             for r in results
         ],
@@ -390,7 +390,7 @@ def make_pmappings_from_templates(
             n_valid_pmappings=valid_pmappings_per_group,
             skip_pareto=next_shared_loop_index_this_group == next_shared_loop_index,
             limit_capacity_drop_valid_reservations=limit_capacity_drop_valid_reservations,
-            no_drop_reservations_for=job.no_drop_reservations_for,
+            ignored_resources=job.ignored_resources,
         )
         pmapping_groups.append(PmappingGroup(compatibility, partial_mappings))
 

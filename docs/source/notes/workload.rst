@@ -23,21 +23,21 @@ _list_einsum_docstrings
 Renaming Tensors and Rank Variables
 -----------------------------------
 
-Renames allow us to write simple, generic names (*e.g.,* `input`,
-`reduced_rank_variable`) in our set expresssions and have them resolve to tensors or
+Renames allow us to write simple, generic names (*e.g.,* ``input``,
+``reduced_rank_variable``) in our set expresssions and have them resolve to tensors or
 rank variable in the Einsum.
 
-Each Einsum object has a `renames` attribute. This attribute may be populated with one
+Each Einsum object has a ``renames`` attribute. This attribute may be populated with one
 of the following:
 
-- A dictionary of `{new_name: source_set_expression}` expressions, where
-  `source_set_expression` may resolve either to tensors or rank variables. This is the
+- A dictionary of ``{new_name: source_set_expression}`` expressions, where
+  ``source_set_expression`` may resolve either to tensors or rank variables. This is the
   simplest method.
-- A list of dictionaries, each one having the structure `{name: new_name, source:
-  source_set_expression, expected_count: 1}`. This method allows you to write an
+- A list of dictionaries, each one having the structure ``{name: new_name, source:
+  source_set_expression, expected_count: 1}``. This method allows you to write an
   expected count, which is optional, and checks that your set expression returned the
   expected number of elements. For example, if your source set expression were
-  `Outputs()`, an expected count of 1 would pass if there were only one output tensor,
+  ``Outputs()``, an expected count of 1 would pass if there were only one output tensor,
   but fail if there were two.
 
 
@@ -47,9 +47,9 @@ workload. For example, one is in the bottom of the following workload:
 
 gpt3_6.7B.workload.yaml
 
-This renames format includes, for every Einsum, a `tensor_accesses` key and a
-`rank_variables` key. Both support the above dictionary or list-of-dictionary rename
+This renames format includes, for every Einsum, a ``tensor_accesses`` key and a
+``rank_variables`` key. Both support the above dictionary or list-of-dictionary rename
 formats.
 
-If an Einsum in the renames is named `default`, then its renames are applied to every
+If an Einsum in the renames is named ``default``, then its renames are applied to every
 Einsum unless overridden.

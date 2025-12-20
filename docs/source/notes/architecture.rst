@@ -36,16 +36,11 @@ tree architecture into multiple parallel *Flattened-Architectures*, each one
 representing one possible path from the root of the tree to the leaf for that
 :py:class:`~fastfusion.frontend.arch.Compute`.
 
-For example, consider the following architecture:
-
-.. include:: ../../../examples/arches/tpu_v4i_like.arch.yaml
-   :code: yaml
-
-There are two compute units in the architecture, the ``scalar_unit`` and the ``mac``.
-Flattening this architecture will produce two Flattened-Architectures; one with a
-``scalar_unit`` and one with a ``mac``. The partial mappings for each of these
-architectures can be combined, and can share hardware that exists above both compute
-units.
+For example, in the architecture above, there are two compute units, the ``scalar_unit``
+and the ``mac``. Flattening this architecture will produce two Flattened-Architectures;
+one with a ``scalar_unit`` and one with a ``mac``. The partial mappings for each of
+these architectures can be combined, and can share hardware that exists above both
+compute units.
 
 Inserting a :py:class:`~fastfusion.frontend.arch.Compute` directly into the top-level
 architecture hierarchy will create an optional compute path that goes from the top node

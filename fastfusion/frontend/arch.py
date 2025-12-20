@@ -112,10 +112,17 @@ class LeafAttributes(ComponentAttributes):
     latency: Union[str, int, float] = 0
     """
     An expression representing the latency of this component in seconds. This is used to
-    calculate the latency of a given Einsum. Special variables available are min, max,
-    and "X_actions", where X is the name of an action that this component can perform.
-    "X_actions" resolves to the number of times action "X" is performed. For example,
-    read_actions is the number of times the read action is performed.
+    calculate the latency of a given Einsum. Special variables available are `min`,
+    `max`, and `X_actions`, where `X` is the name of an action that this component can
+    perform. `X_actions` resolves to the number of times action `X` is performed. For
+    example, `read_actions` is the number of times the read action is performed.
+
+    For example, the following expression will calculate the latency of a component
+    based on the number of read and write actions:
+
+    .. code-block:: yaml
+
+      latency: 1e-9 * (read_actions + write_actions) # 1ns per read or write
     """
 
 

@@ -21,6 +21,9 @@ extensions = [
     'sphinx.ext.viewcode',           # Add links to source code
     'sphinx_autodoc_typehints',      # Include type hints
     'include_docstring',             # Include docstrings
+    'include_notebook',              # Include notebooks
+    'include_attrs',                 # Include attributes & their docstrings
+    'include_functions',             # Include functions & their docstrings
 ]
 
 autodoc_default_options = {
