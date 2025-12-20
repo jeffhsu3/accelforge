@@ -11,14 +11,11 @@ The following is an example workload for three back-to-back matrix multiplicatio
 
 The top-level Workload spec has the following attributes:
 
-_list_parameter_docstrings
+.. include-attrs:: fastfusion.frontend.workload.Workload
 
 Each Einsum in the workload represents a single Einsum with the following attributes:
 
-_list_einsum_docstrings
-
-.. _workload-rename:
-
+.. include-attrs:: fastfusion.frontend.workload.Einsum
 
 Renaming Tensors and Rank Variables
 -----------------------------------
@@ -45,7 +42,8 @@ Additionally, you may define a separate top-level
 :py:class:`~fastfusion.frontend.renames.Renames` object with structure mirroring the
 workload. For example, one is in the bottom of the following workload:
 
-gpt3_6.7B.workload.yaml
+.. include:: ../../../examples/workloads/gpt3_6.7B.workload.yaml
+   :code: yaml
 
 This renames format includes, for every Einsum, a ``tensor_accesses`` key and a
 ``rank_variables`` key. Both support the above dictionary or list-of-dictionary rename

@@ -55,8 +55,10 @@ The :py:obj:`~fastfusion.frontend.arch.LeafAttributes.latency` of a component, d
 in the class's `attributes.latency` field, is a Python expression that is evaluated
 using the component's actions.
 
-The :py:obj:`~fastfusion.frontend.arch.LeafAttributes.latency` field is
-:docstring-lower:`fastfusion.frontend.arch.LeafAttributes.latency`
+TODO FIX DOCSTRING LOWER
+
+.. The :py:obj:`~fastfusion.frontend.arch.LeafAttributes.latency` field is
+.. :docstring-lower:`fastfusion.frontend.arch.LeafAttributes.latency`
 
 
 
