@@ -46,8 +46,8 @@ Pareto-optimal pmappings for all Einsums.
    :language: markdown
 
 In this code, there is a ``max_fused_loops`` parameter that makes mapping faster by
-limiting the number of fused loops that can exist in a single pmapping. The ``FFM`` object
-has a variety of knobs that can be used to speed up mapping:
+limiting the number of fused loops that can exist in a single pmapping. The
+``spec.mapper.ffm`` object has a variety of knobs that can be used to speed up mapping:
 
 .. include-attrs:: fastfusion.frontend.mapper.FFM
 
@@ -87,9 +87,9 @@ method, which will return a :py:class:`~fastfusion.mapper.FFM.mappings.Mappings`
 with only the columns that match the given key, and with the key removed from the column
 names.
 
-For example, if there are three columns `Total<SEP>Energy`, `Total<SEP>Area`, and
+For example, if there are three columns ``Total<SEP>Energy``, ``Total<SEP>Area``, and
 ``EinsumA<SEP>Energy``, then ``mapping.access("Total")`` will return a Mappings object
-with columns ``Energy`` and ``Area``, and ``mappings.access("Energy")`` will return a
+with columns ``Energy`` and ``Area``, and ``mapping.access("Energy")`` will return a
 Mappings object with columns ``Total`` and ``EinsumA``.
 
 To render a mapping, we can use the
