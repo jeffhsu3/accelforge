@@ -33,8 +33,8 @@ arch:
       width: 8192
       depth: size / width
     actions:
-    - {name: read, arguments: {bits_per_action: width}}
-    - {name: write, arguments: {bits_per_action: width}}
+    - {name: read, arguments: {_bits_per_action: width}}
+    - {name: write, arguments: {_bits_per_action: width}}
     constraints: {tensors: {keep: ~Intermediates, may_keep: All}}
 
   - !Memory
@@ -53,8 +53,8 @@ arch:
       array_h: depth
       clock_derate: {{32 if AQFP else 1}}
     actions:
-    - {name: read, arguments: {bits_per_action: width}}
-    - {name: write, arguments: {bits_per_action: width}}
+    - {name: read, arguments: {_bits_per_action: width}}
+    - {name: write, arguments: {_bits_per_action: width}}
     constraints:
       tensors:
         keep: All
@@ -91,8 +91,8 @@ arch:
       array_h: depth
       _leak_power_scale: cooling_overhead
     actions:
-    - {name: read, arguments: {bits_per_action: width}}
-    - {name: write, arguments: {bits_per_action: width}}
+    - {name: read, arguments: {_bits_per_action: width}}
+    - {name: write, arguments: {_bits_per_action: width}}
     constraints:
       tensors:
         keep: All

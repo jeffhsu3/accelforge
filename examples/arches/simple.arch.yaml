@@ -9,6 +9,7 @@ arch:
       _size: inf
       _datawidth: 1
       _leak_power: 0
+      _area: 0
     constraints: {tensors: {keep: ~Intermediates, may_keep: All}}
     actions:
     - {name: read, arguments: {energy: 1}}
@@ -20,6 +21,7 @@ arch:
       _size: inf #100e6
       _datawidth: 1
       _leak_power: 0
+      _area: 0
     constraints: {tensors: {keep: All}}
     actions:
     - {name: read, arguments: {energy: 0}}
@@ -27,6 +29,6 @@ arch:
 
   - !Compute
     name: MAC
-    attributes: {_latency: compute_actions, _leak_power: 0}
+    attributes: {_latency: compute_actions, _leak_power: 0, _area: 0}
     actions:
     - {name: compute, arguments: {energy: 0}}
