@@ -138,7 +138,44 @@ class Tensors(ParsableModel):
     of tensors. These tensors must be fetched at most one time from above memories.
     """
 
-    def _parse_keep(self, symbol_table: dict[str, Any], location: str):
+    tensor_order_options: ParsableList[
+        ParsableList[Union[str, InvertibleSet[TensorName], set[TensorName]]]
+    ] = ParsableList()
+    """
+    Options for the order of tensor storage nodes in the mapping. This is given as a
+    list-of-lists-of-sets. Each list-of-sets is a valid order of tensor storage nodes.
+    Order is given from highest in the mapping to lowest.
+
+    For example, an option could be [input | output, weight], which means that there is
+    no relative ordering required between input and output, but weight must be below
+    both.
+    """
+
+    def _parse_tensor_order_options(
+        self, symbol_table: dict[str, Any], location: str
+    ) -> "Tensors":
+        result = type(self)(
+            tensor_order_options=[
+                [
+                    eval_set_expression(x, symbol_table, "tensors", location)
+                    for x in order_choice
+                ]
+                for order_choice in self.tensor_order_options
+            ],
+        )
+        # Assert that there are no intersecting sets
+        for order in result.tensor_order_options:
+            for i, s0 in enumerate(order):
+                for j, s1 in enumerate(order):
+                    if i == j:
+                        continue
+                    if s0 & s1:
+                        raise ValueError(
+                            f"Intersecting entries in dataflow constraint: {s0} and {s1}"
+                        )
+        return result
+
+    def _parse_keep(self, symbol_table: dict[str, Any], location: str) -> "Tensors":
         keep, may_keep = self.keep, self.may_keep
         if may_keep == "<Nothing if keep is defined, else All>":
             may_keep = "All" if keep == "<Defaults to Nothing>" else "~All"
@@ -166,7 +203,7 @@ class Tensors(ParsableModel):
             may_keep = eval_set_expression(may_keep, symbol_table, "tensors", location)
             return type(self)(keep=keep, may_keep=may_keep)
 
-    def _parse_non_keep(self, symbol_table: dict[str, Any], location: str):
+    def _parse_non_keep(self, symbol_table: dict[str, Any], location: str) -> "Tensors":
         return type(self)(
             tile_shape=[x._parse(symbol_table, location) for x in self.tile_shape],
             no_refetch_from_above=eval_set_expression(
@@ -222,34 +259,6 @@ class Temporal(Iteration):
         return new_temporal
 
 
-class Dataflow(ParsableModel):
-    tensor_order_options: ParsableList[
-        ParsableList[Union[str, InvertibleSet[TensorName], set[TensorName]]]
-    ] = ParsableList()
-
-    def _parse(self, symbol_table: dict[str, Any], location: str):
-        result = type(self)(
-            tensor_order_options=[
-                [
-                    eval_set_expression(x, symbol_table, "tensors", location)
-                    for x in order_choice
-                ]
-                for order_choice in self.tensor_order_options
-            ],
-        )
-        # Assert that there are no intersecting sets
-        for order in result.tensor_order_options:
-            for i, s0 in enumerate(order):
-                for j, s1 in enumerate(order):
-                    if i == j:
-                        continue
-                    if s0 & s1:
-                        raise ValueError(
-                            f"Intersecting entries in dataflow constraint: {s0} and {s1}"
-                        )
-        return result
-
-
 class Misc(ParsableModel):
     enabled: Union[str, bool] = True
 
@@ -263,7 +272,6 @@ class ConstraintGroup(MiscOnlyConstraints):
     spatial: ParsableList[Spatial] = ParsableList()
     temporal: Temporal = Temporal()
     tensors: Tensors = Tensors()
-    dataflow: Dataflow = Dataflow()
 
 
 class ConstraintLambda:

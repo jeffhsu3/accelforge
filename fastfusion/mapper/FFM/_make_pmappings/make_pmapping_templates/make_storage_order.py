@@ -94,8 +94,8 @@ def get_tensor_choices(
 def get_tensor_order_constraint(nodes, symbol_table, tensors):
     required_order: dict[str, list[Order]] = {}
     for node in nodes:
-        constraint = node.constraints.dataflow._parse(
-            symbol_table, f"{node.name}.constraints.dataflow"
+        constraint = node.constraints.tensors._parse_tensor_order_options(
+            symbol_table, f"{node.name}.constraints.tensors"
         )
         if constraint.tensor_order_options:
             for order_constraint in constraint.tensor_order_options:
