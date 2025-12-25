@@ -1,0 +1,117 @@
+arch:
+  # ============================================================
+  # Architecture Description
+  # ============================================================
+  version: "0.5"
+  nodes: # Top-level is hierarchical
+  - !Memory # DRAM main memory
+    name: MainMemory
+    component_class: lpddr4
+    attributes:
+      _size: inf
+      _datawidth: 8
+      width: 64
+
+  - !Memory
+    name: GlobalBuffer
+
+    # This component_class invokes the hwcomponents_library.SmartBufferSRAM model. The
+    # component is a SRAM buffer with an address register that is updated on every
+    # access to queue up the next data.
+    component_class: SmartBufferSRAM
+
+    attributes:
+      # Underscore-prefixed fields go to this library. The underscore prefix tells the
+      # parser that these fields are part of the fastfusion specification, and should be
+      # strictly type-checked (like most other input fields). Non-underscored attributes
+      # are loosely type checked.
+      _size: width * depth
+      _datawidth: 8
+      # 32 reads and writes per cycle, 200MHz. Note bits per action is set below.
+      _latency: (read_actions + write_actions) / 32 / 200e6
+
+      # These attributes are passed to the hwcomponents_library model. In general,
+      # energy/area calculation passes every attribute it can to the model, except for
+      # those that the model doesn't recognize (like `size` or `datawidth`).
+      depth: 16384
+      width: 64
+      n_banks: 32
+      tech_node: 65e-9
+
+    # Actions that the hwcomponents_library model must support. Like attributes,
+    # non-underscored arguments are also loosely type-checked, and all arguments that
+    # can are passed to the model's appropriate method (in this case, `read` or
+    # `write`). The `_bits_per_action` argument is special because it determines how
+    # many bits are transferred by each read or write.
+    actions:
+    - {name: read, arguments: {_bits_per_action: 64}}
+    - {name: write, arguments: {_bits_per_action: 64}}
+
+  - !Memory
+    name: ArrayDummy
+    attributes: {_size: 0, _area: 0, _leak_power: 0, _energy: 0}
+    spatial:
+    - {name: reuse_weight, fanout: 14, reuse: weight}
+    - {name: reuse_output, fanout: 12, reuse: output}
+    constraints:
+      tensors: {keep: Nothing}
+      spatial:
+      - {name: reuse_weight, must_reuse: weight, min_utilization: 1}
+      - {name: reuse_output, must_reuse: output, min_utilization: 1}
+
+  - !Memory # Input scratchpad
+    name: InputScratchpad
+    component_class: SmartBufferSRAM
+    attributes:
+      _size: width * depth
+      _datawidth: 8
+      # One read, one write per cycle, 200MHz. Note bits per action is set below.
+      _latency: max(read_actions / 200e6 + write_actions / 200e6)
+      depth: 12
+      width: 16
+      tech_node: 65e-9
+    constraints: {tensors: {keep: [Input]}}
+    actions:
+    - {name: read, arguments: {_bits_per_action: 16}}
+    - {name: write, arguments: {_bits_per_action: 16}}
+
+  - !Memory # Weight scratchpad
+    name: WeightScratchpad
+    component_class: SmartBufferSRAM
+    attributes:
+      _size: width * depth
+      _datawidth: 8
+      # One read, one write per cycle, 200MHz. Note bits per action is set below.
+      _latency: max(read_actions / 200e6 + write_actions / 200e6)
+      depth: 192
+      width: 16
+      tech_node: 65e-9
+    constraints: {tensors: {keep: [Weight]}}
+    actions:
+    - {name: read, arguments: {_bits_per_action: 16}}
+    - {name: write, arguments: {_bits_per_action: 16}}
+
+  - !Memory # Output scratchpad
+    name: OutputScratchpad
+    component_class: SmartBufferSRAM
+    attributes:
+      _size: width * depth
+      _datawidth: 16 # Outputs are accumulated in double-width accumulators
+      # One read, one write per cycle, 200MHz. Note bits per action is set below.
+      _latency: max(read_actions / 200e6 + write_actions / 200e6)
+      depth: 16
+      width: 16
+      tech_node: 65e-9
+    constraints: {tensors: {keep: [Output]}}
+    actions:
+    - {name: read, arguments: {_bits_per_action: 16}}
+    - {name: write, arguments: {_bits_per_action: 16}}
+
+  - !Compute # MAC unit
+    name: MAC
+    component_class: intmac
+    attributes:
+      _latency: compute_actions / 200e6
+      tech_node: 65e-9
+      multiplier_width: 8
+      adder_width: 16
