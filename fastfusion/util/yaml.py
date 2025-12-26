@@ -5,7 +5,7 @@ import os
 import glob
 import re
 import io
-from typing import Callable, List, Dict, Any, Union, OrderedDict, Tuple
+from typing import Callable, List, Dict, Any, OrderedDict, Tuple
 import ruamel.yaml
 import warnings
 from ruamel.yaml.error import ReusedAnchorWarning
@@ -250,7 +250,7 @@ def load_file_and_includes(
 
 
 @recursive_mutator_stop
-def merge_check(x: Union[Dict[str, Any], List[Any], Any]) -> None:
+def merge_check(x: dict[str, Any] | list[Any] | Any) -> None:
     if isinstance(x, list):
         for i, v in enumerate(x):
             x[i] = merge_check(v)
@@ -311,7 +311,7 @@ def load_yaml(
 
 @recursive_mutator_stop
 def merge(
-    merge_into: dict, tomerge: Union[dict, list, tuple], recursive: bool = True
+    merge_into: dict, tomerge: dict | list | tuple, recursive: bool = True
 ) -> dict:
     if isinstance(tomerge, (list, tuple)):
         combined = dict()
@@ -506,7 +506,7 @@ class YAMLFileLoader:
         self,
         constructor: ruamel.yaml.constructor.Constructor,
         node: ruamel.yaml.nodes.ScalarNode,
-    ) -> Union[Dict[str, Any], None]:
+    ) -> dict[str, Any] | None:
         """
         Constructor that parses the !include_loaded relative_file_path and loads the file
         from relative_file_path
@@ -540,7 +540,7 @@ class YAMLFileLoader:
         self,
         constructor: ruamel.yaml.constructor.Constructor,
         node: ruamel.yaml.nodes.ScalarNode,
-    ) -> Union[Dict[str, Any], None]:
+    ) -> dict[str, Any] | None:
         """
         Constructor that parses !include relative_file_path and loads the file
         from relative_file_path
@@ -558,7 +558,7 @@ class YAMLFileLoader:
         self,
         constructor: ruamel.yaml.constructor.Constructor,
         node: ruamel.yaml.nodes.ScalarNode,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         Constructor that parses the !includedir relative_file_path and loads the
         file from relative_file_path
