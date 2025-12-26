@@ -19,6 +19,7 @@ Each Einsum in the workload represents a single Einsum with the following attrib
 
 Renaming Tensors and Rank Variables
 -----------------------------------
+:label:`renaming-tensors-rank-variables`
 
 Renames allow us to write simple, generic names (*e.g.,* ``input``,
 ``reduced_rank_variable``) in our set expresssions and have them resolve to tensors or

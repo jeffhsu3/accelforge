@@ -57,4 +57,4 @@ variables is returned. For example, `MemoryObject.Tensors.rank_variables` will r
 the set of all rank variables that index into any of the tensors stored in
 `MemoryObject`.
 
-Additional keys can be defined using :ref:`Renames`.
+Additional keys can be defined following :ref:`renaming-tensors-rank-variables`.

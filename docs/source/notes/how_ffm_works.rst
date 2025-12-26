@@ -11,19 +11,19 @@ Mapping workloads onto accelerators uses FFM, which consists of two parts:
 This document will walk you through how to use FFM to map a workload onto an
 accelerator.
 
-This document follows the `notebooks/examples/FFM.ipynb` notebook.
+This document follows the `notebooks/tutorials/FFM.ipynb` notebook.
 
-Creating a Specification
+Creating a Spec
 ------------------------
 
 Before we dive into the mapper, we need to set up a
-:py:class:`~fastfusion.frontend.specification.Specification` object with the input
-specification. We can initialize
-:py:class:`~fastfusion.frontend.specification.Specification` objects from YAML files.
+:py:class:`~fastfusion.frontend.spec.Spec` object with the input
+spec. We can initialize
+:py:class:`~fastfusion.frontend.spec.Spec` objects from YAML files.
 
-.. include-notebook:: notebooks/examples/FFM.ipynb
+.. include-notebook:: notebooks/tutorials/FFM.ipynb
    :name: make_spec
-   :language: markdown
+   :language: python
 
 We can set optimization metrics for the mapper by setting the `spec.mapper.ffm.metrics`
 attribute to one of the :py:class:`~fastfusion.mapper.FFM.Metrics` enum values or a
@@ -41,9 +41,9 @@ We call the Turbo-Charged Pmapper with the
 :py:class:`~fastfusion.mapper.FFM.main.MultiEinsumPmappings` object, which contains all
 Pareto-optimal pmappings for all Einsums.
 
-.. include-notebook:: notebooks/examples/FFM.ipynb
+.. include-notebook:: notebooks/tutorials/FFM.ipynb
    :name: make_pmappings
-   :language: markdown
+   :language: python
 
 In this code, there is a ``max_fused_loops`` parameter that makes mapping faster by
 limiting the number of fused loops that can exist in a single pmapping. The
@@ -71,9 +71,9 @@ mappings with the :py:func:`~fastfusion.mapper.FFM.main.join_pmappings` function
 function returns a :py:class:`~fastfusion.mapper.FFM.mappings.Mappings` object, which
 contains all Pareto-optimal mappings found for the given cascade of Einsums.
 
-.. include-notebook:: notebooks/examples/FFM.ipynb
+.. include-notebook:: notebooks/tutorials/FFM.ipynb
    :name: join_pmappings
-   :language: markdown
+   :language: python
 
 Interpreting the Output
 -----------------------

@@ -186,16 +186,18 @@ def docstring_role(name, rawtext, text, lineno, inliner, options={}, content=[])
         docstring = _decapitalize_first_letter(docstring)
 
     # Collapse to single line
-    text = ' '.join(docstring.split())
+    processed_text = ' '.join(docstring.split())
 
     # Parse the text as inline RST
-    nodes_list, messages = inliner.parse(text, lineno, inliner.memo, inliner.parent)
+    # The inliner.parse() method handles inline markup
+    nodes_list, messages = inliner.parse(processed_text, lineno, inliner, inliner.parent)
 
     return nodes_list, messages
 
 
 def _get_docstring(fqname):
     """Get docstring from a fully qualified name."""
+    fqname, attr_name = fqname.split(" ", 1)
     parts = fqname.split(".")
 
     # Import the module
@@ -221,22 +223,20 @@ def _get_docstring(fqname):
         # --- Check if obj is a class with annotations ---
         if inspect.isclass(obj) and hasattr(obj, "__annotations__") and part in obj.__annotations__:
             # Try to extract inline docstring using AST
-            try:
-                source = inspect.getsource(obj)
-                tree = ast.parse(source)
+            source = inspect.getsource(obj)
+            tree = ast.parse(source)
 
-                for node in ast.walk(tree):
-                    if isinstance(node, ast.ClassDef):
-                        for i, item in enumerate(node.body):
-                            if isinstance(item, ast.AnnAssign):
-                                if isinstance(item.target, ast.Name) and item.target.id == part:
-                                    if i + 1 < len(node.body):
-                                        next_item = node.body[i + 1]
-                                        if isinstance(next_item, ast.Expr) and isinstance(next_item.value, ast.Constant):
-                                            if isinstance(next_item.value.value, str):
-                                                return next_item.value.value
-            except (OSError, TypeError, SyntaxError):
-                pass
+            for node in ast.walk(tree):
+                if isinstance(node, ast.ClassDef):
+                    for i, item in enumerate(node.body):
+                        if isinstance(item, ast.AnnAssign):
+                            if isinstance(item.target, ast.Name) and item.target.id == part:
+                                if i + 1 < len(node.body):
+                                    next_item = node.body[i + 1]
+                                    if isinstance(next_item, ast.Expr) and isinstance(next_item.value, ast.Constant):
+                                        if isinstance(next_item.value.value, str):
+                                            return next_item.value.value
+
 
         # --- Pydantic v2 field ---
         if hasattr(obj, "model_fields") and part in obj.model_fields:

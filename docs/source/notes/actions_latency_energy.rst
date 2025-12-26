@@ -1,5 +1,5 @@
 Modeling Energy, Area, and Latency
-=================================
+==================================
 
 Energy, area, and latency are calculated in three steps:
 
@@ -51,14 +51,14 @@ read of output data is skipped because the value has not been written yet.
 Calculating Latency from a Pmapping
 -----------------------------------
 
-The :py:obj:`~fastfusion.frontend.arch.LeafAttributes.latency` of a component, defined
+The :py:obj:`~fastfusion.frontend.arch.ComponentAttributes.latency` of a component, defined
 in the class's `attributes.latency` field, is a Python expression that is evaluated
 using the component's actions.
 
 TODO FIX DOCSTRING LOWER
 
-.. The :py:obj:`~fastfusion.frontend.arch.LeafAttributes.latency` field is
-.. :docstring-lower:`fastfusion.frontend.arch.LeafAttributes.latency`
+.. The :py:obj:`~fastfusion.frontend.arch.ComponentAttributes.latency` field is
+.. :docstring-lower:`fastfusion.frontend.arch.ComponentAttributes.latency`
 
 
 
