@@ -66,20 +66,19 @@ def compute_energy_from_actions(
     overall_latency: float,
 ):
     energy_result = {}
+    components = {}
     for (component, action), counts in action_counts.items():
         if counts.total == 0:
             continue
-        action_table = spec.component_energy.find_action(component, action)
-        if action_table is None:
-            raise RuntimeError(
-                f"Could not find action {action} for component {component}"
-            )
-        energy_per_ac = action_table.energy
+        if component not in components:
+            components[component] = spec.arch.find(component)
+        component_obj = components[component]
+        energy_per_ac = component_obj.actions[action].arguments.energy
         energy_result[(component, action)] = counts.total * energy_per_ac
 
-    for leak_entry in spec.component_leak.entries:
-        energy_result[(leak_entry.name, "leak")] = (
-            leak_entry.total_leak_power * overall_latency
+    for component_obj in spec.arch.get_nodes_of_type(arch.Component):
+        energy_result[(component_obj.name, "leak")] = (
+            component_obj.attributes.total_leak_power * overall_latency
         )
 
     return energy_result
