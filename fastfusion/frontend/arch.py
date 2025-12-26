@@ -753,12 +753,12 @@ class Branch(ArchNode, ABC):
         ]
     ] = ArchNodes()
 
-    def find_nodes_of_type(self, node_type: Type[T]) -> Iterator[T]:
+    def get_nodes_of_type(self, node_type: Type[T]) -> Iterator[T]:
         for node in self.nodes:
             if isinstance(node, node_type):
                 yield node
             elif isinstance(node, Branch):
-                yield from node.find_nodes_of_type(node_type)
+                yield from node.get_nodes_of_type(node_type)
 
 
 class Parallel(Branch):
@@ -785,7 +785,7 @@ class Parallel(Branch):
                 fanout = _parse_node(node, fanout)
                 break
             if isinstance(node, Branch):
-                computes = node.find_nodes_of_type(Compute)
+                computes = node.get_nodes_of_type(Compute)
                 if compute_node in [c.name for c in computes]:
                     new_nodes, new_fanout = node._flatten(
                         attributes, compute_node, fanout, return_fanout=True
@@ -895,7 +895,7 @@ class Arch(Hierarchical):
         """
         area = {
             node.name: node.attributes.total_area
-            for node in self.find_nodes_of_type(Leaf)
+            for node in self.get_nodes_of_type(Leaf)
         }
         for k, v in area.items():
             if v is None:
@@ -918,7 +918,7 @@ class Arch(Hierarchical):
         """
         leak_power = {
             node.name: node.attributes.total_leak_power
-            for node in self.find_nodes_of_type(Leaf)
+            for node in self.get_nodes_of_type(Leaf)
         }
         for k, v in leak_power.items():
             if v is None:
@@ -931,7 +931,7 @@ class Arch(Hierarchical):
 
     def _parse_expressions(self, *args, **kwargs):
         symbol_table = kwargs["symbol_table"]
-        for node in self.find_nodes_of_type(Leaf):
+        for node in self.get_nodes_of_type(Leaf):
             symbol_table[node.name] = node
         return super()._parse_expressions(*args, **kwargs)
 
@@ -941,7 +941,7 @@ class Arch(Hierarchical):
     def model_post_init(self, __context__=None) -> None:
         # Make sure all leaf names are unique
         leaves = {}
-        for l in self.find_nodes_of_type(Leaf):
+        for l in self.get_nodes_of_type(Leaf):
             n = l.name
             leaves.setdefault(n, l)
             assert l is leaves[n], f"Duplicate name {n} found in architecture"
