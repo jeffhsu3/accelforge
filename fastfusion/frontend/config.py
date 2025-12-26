@@ -1,4 +1,4 @@
-from typing import Annotated, Optional
+from typing import Annotated, Callable, Optional
 
 from pydantic import ConfigDict
 from hwcomponents import EnergyAreaModel
@@ -37,10 +37,23 @@ def get_config() -> "Config":
 
 class Config(ParsableModel):
     version: Annotated[str, assert_version] = __version__
-    environment_variables: ParsableDict[str, str] = ParsableDict()
-    expression_custom_functions: ParsableList[str] = ParsableList()
+    expression_custom_functions: ParsableList[str | Callable] = ParsableList()
+    """
+    A list of functions to use while parsing expressions. These can either be functions
+    or paths to Python files that contain the functions. If a path is provided, then all
+    functions in the file will be added to the parser.
+    """
     component_models: ParsableList[str | EnergyAreaModel] = ParsableList()
+    """
+    A list of hwcomponents models to use for the energy and area calculations. These can
+    either be paths to Python files that contain the models, or `hwcomponents`
+    :py:class:`~hwcomponents.EnergyAreaModel` objects.
+    """
     use_installed_component_models: Optional[bool] = True
+    """
+    If True, then the `hwcomponents` library will find all installed models. If False,
+    then only the models specified in `component_models` will be used.
+    """
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     @classmethod
