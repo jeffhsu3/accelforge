@@ -2,7 +2,7 @@ from collections import defaultdict
 import itertools
 
 from fastfusion.frontend import arch
-from fastfusion.frontend.specification import Specification
+from fastfusion.frontend.spec import Spec
 from fastfusion.mapper.FFM._join_pmappings.join_pmappings import PmappingGroup
 from fastfusion.mapper.FFM._join_pmappings.compatibility import Loop, Compatibility
 from fastfusion.util import fzs
@@ -15,7 +15,7 @@ class MapspaceGlobals:
     def __init__(
         self,
         pmapping_groups: dict[str, list[PmappingGroup]],
-        spec: Specification,
+        spec: Spec,
         objective_function_cols: list[str] = None,
         flattened_architecture: list[arch.Leaf] = None,
     ):

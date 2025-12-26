@@ -14,8 +14,8 @@ from fastfusion.util.basetypes import ParsableModel
 from pydantic import Field
 
 
-class Specification(ParsableModel):
-    """Top-level specification class."""
+class Spec(ParsableModel):
+    """Top-level spec class."""
 
     arch: Arch = Arch()
     """ The hardware being used. """
@@ -50,7 +50,7 @@ class Specification(ParsableModel):
         **kwargs,
     ) -> tuple[Self, dict[str, Any]]:
         """
-        Parse all string expressions in the specification into concrete values.
+        Parse all string expressions in the spec into concrete values.
 
         Parameters
         ----------
@@ -78,7 +78,7 @@ class Specification(ParsableModel):
                     symbol_table, **kwargs
                 )
             except ParseError as e:
-                e.add_field("Specification().variables")
+                e.add_field("Spec().variables")
                 raise e
             symbol_table.update(parsed_variables)
             symbol_table["variables"] = parsed_variables
@@ -86,7 +86,7 @@ class Specification(ParsableModel):
 
     def calculate_component_energy_area(
         self, energy: bool = True, area: bool = True
-    ) -> "Specification":
+    ) -> "Spec":
         """
         Populate per-component area and/or energy entries using installed component
         models. Populates the ``area``, ``leak_power``, and ``energy`` fields of each
@@ -163,14 +163,14 @@ class Specification(ParsableModel):
         Raises
         ------
         AssertionError
-            If the specification has not been parsed.
+            If the spec has not been parsed.
         ParseError
             If there are duplicate names or the requested compute node cannot be found.
         """
         # Assert that we've been parsed
         assert getattr(
             self, "_parsed", False
-        ), "Specification must be parsed before getting flattened architecture"
+        ), "Spec must be parsed before getting flattened architecture"
         all_leaves = self.arch.find_nodes_of_type(Leaf)
         found_names = set()
         for leaf in all_leaves:
@@ -194,4 +194,4 @@ class Specification(ParsableModel):
         return found if compute_node is None else [found[0]]
 
 
-Spec = Specification
+Specification = Spec

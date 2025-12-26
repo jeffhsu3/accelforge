@@ -5,7 +5,7 @@ import time
 from typing import Callable
 
 from fastfusion.accelerated_imports import pd
-from fastfusion.frontend.specification import Specification
+from fastfusion.frontend.spec import Spec
 from fastfusion.frontend.mapper.metrics import Metrics
 from fastfusion.mapper.FFM._join_pmappings.pmapping_group import (
     PmappingGroup,
@@ -147,7 +147,7 @@ def get_memories_to_track(
 
 def join_pmappings(
     pmapping_groups: dict[str, list[PmappingGroup]],
-    spec: Specification,
+    spec: Spec,
     resource2capacity: dict[str, int],
     # Optimality-maintaining optimizations.
     skip_invalid: bool = True,

@@ -4,7 +4,7 @@ from typing import Any
 from numbers import Real
 
 from fastfusion.frontend import arch
-from fastfusion.frontend.specification import Specification
+from fastfusion.frontend.spec import Spec
 from fastfusion.model.looptree.reuse.symbolic import SymbolicAnalysisOutput
 from fastfusion.frontend.workload import Workload
 from fastfusion.frontend.mapping import Mapping
@@ -61,7 +61,7 @@ def gather_actions(
 
 
 def compute_energy_from_actions(
-    spec: Specification,
+    spec: Spec,
     action_counts: MappingABC[(str, str), Real],
     overall_latency: float,
 ):

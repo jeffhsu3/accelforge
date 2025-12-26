@@ -2,7 +2,7 @@ import itertools
 
 from collections.abc import Iterable, Set
 
-from fastfusion.frontend.specification import Specification
+from fastfusion.frontend.spec import Spec
 from fastfusion.frontend.workload import EinsumName, TensorName
 from fastfusion.mapper.FFM._join_pmappings.compatibility import Compatibility
 from fastfusion.mapper.FFM._join_pmappings.sim import SIM
@@ -27,7 +27,7 @@ def sims2untiled_compats(
 
 def join_compatibilities(
     einsum2compatibilities: dict[EinsumName, Iterable[Compatibility]],
-    spec: Specification = None,
+    spec: Spec = None,
 ) -> dict[EinsumName, set[Compatibility]]:
     """
     Return dict from Einsum name to compatibilities (without tile shape)

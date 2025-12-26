@@ -275,7 +275,7 @@ class Parsable(ABC, Generic[M]):
     # ) -> Iterator[T]:
     #     _seen = set() if _seen is None else _seen
     #     if not _first_call:
-    #         if self.__class__.__name__ == "Specification":
+    #         if self.__class__.__name__ == "Spec":
     #             return
 
     #     def _recurse(item: Parsable):
@@ -334,7 +334,7 @@ class Parsable(ABC, Generic[M]):
                 raise ParseError(
                     f"Global variable {k} is required. Please set it in "
                     f"either the attributes or an outer scope. Try setting it with "
-                    f"Specification.variables.{k} = [value]."
+                    f"Spec.variables.{k} = [value]."
                 )
 
         for field in field_order:

@@ -1,4 +1,4 @@
-from fastfusion.frontend.specification import Specification
+from fastfusion.frontend.spec import Spec
 from fastfusion.frontend.workload import EinsumName
 from fastfusion.accelerated_imports import pd
 from typing import Union
@@ -12,7 +12,7 @@ from fastfusion.mapper.FFM._make_pmappings.make_pmappings import (
 class Mappings:
     def __init__(
         self,
-        spec: Specification,
+        spec: Spec,
         einsum_names: list[EinsumName],
         data: pd.DataFrame,
         total_mappings: int,

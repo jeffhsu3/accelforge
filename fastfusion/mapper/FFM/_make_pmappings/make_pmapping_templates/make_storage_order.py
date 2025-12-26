@@ -5,7 +5,7 @@ from typing import Any
 
 import fastfusion.frontend.arch as arch
 from fastfusion.frontend.mapping import MappingNode, TensorHolder
-from fastfusion.frontend.specification import Specification
+from fastfusion.frontend.spec import Spec
 from fastfusion.frontend.workload.workload import TensorName, SymbolTable
 from fastfusion.util.parse_expressions import MATH_FUNCS
 
@@ -31,7 +31,7 @@ def get_tensor_choices(
     einsum_name: EinsumName,
     nodes: list[arch.Memory],
     symbol_table: SymbolTable,
-    spec: Specification,
+    spec: Spec,
 ) -> Generator[tuple[list[TensorHolder], Any], None, None]:
     nodes, compute = nodes[:-1], nodes[-1]
     while True:
@@ -121,7 +121,7 @@ def recursive_order_tensor_choices(
     nodes: list[arch.Memory],
     remaining_choices: list,
     required_order: list[list[TensorHolder]],
-    spec: Specification,
+    spec: Spec,
     is_copy_op: bool = False,
 ) -> Generator[list[MappingNode], None, None]:
     def check_has_tensors(mapping: list[MappingNode]):
@@ -176,7 +176,7 @@ def valid_tensor_holder_order(
     mapping: Sequence[TensorHolder],
     node_names: list[str],
     required_orders: dict[str, list["Order"]],
-    spec: Specification,
+    spec: Spec,
 ):
     memory_to_satisfied_constraints: dict[str, set] = {}
     for i, m0 in enumerate(mapping):

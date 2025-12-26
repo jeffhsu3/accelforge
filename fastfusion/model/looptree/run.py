@@ -30,7 +30,7 @@ def run_looptree(config_dir, paths, tmp_path, bindings, call_accelergy):
     from pytimeloop.looptree.reuse._isl.des import deserialize_looptree_output
     from pytimeloop.looptree.energy import gather_actions, compute_energy_from_actions
     from pytimeloop.looptree.latency import get_latency
-    from pytimeloop.timeloopfe.v4fused import Specification
+    from pytimeloop.timeloopfe.v4fused import Spec
     from pytimeloop.timeloopfe.common.backend_calls import call_accelergy_verbose
 
     yaml_str = gather_yaml_configs(config_dir, paths)
@@ -39,13 +39,13 @@ def run_looptree(config_dir, paths, tmp_path, bindings, call_accelergy):
 
     workload = LooptreeWorkload.parse_cfg(config.root["problem"])
 
-    spec = Specification.from_yaml_files([str(config_dir / p) for p in paths])
+    spec = Spec.from_yaml_files([str(config_dir / p) for p in paths])
 
     if call_accelergy:
         if isinstance(tmp_path, Path):
             tmp_path = str(tmp_path)
         call_accelergy_verbose(spec, tmp_path)
-        spec = Specification.from_yaml_files(
+        spec = Spec.from_yaml_files(
             [str(config_dir / p) for p in paths] + [str(Path(tmp_path) / "ERT.yaml")]
         )
 
@@ -79,7 +79,7 @@ def run_looptree_symbolic(config_dir, paths, tmp_path, bindings, call_accelergy)
     from pytimeloop.looptree.reuse import analyze_reuse_and_add_reservations_to_mapping
     from pytimeloop.looptree.energy import gather_actions, compute_energy_from_actions
     from pytimeloop.looptree.latency import get_latency
-    from pytimeloop.timeloopfe.v4fused import Specification
+    from pytimeloop.timeloopfe.v4fused import Spec
     from pytimeloop.timeloopfe.common.backend_calls import call_accelergy_verbose
     from fastfusion.mapper.FFM._make_pmappings.pmapper_job import Job
 
@@ -89,13 +89,13 @@ def run_looptree_symbolic(config_dir, paths, tmp_path, bindings, call_accelergy)
     workload = LooptreeWorkload.parse_cfg(config.root["problem"])
     analyzer = LooptreeWorkloadDependencyAnalyzer(workload)
 
-    spec = Specification.from_yaml_files([str(config_dir / p) for p in paths])
+    spec = Spec.from_yaml_files([str(config_dir / p) for p in paths])
 
     if call_accelergy:
         if isinstance(tmp_path, Path):
             tmp_path = str(tmp_path)
         call_accelergy_verbose(spec, tmp_path)
-        spec = Specification.from_yaml_files(
+        spec = Spec.from_yaml_files(
             [str(config_dir / p) for p in paths] + [str(Path(tmp_path) / "ERT.yaml")]
         )
 

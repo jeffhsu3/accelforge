@@ -3,7 +3,7 @@ from collections import defaultdict
 from fastfusion.frontend import arch
 from fastfusion.frontend.arch import Leaf, Memory, TensorHolder, Component
 from fastfusion.frontend.mapping import Compute, Mapping
-from fastfusion.frontend.specification import Specification
+from fastfusion.frontend.spec import Spec
 
 from fastfusion.model.looptree.accesses import isl_buffer_accesses_from_buffet_actions
 from fastfusion.model.looptree.mapping_utilities import get_leaves
@@ -36,7 +36,7 @@ def component_latency(
     looptree_results: SymbolicAnalysisOutput,
     flattened_arch: list[Leaf],
     mapping: Mapping,
-    spec: Specification,
+    spec: Spec,
 ):
     component_to_actions: dict[str, dict[str, float]] = defaultdict(
         lambda: defaultdict(lambda: 0)

@@ -143,7 +143,7 @@ parse_expression_thread_lock = OwnedLock()
 
 
 class ParseExpressionsContext:
-    def __init__(self, spec: "Specification"):
+    def __init__(self, spec: "Spec"):
         self.spec = spec
         self.grabbed_lock = False
 
@@ -153,7 +153,12 @@ class ParseExpressionsContext:
         parse_expression_thread_lock.acquire()
         parse_expressions_local.script_funcs = {}
         for p in self.spec.config.expression_custom_functions:
-            parse_expressions_local.script_funcs.update(load_functions_from_file(p))
+            if isinstance(p, str):
+                parse_expressions_local.script_funcs.update(load_functions_from_file(p))
+            elif isinstance(p, Callable):
+                parse_expressions_local.script_funcs[p.__name__] = p
+            else:
+                raise ValueError(f"Invalid expression custom function: {p}")
         self.grabbed_lock = True
 
     def __exit__(self, exc_type, exc_value, traceback):

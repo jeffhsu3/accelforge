@@ -3,7 +3,7 @@ import os
 import random
 from typing import Callable, Generator
 from fastfusion import arch, util
-from fastfusion import Specification
+from fastfusion import Spec
 from fastfusion.frontend.mapper.metrics import Metrics
 from fastfusion.mapper.FFM.pmappings import MultiEinsumPmappings
 from fastfusion.mapper.FFM._join_pmappings.compress_pmappings import (
@@ -316,7 +316,7 @@ def get_random_mapping(mapspace_globals: MapspaceGlobals) -> SimAnnealMapping:
 
 def join_pmappings(
     pmapping_groups: dict[EinsumName, list[PmappingGroup]],
-    spec: Specification,
+    spec: Spec,
     resource2capacity: dict[str, int],
     tracker: EvaluationsScoreTracker,
     pop_size_per_thread: int,
@@ -388,7 +388,7 @@ def get_n_tile_shapes(sim: PmappingGroup) -> int:
 
 
 def join_pmappings(
-    spec: Specification,
+    spec: Spec,
     pmappings: MultiEinsumPmappings,
     max_evaluations: int = 1,
     population_size=100,
@@ -453,7 +453,7 @@ def join_pmappings(
 
     def parallel_join(
         permuted: dict[EinsumName, list[PmappingGroup]],
-        spec: Specification,
+        spec: Spec,
         resource2capacity: dict[str, int],
         tracker: EvaluationsScoreTracker,
         pop_size_per_thread: int,

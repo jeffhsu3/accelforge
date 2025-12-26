@@ -21,7 +21,7 @@ from fastfusion.accelerated_imports import pd
 from fastfusion.frontend import mapping
 import fastfusion.frontend.arch as arch
 from fastfusion.frontend.arch import Memory
-from fastfusion.frontend.specification import Specification
+from fastfusion.frontend.spec import Spec
 from fastfusion.frontend.workload import Workload
 from fastfusion.frontend.workload._isl import get_rank_variable_bounds
 from fastfusion.frontend.workload._symbolic import get_stride_and_halo
@@ -1307,7 +1307,7 @@ class TilingSegment:
 def _explore_tile_shapes_old(job: "Job"):
     pmapping = job.mapping
     constraints = job.constraints
-    specification = job.spec
+    spec = job.spec
 
     constraints.set_loop_indices(pmapping.nodes)
 
@@ -1332,7 +1332,7 @@ def _explore_tile_shapes_old(job: "Job"):
         constraints,
         compiled_per_memory_usage_df,
         compiled_utilization_df,
-        specification,
+        spec,
         job,
     )
 
@@ -1356,18 +1356,18 @@ def generate_tile_shapes(
     constraints: MappingConstraints,
     usage_df: dict[str, Callable],
     utilization_df: dict[str, Callable],
-    specification: Specification,
+    spec: Spec,
     job: Job,
 ):
     pmapping = pmapping.nodes
-    workload = specification.workload
+    workload = spec.workload
 
     initial_delta_choices = get_initial_delta_choices(pmapping[-1].einsum, workload)
 
     shape = get_rank_variable_bounds(workload, pmapping[-1].einsum)
 
     rank_var_to_tiling_segments = collect_tiling_segments(
-        pmapping, shape, specification, initial_delta_choices
+        pmapping, shape, spec, initial_delta_choices
     )
 
     def update_mask(prev_mask, new_mask, cause: str, track_masked: bool = True):
@@ -1529,8 +1529,8 @@ def generate_tile_shapes(
         #         n_loops += cur_size != good_choices[:,i]
         #         cur_size = good_choices[:,i]
         # max_loops = min(
-        #     specification.mapper.ffm.max_loops,
-        #     specification.mapper.ffm.max_loops_minus_ranks + len(ranks)
+        #     spec.mapper.ffm.max_loops,
+        #     spec.mapper.ffm.max_loops_minus_ranks + len(ranks)
         # )
         # mask = np.ones(good_choices.shape[0], dtype=np.bool)
         # mask = update_mask(mask, n_loops <= max_loops, "max loops", track_masked=track_masked)
@@ -1913,7 +1913,7 @@ def generate_tile_shapes(
 
         return best_reduction if _recursed else best_index
 
-    if True:  # not specification.mapper.ffm._greedily_maximize_reuse:
+    if True:  # not spec.mapper.ffm._greedily_maximize_reuse:
         # Start combining from the loop with the fewest choices
         _, fewest_index = min(
             ((x[-1].shape[0], i) for i, x in enumerate(rank_var_and_choices))
@@ -1965,7 +1965,7 @@ def generate_tile_shapes(
             )
     # else:
     #     assert (
-    #         specification.mapper.ffm.force_memory_hierarchy_order
+    #         spec.mapper.ffm.force_memory_hierarchy_order
     #     ), "Maximizing memory usage requires force_memory_hierarchy_order to be set"
     #     # Start combining from the outside in
     #     while len(rank_var_and_choices) > 1:
@@ -2016,7 +2016,7 @@ def invert_indices(inverted_indices):
 def collect_tiling_segments(
     pmapping,
     rank_shape: dict,
-    spec: "Specification",
+    spec: "Spec",
     initial_delta_choices: dict[str, set[int]] = {},
 ) -> dict[str, TilingSegment]:
     rank_var_to_tiling_segments = {}

@@ -2,7 +2,7 @@ from pathlib import Path
 import pickle
 import unittest
 
-from fastfusion.frontend import Specification
+from fastfusion.frontend import Spec
 from fastfusion.mapper.FFM._make_pmappings.make_pmappings import make_pmappings
 from fastfusion.mapper.FFM._join_pmappings.compatibility_util import (
     join_compatibilities,
@@ -20,7 +20,7 @@ class TestPreJoin(unittest.TestCase):
     def test_mha_full(self):
         config_names = ["snowcat.arch", "mha_full.workload", "mha.renames"]
         paths = [PARENT_DIR / f"{config_name}.yaml" for config_name in config_names]
-        spec = Specification.from_yaml(*paths)
+        spec = Spec.from_yaml(*paths)
         flattened_arch = spec.get_flattened_architecture()
 
         pmapping_cache = make_pmapping_pickle_cache(config_names)
@@ -48,7 +48,7 @@ class TestPreJoin(unittest.TestCase):
 
 class TestJoin(unittest.TestCase):
     def test_mha(self):
-        spec = Specification.from_yaml(
+        spec = Spec.from_yaml(
             PARENT_DIR / "four_level.arch.yaml",
             PARENT_DIR / "mha.workload.yaml",
             PARENT_DIR / "mha.renames.yaml",
@@ -63,7 +63,7 @@ class TestJoin(unittest.TestCase):
     def test_mha_full(self):
         config_names = ["snowcat.arch", "mha_full.workload", "mha.renames"]
         paths = [PARENT_DIR / f"{config_name}.yaml" for config_name in config_names]
-        spec = Specification.from_yaml(*paths)
+        spec = Spec.from_yaml(*paths)
         flattened_arch = spec.get_flattened_architecture()
 
         pmapping_cache = make_pmapping_pickle_cache(config_names)
@@ -76,7 +76,7 @@ class TestJoin(unittest.TestCase):
     def test_mha_full_with_prejoin_pruning(self):
         config_names = ["snowcat.arch", "mha_full.workload", "mha.renames"]
         paths = [PARENT_DIR / f"{config_name}.yaml" for config_name in config_names]
-        spec = Specification.from_yaml(*paths)
+        spec = Spec.from_yaml(*paths)
         flattened_arch = spec.get_flattened_architecture()
 
         pmapping_cache = make_pmapping_pickle_cache(config_names)
@@ -95,7 +95,7 @@ class TestJoin(unittest.TestCase):
             "mobilenet_long.workload",
         ]
         paths = [PARENT_DIR / f"{config_name}.yaml" for config_name in config_names]
-        spec = Specification.from_yaml(*paths)
+        spec = Spec.from_yaml(*paths)
         flattened_arch = spec.get_flattened_architecture()
 
         pmapping_cache = make_pmapping_pickle_cache(config_names)

@@ -2,7 +2,7 @@ from math import isclose
 import unittest
 from pathlib import Path
 
-from fastfusion.frontend import Specification
+from fastfusion.frontend import Spec
 from fastfusion.frontend.mapping import Mapping
 from fastfusion.frontend.workload import Workload
 
@@ -225,7 +225,7 @@ class TestSymbolicActions(unittest.TestCase):
 
 class TestSymbolicLatency(unittest.TestCase):
     def test_q_mapping(self):
-        spec = Specification.from_yaml(
+        spec = Spec.from_yaml(
             [
                 # Path(__file__).parent / 'Q_mapping.yaml',
                 Path(__file__).parent / "mha.yaml",

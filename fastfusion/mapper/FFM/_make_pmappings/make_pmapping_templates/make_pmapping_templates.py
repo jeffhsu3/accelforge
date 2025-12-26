@@ -15,7 +15,7 @@ from fastfusion.frontend.mapping import (
     TensorHolder,
     Temporal,
 )
-from fastfusion.frontend.specification import Specification
+from fastfusion.frontend.spec import Spec
 from fastfusion.frontend.workload._isl import get_rank_variable_bounds
 from fastfusion.frontend.workload._symbolic import (
     get_rank_variable_relevancy,
@@ -216,7 +216,7 @@ def get_ranks_with_tile_pattern(producer_name: EinsumName, workload: Workload):
 
 
 def iterate_mappings_no_constraints(
-    spec: Specification,
+    spec: Spec,
     einsum_name: str,
     arch_flattened: list[arch.Leaf],
     rank_variable_bounds: dict[RankVariableName, int],
@@ -259,7 +259,7 @@ def iterate_mappings_no_constraints(
 
 
 def iterate_mappings_constraints(
-    spec: Specification,
+    spec: Spec,
     einsum_names: list[str] | str | None = None,
     arch_flattened: list[arch.Leaf] | None = None,
     rank_variable_bounds: dict[RankVariableName, int] | None = None,

@@ -13,7 +13,7 @@ from fastfusion.frontend.mapping import (
     Spatial,
     TilePattern,
 )
-from fastfusion.frontend.specification import Specification
+from fastfusion.frontend.spec import Spec
 from fastfusion.frontend.workload._symbolic import Relevant, PartiallyRelevant
 from fastfusion.frontend.workload.workload import (
     EinsumName,
@@ -54,7 +54,7 @@ def make_compatibility(
 
 @dataclass
 class Job:
-    spec: Specification | None
+    spec: Spec | None
     metrics: Metrics
     rank_variable_bounds: dict[RankVariableName, int]
 
@@ -212,7 +212,7 @@ class Job:
 
 class SameSpecJobs(list[Job]):
     @property
-    def spec(self) -> Specification:
+    def spec(self) -> Spec:
         return first(self).spec
 
     @property

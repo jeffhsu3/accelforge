@@ -2,7 +2,7 @@ import inspect
 import os
 from typing import Callable
 from fastfusion import arch
-from fastfusion import Specification
+from fastfusion import Spec
 from fastfusion.mapper.FFM.pmappings import MultiEinsumPmappings
 from fastfusion.mapper.FFM.mappings import Mappings
 from fastfusion.mapper.FFM._join_pmappings.compress_pmappings import (
@@ -49,7 +49,7 @@ class MappingFromRow:
 
 
 def _make_pmappings(
-    spec: Specification,
+    spec: Spec,
     einsum_names: list[EinsumName] | None = None,
     can_combine_multiple_runs: bool = False,
 ) -> MultiEinsumPmappings:
@@ -81,18 +81,18 @@ def _make_pmappings(
 
 
 def make_pmappings(
-    spec: Specification,
+    spec: Spec,
     einsum_names: list[EinsumName] | None = None,
     can_combine_multiple_runs: bool = False,
     cache_dir: str | None = None,
     print_number_of_pmappings: bool = True,
 ) -> MultiEinsumPmappings:
     """
-    Creates pmappings for a specification. Pmappings must be joined together using
+    Creates pmappings for a spec. Pmappings must be joined together using
     `join_pmappings` to create a full mapping.
 
     Args:
-        spec: The Specification to generate pmappings for.
+        spec: The Spec to generate pmappings for.
         einsum_names: The einsum names to generate pmappings for. If None, all einsums will be included.
         can_combine_multiple_runs: Whether we would like to be able to combine multiple
         make_pmappings runs. Haivng this as True allows you to do things like
@@ -140,7 +140,7 @@ def row2mapping(
 
 
 def join_pmappings(
-    spec: Specification,
+    spec: Spec,
     pmappings: MultiEinsumPmappings,
     pmapping_row_filter_function: Callable[[pd.Series], bool] | None = None,
     require_all_einsums: bool = True,

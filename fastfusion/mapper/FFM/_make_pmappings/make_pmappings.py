@@ -8,7 +8,7 @@ from joblib import delayed
 
 
 from fastfusion.frontend import arch
-from fastfusion.frontend.specification import Specification
+from fastfusion.frontend.spec import Spec
 from fastfusion.frontend.mapping import Iteration, Mapping, TensorHolder
 from fastfusion.frontend.workload._isl import (
     get_rank_variable_bounds,
@@ -32,7 +32,7 @@ from fastfusion.mapper.FFM._make_pmappings.pmapper_job import (
 )
 
 
-def get_rank_variable_bounds_for_all_einsums(spec: Specification):
+def get_rank_variable_bounds_for_all_einsums(spec: Spec):
     rank_variable_bounds = {
         einsum_name: get_rank_variable_bounds(spec.workload, einsum_name)
         for einsum_name in spec.workload.einsum_names
@@ -50,13 +50,13 @@ def get_rank_variable_bounds_for_all_einsums(spec: Specification):
     return result
 
 
-def get_num_computes(spec: Specification, einsum_name: EinsumName | None = None) -> int:
+def get_num_computes(spec: Spec, einsum_name: EinsumName | None = None) -> int:
     einsums = spec.workload.einsums
     einsums = [einsum_name] if einsum_name is not None else spec.workload.einsum_names
     return sum(get_operation_space_size(spec.workload, e) for e in einsums)
 
 
-def get_per_tensor_size(spec: Specification) -> dict[TensorName, int]:
+def get_per_tensor_size(spec: Spec) -> dict[TensorName, int]:
     return {
         tensor: get_tensor_size(spec.workload, tensor)
         for tensor in spec.workload.tensor_names
@@ -64,7 +64,7 @@ def get_per_tensor_size(spec: Specification) -> dict[TensorName, int]:
 
 
 def get_jobs(
-    spec: Specification,
+    spec: Spec,
     flattened_arches: list[list[arch.Leaf]],
     metrics: Metrics = Metrics.ENERGY | Metrics.LATENCY,
     einsum_names: Optional[list[EinsumName]] = None,
@@ -159,7 +159,7 @@ def get_memory_to_size(
 
 
 def get_memories_to_track(
-    spec: Specification,
+    spec: Spec,
     flattened_arches: list[list[arch.Leaf]],
     jobs: list[Job],
     metrics: Metrics,
@@ -239,7 +239,7 @@ def get_memories_to_track(
 
 
 def make_pmappings(
-    spec: Specification,
+    spec: Spec,
     flattened_arches: list[list[arch.Leaf]],
     can_combine_multiple_runs: bool,
     metrics: Metrics = Metrics.ENERGY | Metrics.LATENCY,

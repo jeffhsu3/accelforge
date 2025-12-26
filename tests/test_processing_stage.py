@@ -2,7 +2,7 @@ from math import isclose
 import unittest
 from pathlib import Path
 
-from fastfusion.frontend import Specification
+from fastfusion.frontend import Spec
 from fastfusion.frontend.arch import Arch
 from fastfusion.frontend.mapping import Mapping
 from fastfusion.frontend.workload import Workload
@@ -28,7 +28,7 @@ PARENT_DIR = Path(__file__).parent
 
 class TestProcessingStage(unittest.TestCase):
     def test_processing_stage(self):
-        spec = Specification.from_yaml(
+        spec = Spec.from_yaml(
             [
                 Path(__file__).parent / "processing_stage.arch.yaml",
                 Path(__file__).parent / "matmul.workload.yaml",

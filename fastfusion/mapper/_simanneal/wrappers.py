@@ -6,7 +6,7 @@ from typing import TypeAlias, Union
 from joblib import delayed
 from fastfusion.accelerated_imports import pd
 from fastfusion.frontend import arch
-from fastfusion.frontend.specification import Specification
+from fastfusion.frontend.spec import Spec
 from fastfusion.mapper.FFM._join_pmappings.sim import PmappingGroup, Loop, Compatibility
 from fastfusion.mapper.FFM._join_pmappings.pmapping_group import (
     PmappingDataframe,
@@ -125,7 +125,7 @@ def make_full_equivalent_rank_variables(pairwise_equivalent_rank_variables):
 def get_pmappings_data(
     pmapping_groups: dict[str, list[PmappingGroup]],
     evaluations_tracker,
-    spec: Specification = None,
+    spec: Spec = None,
     flattened_architecture: list[arch.Leaf] = None,
 ):
     resource2capacity = {}
@@ -160,7 +160,7 @@ def join_pmappings(
     pmapping_groups: dict[str, list[PmappingGroup]],
     evaluations_tracker: EvaluationsScoreTracker,
     algorithm: str,
-    spec: Specification = None,
+    spec: Spec = None,
     flattened_architecture: list[arch.Leaf] = None,
 ) -> PmappingDataframe:
     objective_function_cols = None
