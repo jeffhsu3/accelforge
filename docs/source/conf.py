@@ -20,11 +20,13 @@ extensions = [
     'sphinx.ext.autosummary',        # Generate autodoc summaries
     'sphinx.ext.viewcode',           # Add links to source code
     'sphinx_autodoc_typehints',      # Include type hints
+    'sphinx.ext.intersphinx',        # Link to other projects' documentation
     'include_docstring',             # Include docstrings
     'include_notebook',              # Include notebooks
     'include_attrs',                 # Include attributes & their docstrings
     'include_functions',             # Include functions & their docstrings
     'inherited_attributes',          # Inherit docstrings from parent classes
+    'include_yaml',                  # Include subsets of YAML files
 ]
 
 autodoc_default_options = {
@@ -50,7 +52,7 @@ autodoc_class_signature = "separated"
 #     white-space: pre-wrap !important;
 #     word-break: break-word;
 # }
-html_static_path = ["_static"]
+# html_static_path = ["_static"]
 # html_css_files = ["custom.css"]
 # html_js_files = ["custom.js"]
 
@@ -61,3 +63,14 @@ napoleon_use_rtype = True
 napoleon_use_ivar = True
 
 nitpicky = True
+
+intersphinx_mapping = {
+    'python': ('https://docs.python.org/3', None),
+    'numpy': ('https://numpy.org/doc/stable/', None),
+    'pandas': ('https://pandas.pydata.org/docs/', None),
+    'matplotlib': ('https://matplotlib.org/stable/contents.html', None),
+    'scipy': ('https://docs.scipy.org/doc/scipy/reference/', None),
+    'scikit-learn': ('https://scikit-learn.org/stable/documentation.html', None),
+    'scikit-image': ('https://scikit-image.org/docs/stable/', None),
+    'hwcomponents': ('https://accelergy-project.github.io/hwcomponents/', None),
+}
