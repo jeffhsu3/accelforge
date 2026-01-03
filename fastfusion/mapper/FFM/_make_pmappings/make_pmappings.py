@@ -26,7 +26,12 @@ from fastfusion.mapper.FFM._make_pmappings.make_pmappings_from_templates import 
 )
 from fastfusion.mapper.FFM._join_pmappings.compatibility import Compatibility
 from fastfusion.mapper.FFM._join_pmappings.pmapping_group import PmappingGroup
-from fastfusion.util.parallel import parallel, _memmap_read, get_n_parallel_jobs, is_using_parallel_processing
+from fastfusion.util.parallel import (
+    parallel,
+    _memmap_read,
+    get_n_parallel_jobs,
+    is_using_parallel_processing,
+)
 from fastfusion.mapper.FFM._make_pmappings.pmapper_job import (
     Job,
     SameCompatibilityJobs,
@@ -340,7 +345,11 @@ def _allocate_jobs(einsum2jobs):
         )
 
     split = False
-    if not split and is_using_parallel_processing() and len(calls) < get_n_parallel_jobs() * 4:
+    if (
+        not split
+        and is_using_parallel_processing()
+        and len(calls) < get_n_parallel_jobs() * 4
+    ):
         logging.warning(
             f"Insufficient jobs available to utilize available threads. "
             f"Splitting jobs into smaller chunks."

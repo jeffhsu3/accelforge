@@ -1,7 +1,7 @@
 import itertools
 from numbers import Number
 import tempfile
-from typing import Callable, Generic, TypeVar
+from typing import Any, Callable, Generic, TypeVar, Generator
 
 import pydot
 import sympy
@@ -40,7 +40,7 @@ def _lambdify_type_check(*args, **kwargs):
     return f_type_checked
 
 
-def set_n_parallel_jobs(n_jobs: int, print_message: bool = False):
+def set_n_parallel_jobs(n_jobs: int, print_message: bool = False) -> None:
     """
     Set the number of parallel jobs to use.
 
@@ -59,7 +59,7 @@ def set_n_parallel_jobs(n_jobs: int, print_message: bool = False):
         print(f"Using {n_jobs} parallel job{'s' if n_jobs > 1 else ''}")
 
 
-def get_n_parallel_jobs():
+def get_n_parallel_jobs() -> int:
     """
     Returns the number of parallel jobs being used. If parallel processing is not
     enabled, returns 1.
@@ -67,7 +67,7 @@ def get_n_parallel_jobs():
     return N_PARALLEL_PROCESSES if is_using_parallel_processing() else 1
 
 
-def is_using_parallel_processing():
+def is_using_parallel_processing() -> bool:
     """Returns True if parallel processing is enabled."""
     return PARALLELIZE and N_PARALLEL_PROCESSES > 1
 
@@ -91,9 +91,9 @@ def parallel(
     n_jobs: int = None,
     pbar: str = None,
     return_as: str = None,
-):
+) -> list[Any] | Generator[Any, None, None] | dict[Any, Any]:
     """
-    Parallizes a list of jobs.
+    Parallelizes a list of jobs.
 
     Parameters
     ----------
@@ -156,7 +156,9 @@ def parallel(
 
     return list(yield_results())
 
+
 # TODO: Move some of these things to a different file.
+
 
 def _symbol2str(x: str | sympy.Symbol) -> str:
     return x.name if isinstance(x, sympy.Symbol) else x

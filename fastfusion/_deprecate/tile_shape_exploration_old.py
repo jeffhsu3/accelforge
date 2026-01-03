@@ -42,7 +42,10 @@ from fastfusion.mapper.FFM._make_pmappings.mapper_one_einsum.mapper_job import J
 from fastfusion._model.looptree.reuse.summarized.symbolic import (
     analyze_reuse_and_add_reservations_to_mapping,
 )
-from fastfusion._model.looptree.energy import compute_energy_from_actions, gather_actions
+from fastfusion._model.looptree.energy import (
+    compute_energy_from_actions,
+    gather_actions,
+)
 from fastfusion._model.looptree.latency import get_latency
 
 from fastfusion.mapper.FFM._pmapping_group import (
