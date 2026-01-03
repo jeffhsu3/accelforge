@@ -44,7 +44,7 @@ from fastfusion.mapper.FFM._make_pmappings.pmapper_job import (
     SameEinsumJobs,
 )
 from fastfusion.util.basetypes import ParsableList
-from fastfusion.util.setexpressions import eval_set_expression
+from fastfusion.util._setexpressions import eval_set_expression
 
 
 def unpack_loops_to_rank_variables(mapping: List[MappingNode]):

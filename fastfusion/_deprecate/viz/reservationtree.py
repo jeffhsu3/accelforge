@@ -6,7 +6,7 @@ from fastfusion.mapper.FFM._join_pmappings.pmapping_group import (
     TensorReservation,
     Loop,
 )
-from fastfusion.util import expfmt
+from fastfusion.util import _expfmt
 from fastfusion.mapper.FFM._join_pmappings.pmapping_dataframe import col2nameloop
 
 PYDOT_NODE_DEFAULTS = {
@@ -59,7 +59,7 @@ class Node:
             graph.add_node(node)
         if parent:
             reservations = "\n".join(
-                sorted(f"[{k}] {expfmt(v)}" for k, v in self.get_reservations().items())
+                sorted(f"[{k}] {_expfmt(v)}" for k, v in self.get_reservations().items())
             )
             graph.add_edge(pydot.Edge(parent, node, label=reservations))
         for child in self.children:
@@ -70,7 +70,7 @@ class Node:
             self.children[-1].add_stats(stats)
         else:
             for k, v in stats.items():
-                self.this_level.append(f"{k}: {expfmt(v)}")
+                self.this_level.append(f"{k}: {_expfmt(v)}")
 
     def get_reservations(self) -> dict[str, int]:
         reservations = defaultdict(lambda: 0)
@@ -208,7 +208,7 @@ def mappings2reservationtree(
         n.children[-1].this_level.append(get_einsum_key(einsum_id))
         if per_component_energy is not None:
             for k, v in per_component_energy[einsum_id].items():
-                n.children[-1].this_level.append(f"{k} energy: {expfmt(v)}")
+                n.children[-1].this_level.append(f"{k} energy: {_expfmt(v)}")
         id2tensor = defaultdict(set)
         for t in sorted(mapping.tensors) + tensors_lifetimes[einsum_id]:
             id2tensor[t.name].add(t)

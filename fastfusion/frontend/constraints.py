@@ -6,8 +6,8 @@ from typing import Annotated, Any, Callable, List, Optional
 
 from fastfusion._accelerated_imports import np
 from fastfusion.util.basetypes import ParsableList, ParsableModel, ParsesTo
-from fastfusion.util.parse_expressions import parse_expression
-from fastfusion.util.setexpressions import InvertibleSet, eval_set_expression
+from fastfusion.util._parse_expressions import parse_expression
+from fastfusion.util._setexpressions import InvertibleSet, eval_set_expression
 from fastfusion.frontend.workload.workload import RankVariable, TensorName
 from fastfusion._version import assert_version, __version__
 

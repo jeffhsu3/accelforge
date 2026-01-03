@@ -1,6 +1,6 @@
 from fastfusion.frontend.mapper.mapper import Mapper
 from fastfusion.frontend.renames import Renames
-from fastfusion.util.parse_expressions import ParseError, ParseExpressionsContext
+from fastfusion.util._parse_expressions import ParseError, ParseExpressionsContext
 from fastfusion.frontend.arch import Compute, Leaf, Component, Arch
 
 # from fastfusion.frontend.constraints import Constraints

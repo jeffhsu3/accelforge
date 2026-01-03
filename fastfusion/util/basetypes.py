@@ -36,7 +36,7 @@ from typing import (
 )
 
 from fastfusion.util import yaml
-from fastfusion.util.parse_expressions import (
+from fastfusion.util._parse_expressions import (
     parse_expression,
     ParseError,
     RawString,

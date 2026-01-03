@@ -41,7 +41,7 @@ from fastfusion.util.basetypes import (
     InferFromTag,
 )
 from fastfusion.frontend.workload.workload import RankVariable, TensorName
-from fastfusion.util.util import SVGJupyterRender, pydot_graph
+from fastfusion.util.util import _SVGJupyterRender, _pydot_graph
 from fastfusion._version import assert_version, __version__
 from fastfusion.frontend import arch
 
@@ -1370,7 +1370,7 @@ class Mapping(Nested):
 
     def render(self) -> str:
         """Renders the mapping as a Pydot graph. Returns an SVG string."""
-        graph = pydot_graph()
+        graph = _pydot_graph()
         # Enable HTML-like labels for color support
         graph.set_node_defaults(label="")
         for node in self._render_make_children():
@@ -1404,7 +1404,7 @@ class Mapping(Nested):
                 if (parent_name, child_name) not in added_edges:
                     graph.add_edge(pydot.Edge(parent_name, child_name))
                     added_edges.add((parent_name, child_name))
-        return SVGJupyterRender(graph.create_svg(prog="dot").decode("utf-8"))
+        return _SVGJupyterRender(graph.create_svg(prog="dot").decode("utf-8"))
 
     @classmethod
     def _from_pmappings(

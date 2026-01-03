@@ -14,7 +14,7 @@ from fastfusion.mapper.FFM._join_pmappings.compatibility import (
     Loop,
     TensorReservation,
 )
-from fastfusion.util import fzs
+from fastfusion.util._frozenset import fzs
 
 from fastfusion._accelerated_imports import pd
 

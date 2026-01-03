@@ -16,7 +16,7 @@ from fastfusion.mapper.FFM._join_pmappings.pmapping_group import (
     MAPPING_COLUMN,
     PmappingDataframe,
 )
-from fastfusion.util import fzs
+from fastfusion.util._frozenset import fzs
 from fastfusion.mapper.simanneal.mapspaceglobals import MapspaceGlobals
 
 OBJECTIVE_COLUMN = None  # None -> Product

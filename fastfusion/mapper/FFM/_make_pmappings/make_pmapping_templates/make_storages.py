@@ -6,7 +6,7 @@ import fastfusion.frontend.arch as arch
 from fastfusion.frontend.mapping import Storage, TensorHolder, ProcessingStage
 from fastfusion.frontend.workload.workload import TensorName, SymbolTable
 
-from fastfusion.util.setexpressions import InvertibleSet
+from fastfusion.util._setexpressions import InvertibleSet
 
 
 def make_tensor_choices_one_level(

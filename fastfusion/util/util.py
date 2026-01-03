@@ -1,7 +1,7 @@
 import itertools
 from numbers import Number
 import tempfile
-from typing import Generic, TypeVar
+from typing import Callable, Generic, TypeVar
 
 import pydot
 import sympy
@@ -19,7 +19,7 @@ N_PARALLEL_PROCESSES = os.cpu_count()
 NUMPY_FLOAT_TYPE = np.float32
 
 
-def lambdify_type_check(*args, **kwargs):
+def _lambdify_type_check(*args, **kwargs):
     f = sympy.lambdify(*args, **kwargs)
 
     def f_type_checked(*args, **kwargs):
@@ -41,6 +41,16 @@ def lambdify_type_check(*args, **kwargs):
 
 
 def set_n_parallel_jobs(n_jobs: int, print_message: bool = False):
+    """
+    Set the number of parallel jobs to use.
+
+    Parameters
+    ----------
+    n_jobs : int
+        The number of parallel jobs to use.
+    print_message : bool, optional
+        Whether to print a message when the number of parallel jobs is set.
+    """
     global N_PARALLEL_PROCESSES
     N_PARALLEL_PROCESSES = n_jobs
     global PARALLELIZE
@@ -49,56 +59,12 @@ def set_n_parallel_jobs(n_jobs: int, print_message: bool = False):
         print(f"Using {n_jobs} parallel job{'s' if n_jobs > 1 else ''}")
 
 
-def using_parallel_processing():
+def is_using_parallel_processing():
+    """ Returns True if parallel processing is enabled. """
     return PARALLELIZE and N_PARALLEL_PROCESSES > 1
 
 
-T = TypeVar("T")
-
-
-class fzs(frozenset[T], Generic[T]):
-    def __repr__(self):
-        return f"{{{', '.join(sorted(x.__repr__() for x in self))}}}"
-
-    def __str__(self):
-        return self.__repr__()
-
-    def __or__(self, other: "fzs[T]") -> "fzs[T]":
-        return fzs(super().__or__(other))
-
-    def __and__(self, other: "fzs[T]") -> "fzs[T]":
-        return fzs(super().__and__(other))
-
-    def __sub__(self, other: "fzs[T]") -> "fzs[T]":
-        return fzs(super().__sub__(other))
-
-    def __xor__(self, other: "fzs[T]") -> "fzs[T]":
-        return fzs(super().__xor__(other))
-
-    def __lt__(self, other: "fzs[T]") -> bool:
-        return sorted(self) < sorted(other)
-
-    def __le__(self, other: "fzs[T]") -> bool:
-        return sorted(self) <= sorted(other)
-
-    def __gt__(self, other: "fzs[T]") -> bool:
-        return sorted(self) > sorted(other)
-
-    def __ge__(self, other: "fzs[T]") -> bool:
-        return sorted(self) >= sorted(other)
-
-
-def defaultintersection(*args) -> set:
-    allargs = []
-    for arg in args:
-        if isinstance(arg, set):
-            allargs.append(arg)
-        else:
-            allargs.extend(arg)
-    return set.intersection(*allargs) if allargs else set()
-
-
-def expfmt(x):
+def _expfmt(x):
     if isinstance(x, Number):
         x = round(x)
         if x < 10000:
@@ -112,27 +78,34 @@ def expfmt(x):
     return x
 
 
-def fakeparallel(**kwargs):
-    if (
-        "return_as" in kwargs
-        and kwargs["return_as"] == "generator"
-        or kwargs["return_as"] == "generator_unordered"
-    ):
-
-        def fake_parallel_generator(jobs):
-            for j in jobs:
-                yield j[0](*j[1], **j[2])
-
-        return fake_parallel_generator
-    return lambda jobs: [j[0](*j[1], **j[2]) for j in jobs]
-
-
 def parallel(
-    jobs,
+    jobs: list[tuple[Callable, tuple, dict]],
     n_jobs: int = None,
     pbar: str = None,
     return_as: str = None,
 ):
+    """
+    Parallizes a list of jobs.
+
+    Parameters
+    ----------
+    jobs : list[tuple[Callable, tuple, dict]]
+        The jobs to parallelize. The first element of each tuple is a function, the
+        second is a tuple of arguments, and the third is a dictionary of keyword
+        arguments.
+    n_jobs : int, optional
+        The number of jobs to run in parallel. If not provided, the number of parallel
+        jobs is set to the number of CPU cores.
+    pbar : str, optional
+        A label for a progress bar. If not provided, no progress bar is shown.
+    return_as : Literal["list", "generator", "generator_unordered"], optional
+        The type of return value. If not provided, the return value is a list.
+
+    Returns
+    -------
+    list[Any] | Generator[Any, None, None] | dict[Any, Any]
+        The result of the parallelized jobs.
+    """
     jobs = list(jobs)
 
     args = {}
@@ -180,44 +153,44 @@ def _symbol2str(x: str | sympy.Symbol) -> str:
     return x.name if isinstance(x, sympy.Symbol) else x
 
 
-def pydot_graph() -> pydot.Dot:
+def _pydot_graph() -> pydot.Dot:
     graph = pydot.Dot(graph_type="digraph", rankdir="TD", ranksep=0.2)
     graph.set_node_defaults(shape="box", fontname="Arial", fontsize="12")
     graph.set_edge_defaults(fontname="Arial", fontsize="10")
     return graph
 
 
-import cProfile
-import io
-import pstats
+# import cProfile
+# import io
+# import pstats
 
 
-class ProfilePrint:
-    def __init__(self):
-        self.profiler = cProfile.Profile()
+# class ProfilePrint:
+#     def __init__(self):
+#         self.profiler = cProfile.Profile()
 
-    def __enter__(self):
-        self.profiler.enable()
-        self.n_jobs = N_PARALLEL_PROCESSES
-        set_n_parallel_jobs(1)
-        return self
+#     def __enter__(self):
+#         self.profiler.enable()
+#         self.n_jobs = N_PARALLEL_PROCESSES
+#         set_n_parallel_jobs(1)
+#         return self
 
-    def __exit__(self, exc_type, exc_value, traceback):
-        self.profiler.disable()
-        s = io.StringIO()
-        stats = pstats.Stats(self.profiler, stream=s).sort_stats("cumulative")
-        stats.print_stats(20)
-        print("\n===== Profiling Results (sorted by total time) =====")
-        print(s.getvalue())
-        # set_n_parallel_jobs(self.n_jobs)
+#     def __exit__(self, exc_type, exc_value, traceback):
+#         self.profiler.disable()
+#         s = io.StringIO()
+#         stats = pstats.Stats(self.profiler, stream=s).sort_stats("cumulative")
+#         stats.print_stats(20)
+#         print("\n===== Profiling Results (sorted by total time) =====")
+#         print(s.getvalue())
+#         # set_n_parallel_jobs(self.n_jobs)
 
 
-class SVGJupyterRender(str):
+class _SVGJupyterRender(str):
     def _repr_svg_(self):
         return self
 
 
-def memmap_read(x):
+def _memmap_read(x):
     f = tempfile.NamedTemporaryFile(delete=False, suffix=".pkl")
     joblib.dump(x, f.name)
     return joblib.load(f.name, mmap_mode="r")

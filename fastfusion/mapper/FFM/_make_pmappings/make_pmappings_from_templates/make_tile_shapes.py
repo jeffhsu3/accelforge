@@ -35,7 +35,7 @@ from fastfusion.mapper.FFM._join_pmappings.pmapping_dataframe import (
     firstlatency2col,
 )
 from fastfusion.frontend.mapper.metrics import Metrics
-from fastfusion.util.util import fzs
+from fastfusion.util._frozenset import fzs
 import math
 import sympy
 import numpy as np
@@ -228,7 +228,7 @@ def geq_leq_zero(
 
 def compile_dict(symbols, dictionary):
     def lambdify(key, value):
-        x = util.lambdify_type_check(symbols, value)
+        x = util._lambdify_type_check(symbols, value)
         return x
 
     return {k: lambdify(symbols, v) for k, v in dictionary.items()}
@@ -861,7 +861,7 @@ def get_tile_shape_choices(
             what_tiles_symbol=what_tiles_symbol,
             minimize_formula=minimize_formula,
         )
-        return util.lambdify_type_check(symbols, formula)(
+        return util._lambdify_type_check(symbols, formula)(
             **{str(k): v for k, v in padded_choices.items()},
         )
 

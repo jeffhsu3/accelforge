@@ -95,8 +95,8 @@ def get_jobs(
 
         return einsum_name, jobs
 
-    spec = util.memmap_read(spec)
-    flattened_arches = [util.memmap_read(f) for f in flattened_arches]
+    spec = util._memmap_read(spec)
+    flattened_arches = [util._memmap_read(f) for f in flattened_arches]
 
     for einsum_name, jobs in parallel(
         [

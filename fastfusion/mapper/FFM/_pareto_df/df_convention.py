@@ -1,7 +1,7 @@
 import functools
 import re
 
-from fastfusion.util import fzs
+from fastfusion.util._frozenset import fzs
 from fastfusion.frontend.workload import Rank
 
 

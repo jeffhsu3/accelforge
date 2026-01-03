@@ -11,7 +11,7 @@ for creating a dictionary. For convenience, one can use TagMatch and
 TagCompatibility as classes for the keys.
 """
 
-from fastfusion.util import fzs
+from fastfusion.util._frozenset import fzs
 
 
 class TagClass(fzs):

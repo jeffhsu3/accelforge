@@ -26,8 +26,8 @@ from fastfusion.util.basetypes import (
     PostCall,
     get_tag,
 )
-from fastfusion.util.parse_expressions import ParseError, parse_expression
-from fastfusion.util.setexpressions import InvertibleSet, eval_set_expression
+from fastfusion.util._parse_expressions import ParseError, parse_expression
+from fastfusion.util._setexpressions import InvertibleSet, eval_set_expression
 from fastfusion.frontend.renames import TensorName
 
 from fastfusion._version import assert_version, __version__

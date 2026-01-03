@@ -51,7 +51,7 @@ from fastfusion.mapper.FFM._pmapping_group import (
     firstlatency2col,
 )
 from fastfusion.frontend.mapper.metrics import Metrics
-from fastfusion.util.util import fzs
+from fastfusion.util._frozenset import fzs
 
 
 def run_model(job: Job):
@@ -159,7 +159,7 @@ def run_model(job: Job):
 
 def compile_dict(symbols, dictionary):
     def lambdify(key, value):
-        x = util.lambdify_type_check(symbols, value)
+        x = util._lambdify_type_check(symbols, value)
         # x._loops = [int(loop) for loop in re.findall(r'loop(\d+)_', key)]
         return x
 
@@ -487,7 +487,7 @@ class Objective:
     @property
     def formula_compiled(self):
         if self._formula_compiled is None:
-            self._formula_compiled = util.lambdify_type_check(
+            self._formula_compiled = util._lambdify_type_check(
                 self._symbols, self.formula
             )
         return self._formula_compiled
@@ -806,7 +806,7 @@ def get_tile_shape_choices(
             what_tiles_symbol=what_tiles_symbol,
             minimize_formula=minimize_formula,
         )
-        return util.lambdify_type_check(symbols, formula)(
+        return util._lambdify_type_check(symbols, formula)(
             **{str(k): v for k, v in padded_choices.items()},
         )
 

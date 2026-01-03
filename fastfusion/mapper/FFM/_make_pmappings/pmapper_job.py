@@ -27,8 +27,8 @@ from fastfusion.mapper.FFM._make_pmappings.contraints.constraints import (
     MappingConstraints,
     _ConstraintLambda,
 )
-from fastfusion.util.util import expfmt, fzs
-from fastfusion.util.itertools import first
+from fastfusion.util.util import _expfmt
+from fastfusion.util._itertools import first
 from fastfusion.frontend.mapping import Reservation as ReservationNode
 
 
@@ -168,12 +168,12 @@ class Job:
 
         s += f"Total pmappings: {self.n_total_pmappings}\n"
         s += f"Valid pmappings: {self.n_valid_pmappings}\n"
-        s += f"One in {expfmt(self.n_total_pmappings / self.n_valid_pmappings)} pmappings is valid\n"
+        s += f"One in {_expfmt(self.n_total_pmappings / self.n_valid_pmappings)} pmappings is valid\n"
         s += f"Number of pmappings evaluated: {self.n_evaluated_pmappings}\n"
-        s += f"One in {expfmt(self.n_evaluated_pmappings / self.n_total_pmappings)} pmappings was evaluated\n"
+        s += f"One in {_expfmt(self.n_evaluated_pmappings / self.n_total_pmappings)} pmappings was evaluated\n"
         s += f"Pmapping elimination reasons:\n"
         for cause, keep_rate in self.pmapping_keep_rates.items():
-            s += f"\t{cause} kept one in {expfmt(1/keep_rate)} pmappings\n"
+            s += f"\t{cause} kept one in {_expfmt(1/keep_rate)} pmappings\n"
         s += "=" * 80 + "\n"
         return s
 

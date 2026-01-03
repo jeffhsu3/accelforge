@@ -19,8 +19,8 @@ from fastfusion.frontend.mapping import (
     Spatial,
 )
 from fastfusion.frontend.workload.workload import EinsumName, RankVariable
-from fastfusion.util.setexpressions import InvertibleSet
-from fastfusion.util.util import fzs
+from fastfusion.util._setexpressions import InvertibleSet
+from fastfusion.util._frozenset import fzs
 
 
 # =================================================================================================

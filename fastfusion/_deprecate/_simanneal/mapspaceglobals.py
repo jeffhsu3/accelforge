@@ -5,7 +5,7 @@ from fastfusion.frontend import arch
 from fastfusion.frontend.spec import Spec
 from fastfusion.mapper.FFM._join_pmappings.join_pmappings import PmappingGroup
 from fastfusion.mapper.FFM._join_pmappings.compatibility import Loop, Compatibility
-from fastfusion.util import fzs
+from fastfusion.util._frozenset import fzs
 from fastfusion.mapper.FFM._join_pmappings.join_pmappings import (
     make_full_equivalent_rank_variables,
 )

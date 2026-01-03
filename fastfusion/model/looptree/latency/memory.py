@@ -12,7 +12,7 @@ from fastfusion.model.looptree.reuse import SymbolicAnalysisOutput
 from fastfusion.model.looptree.types import Buffet
 
 from fastfusion.model.looptree.reuse.symbolic import BuffetStats
-from fastfusion.util.parse_expressions import MATH_FUNCS, parse_expression
+from fastfusion.util._parse_expressions import MATH_FUNCS, parse_expression
 from fastfusion.util.sympy.broadcast_max import Max, Min
 
 

@@ -1,7 +1,7 @@
-from fastfusion.util.parse_expressions import ParseError
+from fastfusion.util._parse_expressions import ParseError
 from pydantic import BaseModel, ConfigDict
 from typing import Iterator, Optional, TypeVar, Generic, Any, Union
-from fastfusion.util.parse_expressions import MATH_FUNCS
+from fastfusion.util._parse_expressions import MATH_FUNCS
 
 T = TypeVar("T")
 

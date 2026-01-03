@@ -5,7 +5,7 @@ from itertools import permutations, product
 from pytimeloop.bindings.looptree import LooptreeWorkload, LooptreeDependencyAnalyzer
 
 from pytimeloop.looptree.mapping_utilities import get_intermediate_tensors
-from fastfusion.util import fzs
+from fastfusion.util._frozenset import fzs
 
 from .grouped_einsums import GroupOfSimilarEinsums, Id
 

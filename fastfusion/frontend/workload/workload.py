@@ -8,7 +8,7 @@ from typing import Annotated, TypeAlias
 
 import pydot
 
-from fastfusion.util.util import SVGJupyterRender, pydot_graph
+from fastfusion.util.util import _SVGJupyterRender, _pydot_graph
 
 from fastfusion.util.basetypes import ParsableDict, ParsableList, ParsableModel
 from fastfusion.frontend.renames import (
@@ -21,8 +21,8 @@ from fastfusion.frontend.renames import (
     Rank,
     rename_list_factory,
 )
-from fastfusion.util.parse_expressions import ParseError
-from fastfusion.util.setexpressions import InvertibleSet, eval_set_expression
+from fastfusion.util._parse_expressions import ParseError
+from fastfusion.util._setexpressions import InvertibleSet, eval_set_expression
 from fastfusion._version import assert_version, __version__
 
 from fastfusion.frontend.renames import (
@@ -613,7 +613,7 @@ class Workload(ParsableModel):
 
     def render(self) -> str:
         """Renders the workload as a Pydot graph. Returns an SVG string."""
-        graph = pydot_graph()
+        graph = _pydot_graph()
 
         # Add all tensors as nodes (circles)
         tensors = []
@@ -652,7 +652,7 @@ class Workload(ParsableModel):
                         f"Tensor_{tensor_access.name}", f"Einsum_{einsum.name}"
                     )
                     graph.add_edge(edge)
-        return SVGJupyterRender(graph.create_svg(prog="dot").decode("utf-8"))
+        return _SVGJupyterRender(graph.create_svg(prog="dot").decode("utf-8"))
 
     def get_constraint_symbol_table(
         self,

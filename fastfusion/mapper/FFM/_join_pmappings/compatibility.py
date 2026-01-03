@@ -24,7 +24,7 @@ from fastfusion.mapper.FFM._pareto_df.df_convention import (
     iterations2col,
 )
 
-from fastfusion.util import expfmt, fzs
+from fastfusion.util import _expfmt, fzs
 
 # Abstractions:
 # 1. Each tensor is stored above some loop index. 0 is the outermost loop, 1 the
@@ -90,8 +90,8 @@ class Loop(Updatable):
 
     def pydot_str(self):
         if self.is_spatial:
-            return f"S-for R{self.rank_name} size {expfmt(self.tile_pattern)}"
-        return f"for {self.rank_name} size {expfmt(self.tile_pattern)}"
+            return f"S-for R{self.rank_name} size {_expfmt(self.tile_pattern)}"
+        return f"for {self.rank_name} size {_expfmt(self.tile_pattern)}"
 
     def to_yaml(self):
         return {"type": "loop", **self.__dict__}
