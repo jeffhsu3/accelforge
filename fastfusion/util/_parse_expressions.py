@@ -6,7 +6,7 @@ import math
 import re
 import threading
 from typing import Any, Callable
-from .yaml import load_yaml, SCRIPTS_FROM
+from ._yaml import load_yaml, SCRIPTS_FROM
 from ruamel.yaml.scalarstring import DoubleQuotedScalarString, SingleQuotedScalarString
 import os
 import keyword

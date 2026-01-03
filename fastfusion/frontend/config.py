@@ -24,8 +24,6 @@ def get_config() -> "Config":
         f = os.path.join(user_config_dir("fastfusion"), "config.yaml")
 
     if not os.path.exists(f):
-        from fastfusion.util import yaml
-
         logging.warning(f"No configuration file found. Creating config file at {f}.")
         os.makedirs(os.path.dirname(f), exist_ok=True)
         config = Config()
@@ -59,7 +57,7 @@ class Config(ParsableModel):
 
     @classmethod
     def from_yaml(cls, f: str) -> "Config":
-        from fastfusion.util import yaml
+        from fastfusion.util import _yaml
 
-        data = yaml.load_yaml(f)
+        data = _yaml.load_yaml(f)
         return cls(**data)

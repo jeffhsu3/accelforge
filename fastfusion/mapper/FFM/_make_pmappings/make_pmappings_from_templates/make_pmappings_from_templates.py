@@ -37,7 +37,7 @@ from fastfusion.mapper.FFM._pareto_df.df_convention import (
     is_fused_loop_col,
     is_n_iterations_col,
 )
-from fastfusion.util.mathfuncs import _count_factorizations
+from fastfusion.util._mathfuncs import _count_factorizations
 
 
 def shift_reservations_by_null_loop_indices(

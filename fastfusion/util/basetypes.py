@@ -35,14 +35,13 @@ from typing import (
     Self,
 )
 
-from fastfusion.util import yaml
+from fastfusion.util import _yaml
 from fastfusion.util._parse_expressions import (
     parse_expression,
     ParseError,
     RawString,
     is_raw_string,
 )
-from fastfusion.util import yaml
 
 T = TypeVar("T")
 M = TypeVar("M", bound=BaseModel)
@@ -433,7 +432,7 @@ class FromYAMLAble:
                     f"File {f} does not end with .yaml, .jinja, or .jinja2. Skipping."
                 )
             logging.info("Loading yaml file %s", f)
-            loaded = yaml.load_yaml(f, data=jinja_parse_data)
+            loaded = _yaml.load_yaml(f, data=jinja_parse_data)
             if not isinstance(loaded, dict):
                 raise TypeError(
                     f"Expected a dictionary from file {f}, got {type(loaded)}"
