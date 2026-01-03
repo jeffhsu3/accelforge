@@ -5,7 +5,7 @@ from fastfusion.frontend.mapping import (
     Mapping,
     MappingNode,
     Pipeline,
-    Sequential
+    Sequential,
 )
 from fastfusion.frontend.workload import Workload
 
@@ -36,7 +36,7 @@ def get_paths(root: Mapping) -> Generator[Tuple[MappingNode, Compute], None, Non
                 yield tuple(cur_path)
             # Not implemented so continue.
             case _:
-                #TODO: Check this is correct
+                # TODO: Check this is correct
                 continue
                 raise NotImplementedError(
                     f"{type(node)} does not have type elucidation.\n"

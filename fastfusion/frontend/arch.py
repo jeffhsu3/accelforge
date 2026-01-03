@@ -169,10 +169,12 @@ class ComponentAttributes(AttributesWithEnergy):
     this action's energy.
     """
 
+
 class ActionArguments(AttributesWithEnergy):
     """
     Arguments for an action of a component.
     """
+
     energy: ParsesTo[int | float | None] = None
     """
     Dynamic energy of this action. If set, this value will be used instead of the
@@ -185,6 +187,7 @@ class ActionArguments(AttributesWithEnergy):
     The scale factor for dynamic energy of this action. Multiplies this action's energy
     by this value.
     """
+
 
 class Action(ParsableModel):
     name: str
@@ -400,7 +403,9 @@ class Component(Leaf, ABC):
                 energy = energy.value
             if attributes.energy_scale != 1:
                 energy *= attributes.energy_scale
-                messages.append(f"Scaling {self.name} energy by {attributes.energy_scale=}")
+                messages.append(
+                    f"Scaling {self.name} energy by {attributes.energy_scale=}"
+                )
             if args.energy_scale != 1:
                 energy *= args.energy_scale
                 messages.append(f"Scaling {self.name} energy by {args.energy_scale=}")
@@ -507,7 +512,6 @@ class Component(Leaf, ABC):
             self.actions = type(self.actions)([a.model_copy() for a in self.actions])
             for action in self.actions:
                 action.arguments = action.arguments.model_copy()
-
 
         attributes = self.attributes
         messages = self.energy_area_log

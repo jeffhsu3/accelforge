@@ -2,6 +2,7 @@ from fastfusion.frontend.mapper.mapper import Mapper
 from fastfusion.frontend.renames import Renames
 from fastfusion.util.parse_expressions import ParseError, ParseExpressionsContext
 from fastfusion.frontend.arch import Compute, Leaf, Component, Arch
+
 # from fastfusion.frontend.constraints import Constraints
 from fastfusion.frontend.workload import Workload
 from fastfusion.frontend.variables import Variables
@@ -15,7 +16,7 @@ from pydantic import Field
 
 
 class Spec(ParsableModel):
-    """ The top-level spec of all of the inputs to this package. """
+    """The top-level spec of all of the inputs to this package."""
 
     arch: Arch = Arch()
     """ The hardware architecture being used. """
@@ -144,8 +145,7 @@ class Spec(ParsableModel):
         return self
 
     def get_flattened_architecture(
-        self,
-        compute_node: str | Compute | None = None
+        self, compute_node: str | Compute | None = None
     ) -> list[list[Leaf]] | list[Leaf]:
         """
         Return the architecture as paths of ``Leaf`` instances from the highest-level

@@ -297,7 +297,7 @@ def mappings2svg(
     )
     graph = pydot.Dot(graph_type="digraph", ranksep="0.2", nodesep="0.2")
     root.to_pydot(graph)
-    return graph.create_svg().decode('utf-8')
+    return graph.create_svg().decode("utf-8")
 
 
 def mappings2yaml(mappings: dict[str, Compatibility], stats: dict[str, Any]):

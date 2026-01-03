@@ -179,6 +179,7 @@ class _ColorMap:
 # LoopTree Mapping Nodes
 # =============================================================================
 
+
 class MappingNode(ParsableModel, ABC):
     """
     Represents a Node in the Mapping, which can be a loop, a storage node, a compute
@@ -195,19 +196,19 @@ class MappingNode(ParsableModel, ABC):
     """ Must the mapper keep this node? """
 
     def _render_node_name(self) -> str:
-        """ The name for a Pydot node. """
+        """The name for a Pydot node."""
         return f"{self.__class__.__name__}_{id(self)}"
 
     def _render_node_label(self) -> str:
-        """ The label for a Pydot node. """
+        """The label for a Pydot node."""
         return self.__str__()
 
     def _render_node_shape(self) -> str:
-        """ The shape for a Pydot node. """
+        """The shape for a Pydot node."""
         return "box"
 
     def _render_node(self) -> str:
-        """ Render this node using Pydot. """
+        """Render this node using Pydot."""
         return pydot.Node(
             self._render_node_name(),
             label=self._render_node_label(),
@@ -262,7 +263,7 @@ class MappingNode(ParsableModel, ABC):
         return [self]
 
     def _render_node_color(self) -> str:
-        """ The color for a Pydot node. """
+        """The color for a Pydot node."""
         return "white"
 
     def __hash__(self):
@@ -278,17 +279,20 @@ class MappingNode(ParsableModel, ABC):
         # Let Pydantic build the subclass first.
         super().__init_subclass__(**kwargs)
         # Read the *raw* attribute without descriptor binding,
-        h = inspect.getattr_static(cls, '__hash__', None)
+        h = inspect.getattr_static(cls, "__hash__", None)
         # Replace if unhashable (None) or if it's just BaseModel’s default.
         if h is None or h is ParsableModel.__hash__:
             cls.__hash__ = MappingNode.__hash__
 
     def compact_str(self) -> str:
-        """ Returns a compact string representation of this node. """
+        """Returns a compact string representation of this node."""
         return self.__str__()
 
+
 class TilePattern(ParsableModel):
-    stride: ParsesTo[Literal["symbol"] | sympy.Symbol | int | str | None | sympy.Expr] = "symbol"
+    stride: ParsesTo[
+        Literal["symbol"] | sympy.Symbol | int | str | None | sympy.Expr
+    ] = "symbol"
     """
     The stride of the pattern. This is the number of indices by which the tile moves
     each iteration.
@@ -302,7 +306,9 @@ class TilePattern(ParsableModel):
     Subsequent iterations may be smaller if they overlap previous iterations.
     """
 
-    calculated_n_iterations: Literal["symbol"] | sympy.Symbol | int | None | str | sympy.Expr = None
+    calculated_n_iterations: (
+        Literal["symbol"] | sympy.Symbol | int | None | str | sympy.Expr
+    ) = None
     """ The number of iterations in the pattern. Do not set this! Used internally by the
     mapper. """
 
@@ -312,7 +318,7 @@ class TilePattern(ParsableModel):
     )
 
     def _symbol_attrs(self) -> tuple[str, ...]:
-        """ The attributes that may be symbols. """
+        """The attributes that may be symbols."""
         return ("stride", "initial_tile_shape", "calculated_n_iterations")
 
     def __str__(self) -> str:
@@ -326,7 +332,7 @@ class TilePattern(ParsableModel):
         return " ".join(s)
 
     def update(self, **kwargs) -> "TilePattern":
-        """ Update the TilePattern with the given keyword arguments. """
+        """Update the TilePattern with the given keyword arguments."""
         return type(self)(**{**self.model_dump(), **kwargs})
 
     def _symbol2str(self) -> "TilePattern":
@@ -334,6 +340,7 @@ class TilePattern(ParsableModel):
         Convert the symbols in the TilePattern to strings, and return a new TilePattern
         with the symbols replaced by their names.
         """
+
         def _symbol2str(x: sympy.Symbol | int | None) -> str | int | None:
             return x.name if isinstance(x, sympy.Symbol) else x
 
@@ -385,6 +392,7 @@ class TilePattern(ParsableModel):
         """
         Clears the symbols in this TilePattern, replacing them with None.
         """
+
         def desymbol(x: str | sympy.Symbol | int | None) -> str | int | None:
             if isinstance(x, (str, sympy.Symbol)):
                 return None
@@ -438,14 +446,14 @@ class Loop(MappingNode, ABC):
 
     @override
     def compact_str(self) -> str:
-        """ Returns a compact string representation of this Loop. """
+        """Returns a compact string representation of this Loop."""
         rv = self.rank_variable
         if isinstance(rv, (set, frozenset)):
             rv = ",".join(sorted(rv))
         return f"{rv} {self.tile_pattern}"
 
     def _merge(self, other: "Loop", **kwargs) -> "Loop":
-        """ Merge this Loop with another Loop, returning the result. """
+        """Merge this Loop with another Loop, returning the result."""
         if not isinstance(other, Loop):
             raise ValueError(f"Expected Loop, got {type(other)}")
         if self.tile_pattern != other.tile_pattern:
@@ -467,41 +475,41 @@ class Loop(MappingNode, ABC):
 
     @property
     def initial_tile_shape(self) -> int | sympy.Symbol:
-        """ The initial tile shape of this Loop's tile pattern. This is the shape
+        """The initial tile shape of this Loop's tile pattern. This is the shape
         of the tile at the first iteration. Subsequent iterations may be smaller if they
-        overlap previous iterations. """
+        overlap previous iterations."""
         return self.tile_pattern.initial_tile_shape
 
     @property
     def stride(self) -> int | sympy.Symbol:
-        """ The stride of this Loop's tile pattern. This is the number of indices
-        by which the tile moves each iteration. """
+        """The stride of this Loop's tile pattern. This is the number of indices
+        by which the tile moves each iteration."""
         return self.tile_pattern.stride
 
     @property
     def calculated_n_iterations(self) -> int:
-        """ The number of iterations performed by this loop. """
+        """The number of iterations performed by this loop."""
         return self.tile_pattern.calculated_n_iterations
 
     @initial_tile_shape.setter
     def initial_tile_shape(self, value: int | sympy.Symbol) -> None:
-        """ Set the initial tile shape of this Loop's tile pattern. """
+        """Set the initial tile shape of this Loop's tile pattern."""
         self.tile_pattern = self.tile_pattern.update(initial_tile_shape=value)
 
     @stride.setter
     def stride(self, value: int | sympy.Symbol) -> None:
-        """ Set the stride of this Loop's tile pattern. """
+        """Set the stride of this Loop's tile pattern."""
         self.tile_pattern = self.tile_pattern.update(stride=value)
 
     @calculated_n_iterations.setter
     def calculated_n_iterations(self, value: int) -> None:
-        """ Set the number of iterations performed by this loop. Do not set this!
-        This is calculated by the Mapper. """
+        """Set the number of iterations performed by this loop. Do not set this!
+        This is calculated by the Mapper."""
         self.tile_pattern = self.tile_pattern.update(calculated_n_iterations=value)
 
 
 class Temporal(Loop):
-    """ A Temporal :class:`~.Loop`. """
+    """A Temporal :class:`~.Loop`."""
 
     @override
     def compact_str(self) -> str:
@@ -609,8 +617,8 @@ class TensorHolder(MappingNode):
 
     @property
     def tensor(self) -> TensorName:
-        """ If there is one tensor held in this tensor holder, returns its name.
-        Otherwise, raises an error. """
+        """If there is one tensor held in this tensor holder, returns its name.
+        Otherwise, raises an error."""
         if len(self.tensors) != 1:
             raise ValueError(
                 f"TensorHolder node {repr(self)} has {len(self.tensors)} tensors. "
@@ -729,7 +737,7 @@ class MappingNodeWithChildren(MappingNode):
         return backing
 
     def clear_nodes_of_type(self, types: type | tuple[type]) -> None:
-        """ Clears all child nodes that match the given type(s). """
+        """Clears all child nodes that match the given type(s)."""
         new_nodes = []
         for node in self.nodes:
             if isinstance(node, types):
@@ -740,7 +748,7 @@ class MappingNodeWithChildren(MappingNode):
         self.nodes = ParsableList(new_nodes)
 
     def clear_nodes(self, *nodes: MappingNode) -> None:
-        """ Removes nodes that equal any of the given nodes. """
+        """Removes nodes that equal any of the given nodes."""
         new_nodes: list[MappingNode] = []
         for node in self.nodes:
             if any(n == node for n in nodes):
@@ -1007,9 +1015,7 @@ class Nested(MappingNodeWithChildren):
             is_iteration = isinstance(node, Loop)
             if cur_group is None:
                 cur_group = []
-            elif (
-                is_iteration and not all(isinstance(x, Loop) for x in cur_group)
-            ) or (
+            elif (is_iteration and not all(isinstance(x, Loop) for x in cur_group)) or (
                 not is_iteration and any(isinstance(x, Loop) for x in cur_group)
             ):
                 groups.append(cur_group)
@@ -1104,7 +1110,9 @@ class Nested(MappingNodeWithChildren):
                     raise ValueError(
                         f"No matching loop found for {my_loop_group} and {other_loop_group}"
                     )
-                print(f"Warning. Matching loops {l} and {l2}. Need rank variable translation here.")
+                print(
+                    f"Warning. Matching loops {l} and {l2}. Need rank variable translation here."
+                )
 
                 may_not_have_one.remove(l2)
                 rv = l2.rank_variable
@@ -1351,7 +1359,7 @@ class Mapping(Nested):
 
     @property
     def loops(self) -> list[Loop]:
-        """ Returns all :class:`~.Loop` nodes in the Mapping. """
+        """Returns all :class:`~.Loop` nodes in the Mapping."""
         return self.get_nodes_of_type(Loop)
 
     def _render_node_label(self) -> str:
@@ -1361,7 +1369,7 @@ class Mapping(Nested):
         return self.render()
 
     def render(self) -> str:
-        """ Renders the mapping as a Pydot graph. Returns an SVG string. """
+        """Renders the mapping as a Pydot graph. Returns an SVG string."""
         graph = pydot_graph()
         # Enable HTML-like labels for color support
         graph.set_node_defaults(label="")
@@ -1396,7 +1404,7 @@ class Mapping(Nested):
                 if (parent_name, child_name) not in added_edges:
                     graph.add_edge(pydot.Edge(parent_name, child_name))
                     added_edges.add((parent_name, child_name))
-        return SVGJupyterRender(graph.create_svg(prog="dot").decode('utf-8'))
+        return SVGJupyterRender(graph.create_svg(prog="dot").decode("utf-8"))
 
     @classmethod
     def _from_pmappings(

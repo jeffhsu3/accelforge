@@ -136,10 +136,9 @@ class Comparison(ParsableModel):
             f"Unknown operator: {self.operator}. Known operators: {list(operator_to_wrapper.keys())}"
         )
 
+
 class Tensors(ParsableModel):
-    keep: str | InvertibleSet[TensorName] | set[TensorName] = (
-        "<Defaults to Nothing>"
-    )
+    keep: str | InvertibleSet[TensorName] | set[TensorName] = "<Defaults to Nothing>"
     """
     A set expression describing which tensors must be kept in this
     :class:`fastfusion.frontend.arch.TensorHolder`. If this is not defined, then all
@@ -163,9 +162,7 @@ class Tensors(ParsableModel):
     valid mapping.
     """
 
-    no_refetch_from_above: str | InvertibleSet[TensorName] | set[TensorName] = (
-        "~All"
-    )
+    no_refetch_from_above: str | InvertibleSet[TensorName] | set[TensorName] = "~All"
     """
     The tensors that are not allowed to be refetched from above. This is given as a set
     of :class:`~.TensorName` objects or a set expression that resolves to them. These
@@ -249,7 +246,7 @@ class Tensors(ParsableModel):
 
 
 class Loop(ParsableModel, ABC):
-    """ Constraints that apply to loops. Do not use this directly; use :class:`~.Spatial`
+    """Constraints that apply to loops. Do not use this directly; use :class:`~.Spatial`
     or :class:`~.Temporal` instead.
     """
 
@@ -338,7 +335,7 @@ class MiscOnlyConstraints(ParsableModel):
 
 
 class ConstraintGroup(MiscOnlyConstraints):
-    """ A group of constraints that apply to a component. """
+    """A group of constraints that apply to a component."""
 
     spatial: ParsableList[Spatial] = ParsableList()
     """ Constraints that apply to spatial loops across spatial instances of this
@@ -366,9 +363,7 @@ class _ConstraintLambda:
         self._target_node_indices = None
         self._target_loop_indices = None
 
-    def __call__(
-        self, rank_variables: set[RankVariable], sizes: np.ndarray
-    ) -> bool:
+    def __call__(self, rank_variables: set[RankVariable], sizes: np.ndarray) -> bool:
         final = self.rank_variables.issubset(rank_variables)
         return self.constraint_lambda(final, sizes)
 

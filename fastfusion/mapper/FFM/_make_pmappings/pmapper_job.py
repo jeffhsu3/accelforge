@@ -56,8 +56,7 @@ class Job:
     job_id: UUID = field(default_factory=uuid4)
 
     stride_and_halo: (
-        dict[TensorName, dict[tuple[Rank, RankVariable], tuple[int, int]]]
-        | None
+        dict[TensorName, dict[tuple[Rank, RankVariable], tuple[int, int]]] | None
     ) = None
     mapping: Mapping | None = None
     constraints: MappingConstraints | None = None

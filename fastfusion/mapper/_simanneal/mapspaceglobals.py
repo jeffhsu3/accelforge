@@ -32,7 +32,9 @@ class MapspaceGlobals:
         self.tensor_names = set().union(
             *(self.einsum2tensors[e] for e in self.einsum_names)
         )
-        self.tensor_names_used_in_multiple_einsums = spec.workload.tensor_names_used_in_multiple_einsums
+        self.tensor_names_used_in_multiple_einsums = (
+            spec.workload.tensor_names_used_in_multiple_einsums
+        )
         self.pairwise_equivalent_ranks = (
             spec.workload.get_pairwise_equivalent_rank_variables()
         )

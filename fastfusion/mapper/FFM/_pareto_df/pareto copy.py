@@ -323,7 +323,9 @@ def paretoset_grouped_dirty(df: pd.DataFrame, sense: list[str]):
     def _row_from_group(mins, group):
         per_col_mins = group.min(axis=0)
         per_col_maxs = group.max(axis=0)
-        good_row = group.iloc[np.argmin((group ** (1 / len(group.columns))).prod(axis=1))]
+        good_row = group.iloc[
+            np.argmin((group ** (1 / len(group.columns))).prod(axis=1))
+        ]
         return [mins, per_col_mins, per_col_maxs, good_row, group]
 
     groups = list(df.groupby(group_by))
@@ -342,11 +344,23 @@ def paretoset_grouped_dirty(df: pd.DataFrame, sense: list[str]):
     # print(f'Grouped into {n_groups} groups, {orig_size} -> {new_size} rows, {n_cols} columns. Remaining {len(keepcols)} columns')
 
     for groups in groups_by_diff.values():
-        for i, (mins_a, per_col_mins_a, per_col_maxs_a, good_row_a, group_a) in enumerate(groups):
+        for i, (
+            mins_a,
+            per_col_mins_a,
+            per_col_maxs_a,
+            good_row_a,
+            group_a,
+        ) in enumerate(groups):
             if group_a is None:
                 continue
 
-            for j, (mins_b, per_col_mins_b, per_col_maxs_b, good_row_b, group_b) in enumerate(groups):
+            for j, (
+                mins_b,
+                per_col_mins_b,
+                per_col_maxs_b,
+                good_row_b,
+                group_b,
+            ) in enumerate(groups):
                 if group_b is None or i == j:
                     continue
 
@@ -552,36 +566,52 @@ class Group:
         self.group_attack = group_attack
         self.group_defend = group_defend
 
-        scaleby = 1 / (len(group_attack.columns) + len(group_shared.columns))  # Prevent overflow
-        row_attack_scores = (group_attack ** scaleby).prod(axis=1)
-        row_shared_scores = (group_shared ** scaleby).prod(axis=1)
+        scaleby = 1 / (
+            len(group_attack.columns) + len(group_shared.columns)
+        )  # Prevent overflow
+        row_attack_scores = (group_attack**scaleby).prod(axis=1)
+        row_shared_scores = (group_shared**scaleby).prod(axis=1)
         good_row = np.argmin(row_attack_scores * row_shared_scores)
 
         self.good_row_attack = group_attack.iloc[good_row]
         self.good_row_shared = group_shared.iloc[good_row]
 
-        assert len(self.group_shared) == len(self.group_attack) == len(self.group_defend)
+        assert (
+            len(self.group_shared) == len(self.group_attack) == len(self.group_defend)
+        )
 
     def __bool__(self):
         return len(self.group_attack) > 0
 
     def attack_with(self, other: "Group"):
         if all(o <= s for o, s in zip(other.mins, self.mins)):
-            mask_defend = np.array((self.group_defend < other.good_row_attack).any(axis=1), dtype=bool)
-            mask_shared = np.array((self.group_shared < other.good_row_shared).any(axis=1), dtype=bool)
+            mask_defend = np.array(
+                (self.group_defend < other.good_row_attack).any(axis=1), dtype=bool
+            )
+            mask_shared = np.array(
+                (self.group_shared < other.good_row_shared).any(axis=1), dtype=bool
+            )
             mask = mask_defend | mask_shared
             self.group_attack = self.group_attack[mask]
             self.group_defend = self.group_defend[mask]
             self.group_shared = self.group_shared[mask]
 
     def paretofy(self):
-        mask = paretoset_attack_defend_jit(self.group_attack.to_numpy(), self.group_defend.to_numpy(), self.group_shared.to_numpy())
+        mask = paretoset_attack_defend_jit(
+            self.group_attack.to_numpy(),
+            self.group_defend.to_numpy(),
+            self.group_shared.to_numpy(),
+        )
         self.group_attack = self.group_attack[mask]
         self.group_defend = self.group_defend[mask]
         self.group_shared = self.group_shared[mask]
 
     def get_pareto_index(self):
-        mask = paretoset_attack_defend_jit(self.group_attack.to_numpy(), self.group_defend.to_numpy(), self.group_shared.to_numpy())
+        mask = paretoset_attack_defend_jit(
+            self.group_attack.to_numpy(),
+            self.group_defend.to_numpy(),
+            self.group_shared.to_numpy(),
+        )
         return self.group_shared.index[mask]
 
 
@@ -788,7 +818,13 @@ def makepareto_attack_defend_dirty(
         x = [y.reshape(-1, 1) for y in x]
         return pd.DataFrame(np.concatenate(x, axis=1), columns=range(len(x)))
 
-    if not attack and not defend and not any(x in sense_shared for x in ["min_per_prime_factor", "max_per_prime_factor"]):
+    if (
+        not attack
+        and not defend
+        and not any(
+            x in sense_shared for x in ["min_per_prime_factor", "max_per_prime_factor"]
+        )
+    ):
         return paretoset(stack(shared), sense=sense_shared)
 
     return paretoset_attack_defend_grouped_dirty(

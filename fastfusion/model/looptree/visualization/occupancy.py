@@ -1,5 +1,6 @@
 import matplotlib.pyplot as plt
 
+
 def plot_occupancy_graph(output: "IslReuseAnalysisOutput", workload):
     einsum_rank_to_shape = {
         einsum: {

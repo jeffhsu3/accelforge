@@ -44,7 +44,8 @@ def rename_list_factory(rename_list: list | dict) -> "RenameList":
 
 
 class RenameList(ParsableList[Rename]):
-    """ A list of renames. """
+    """A list of renames."""
+
     pass
 
 

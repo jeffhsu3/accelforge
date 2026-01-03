@@ -17,7 +17,9 @@ from fastfusion.frontend.workload._isl import (
 )
 from fastfusion.frontend.workload.workload import EinsumName, TensorName
 
-from fastfusion.mapper.FFM._make_pmappings.make_pmapping_templates import make_pmapping_templates
+from fastfusion.mapper.FFM._make_pmappings.make_pmapping_templates import (
+    make_pmapping_templates,
+)
 from fastfusion.frontend.mapper.metrics import Metrics
 from fastfusion.mapper.FFM._make_pmappings.make_pmappings_from_templates import (
     make_pmappings_from_templates,

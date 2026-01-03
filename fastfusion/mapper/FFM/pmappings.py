@@ -27,7 +27,9 @@ class MultiEinsumPmappings:
         self.resource2capacity: dict[str, int] = resource2capacity
         self.einsum2jobs: dict[EinsumName, list[Job]] = einsum2jobs
         self.can_combine_multiple_runs: bool = can_combine_multiple_runs
-        self.einsums_with_pmappings_generated: set[EinsumName] = einsums_with_pmappings_generated
+        self.einsums_with_pmappings_generated: set[EinsumName] = (
+            einsums_with_pmappings_generated
+        )
 
     def __or__(self, other: "MultiEinsumPmappings"):
         if not self.can_combine_multiple_runs or not other.can_combine_multiple_runs:
@@ -50,7 +52,9 @@ class MultiEinsumPmappings:
         for einsum_name, jobs in other.einsum2jobs.items():
             self.einsum2jobs.setdefault(einsum_name, []).extend(jobs)
         self.pmapping_objects.update(other.pmapping_objects)
-        self.einsums_with_pmappings_generated.update(other.einsums_with_pmappings_generated)
+        self.einsums_with_pmappings_generated.update(
+            other.einsums_with_pmappings_generated
+        )
         return self
 
     def _filter(
@@ -131,7 +135,9 @@ class MultiEinsumPmappings:
 
         return result
 
-    def n_total_pmappings(self, per_einsum: bool = False) -> int | dict[EinsumName, int]:
+    def n_total_pmappings(
+        self, per_einsum: bool = False
+    ) -> int | dict[EinsumName, int]:
         """
         Returns the number of total pmappings in the mapspace.
 
@@ -152,7 +158,9 @@ class MultiEinsumPmappings:
             return result
         return sum(result.values())
 
-    def n_valid_pmappings(self, per_einsum: bool = False) -> int | dict[EinsumName, int]:
+    def n_valid_pmappings(
+        self, per_einsum: bool = False
+    ) -> int | dict[EinsumName, int]:
         """
         Returns the number of valid pmappings for each Einsum. A valid pmapping is one
         that satisfies all constraints and resource usage limits.

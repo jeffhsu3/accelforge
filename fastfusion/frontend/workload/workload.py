@@ -11,7 +11,16 @@ import pydot
 from fastfusion.util.util import SVGJupyterRender, pydot_graph
 
 from fastfusion.util.basetypes import ParsableDict, ParsableList, ParsableModel
-from fastfusion.frontend.renames import EinsumName, RankVariable, Rename, RenameList, Renames, TensorName, Rank, rename_list_factory
+from fastfusion.frontend.renames import (
+    EinsumName,
+    RankVariable,
+    Rename,
+    RenameList,
+    Renames,
+    TensorName,
+    Rank,
+    rename_list_factory,
+)
 from fastfusion.util.parse_expressions import ParseError
 from fastfusion.util.setexpressions import InvertibleSet, eval_set_expression
 from fastfusion._version import assert_version, __version__
@@ -91,7 +100,7 @@ class TensorAccess(ParsableModel):
         self.projection: ImpliedProjection = _projection_factory(self.projection)
 
     def to_formatted_string(self) -> str:
-        """ Returns a string representation of the tensor access for Pydot nodes. """
+        """Returns a string representation of the tensor access for Pydot nodes."""
         subscript = ",".join(self.projection.values())
         if isinstance(self.projection, ImpliedProjection):
             return f"{self.name}<sub>{subscript}</sub>"
@@ -133,12 +142,12 @@ class TensorAccess(ParsableModel):
 
     @property
     def ranks(self) -> tuple[Rank, ...]:
-        """ Returns the ranks of this access's tensor. """
+        """Returns the ranks of this access's tensor."""
         return tuple(Rank(x) for x in self.projection.keys())
 
     @property
     def rank_variables(self) -> set[RankVariable]:
-        """ Returns all rank variables used in this access. """
+        """Returns all rank variables used in this access."""
         # Projection values may be expressions, so we need to grab all identifiers
         return set(
             RankVariable(x)
@@ -209,7 +218,7 @@ class Shape(ParsableList):
 
     @property
     def rank_variables(self) -> set[str]:
-        """ Returns all rank variables used in this shape. """
+        """Returns all rank variables used in this shape."""
         if not self:
             return set()
         return set.union(*[set(re.findall(_ISL_REGEX, x)) for x in self])
@@ -277,37 +286,37 @@ class Einsum(ParsableModel):
 
     @property
     def rank_variables(self) -> set[RankVariable]:
-        """ Returns all rank variables used in this Einsum. """
+        """Returns all rank variables used in this Einsum."""
         if not self.tensor_accesses:
             return set()
         return set.union(*[t.rank_variables for t in self.tensor_accesses])
 
     @property
     def ranks(self) -> set[Rank]:
-        """ Returns all ranks used in this Einsum. """
+        """Returns all ranks used in this Einsum."""
         if not self.tensor_accesses:
             return set()
         return set.union(*[set(t.ranks) for t in self.tensor_accesses])
 
     @property
     def input_tensor_names(self) -> set[TensorName]:
-        """ Returns the names of the input tensors of this Einsum. """
+        """Returns the names of the input tensors of this Einsum."""
         return set([TensorName(t.name) for t in self.tensor_accesses if not t.output])
 
     @property
     def output_tensor_names(self) -> set[TensorName]:
-        """ Returns the names of the output tensors of this Einsum. """
+        """Returns the names of the output tensors of this Einsum."""
         return set([TensorName(t.name) for t in self.tensor_accesses if t.output])
 
     @property
     def tensor_names(self) -> set[TensorName]:
-        """ Returns the names of all tensors of this Einsum. """
+        """Returns the names of all tensors of this Einsum."""
         return set([TensorName(t.name) for t in self.tensor_accesses])
 
     @property
     def tensor2rank_variables(self) -> dict[TensorName, set[RankVariable]]:
-        """ Returns a dictionary of tensor names to the rank variables that project into
-        that tensor. """
+        """Returns a dictionary of tensor names to the rank variables that project into
+        that tensor."""
         return {TensorName(t.name): t.rank_variables for t in self.tensor_accesses}
 
     @property
@@ -470,7 +479,7 @@ class Workload(ParsableModel):
 
     @property
     def einsum_names(self) -> list[EinsumName]:
-        """ Returns the names of the Einsums in the workload. """
+        """Returns the names of the Einsums in the workload."""
         return [EinsumName(e.name) for e in self.einsums]
 
     def einsums_with_tensor(self, tensor: TensorName) -> list["Einsum"]:
@@ -561,7 +570,9 @@ class Workload(ParsableModel):
         my_ispace = self.iteration_space_shape
         global_shape = [my_ispace[r] for r in einsum.rank_variables if r in my_ispace]
         rank_sizes = einsum.rank_sizes
-        global_rank_sizes = {r: self.rank_sizes[r] for r in einsum.ranks if r in self.rank_sizes}
+        global_rank_sizes = {
+            r: self.rank_sizes[r] for r in einsum.ranks if r in self.rank_sizes
+        }
 
         exprs = einsum_shape + global_shape
         for tensor in einsum.tensor_accesses:
@@ -572,7 +583,6 @@ class Workload(ParsableModel):
                     exprs.append(f"0 <= {projection} < {global_rank_sizes[rank]}")
 
         return " and ".join(exprs)
-
 
     def _check_consistent_persistent(self):
         for tensor in self.tensor_names:
@@ -589,20 +599,20 @@ class Workload(ParsableModel):
 
     @property
     def tensor_names_used_in_multiple_einsums(self) -> set[TensorName]:
-        """ Returns the names of the tensors that are used in multiple Einsums. """
+        """Returns the names of the tensors that are used in multiple Einsums."""
         self._check_consistent_persistent()
         return {t for t in self.tensor_names if len(self.einsums_with_tensor(t)) > 1}
 
     @property
     def tensor_names(self) -> set[TensorName]:
-        """ Returns the names of all tensors in the workload. """
+        """Returns the names of all tensors in the workload."""
         return {TensorName(t.name) for e in self.einsums for t in e.tensor_accesses}
 
     def _repr_svg_(self) -> str:
         return self.render()
 
     def render(self) -> str:
-        """ Renders the workload as a Pydot graph. Returns an SVG string. """
+        """Renders the workload as a Pydot graph. Returns an SVG string."""
         graph = pydot_graph()
 
         # Add all tensors as nodes (circles)
@@ -642,7 +652,7 @@ class Workload(ParsableModel):
                         f"Tensor_{tensor_access.name}", f"Einsum_{einsum.name}"
                     )
                     graph.add_edge(edge)
-        return SVGJupyterRender(graph.create_svg(prog="dot").decode('utf-8'))
+        return SVGJupyterRender(graph.create_svg(prog="dot").decode("utf-8"))
 
     def get_constraint_symbol_table(
         self,
@@ -678,7 +688,8 @@ class Workload(ParsableModel):
         intermediates = {
             t
             for t in all_
-            if self.einsums_with_tensor_as_input(t) and self.einsums_with_tensor_as_output(t)
+            if self.einsums_with_tensor_as_input(t)
+            and self.einsums_with_tensor_as_output(t)
         }
         shared = {
             t

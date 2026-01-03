@@ -45,7 +45,9 @@ from fastfusion.mapper.FFM._make_pmappings.make_pmappings_from_templates.symbol_
     SymbolRelations,
 )
 from fastfusion.util.sympy.broadcast_max import Max
-from fastfusion.mapper.FFM._make_pmappings.make_pmappings_from_templates.run_model import run_model
+from fastfusion.mapper.FFM._make_pmappings.make_pmappings_from_templates.run_model import (
+    run_model,
+)
 
 
 class ComparisonResult(Enum):
@@ -70,9 +72,7 @@ def diff(f: Expr, s: Symbol):
 
 
 @lru_cache(maxsize=10000)
-def diff_geq_leq_zero(
-    f: Expr, s: Symbol, bounds: tuple[tuple[Symbol, int, int], ...]
-):
+def diff_geq_leq_zero(f: Expr, s: Symbol, bounds: tuple[tuple[Symbol, int, int], ...]):
     # Assume ceiling won't affect the sign of the derivative. Changing from positive to
     # zero or negative to zero is OK and does not count as changing the sign.
     if isinstance(f, sympy.Expr):
@@ -142,9 +142,7 @@ def partition_heaviside(f: Expr) -> tuple[Expr, ...]:
 
 @lru_cache(maxsize=10000)
 def _compare_to_zero(
-    f: Expr,
-    bounds: tuple[tuple[Symbol, int, int], ...],
-    check_lt_zero: bool
+    f: Expr, bounds: tuple[tuple[Symbol, int, int], ...], check_lt_zero: bool
 ) -> bool:
     """
     Returns True if the function may possibly be less than zero or greater than zero.
@@ -234,6 +232,7 @@ def compile_dict(symbols, dictionary):
         return x
 
     return {k: lambdify(symbols, v) for k, v in dictionary.items()}
+
 
 class Goal:
     """
@@ -356,14 +355,20 @@ def _try_replace_single_term(
             elif diff_result == ComparisonResult.ALWAYS_EQUAL_TO_ZERO:
                 pass
             else:
-                raise ValueError(f"Comparison result {diff_result} is not a valid comparison result")
+                raise ValueError(
+                    f"Comparison result {diff_result} is not a valid comparison result"
+                )
             return s, goal
         except (TypeError, ValueError):
             pass
     return t, None
 
 
-def try_replace_single_term(t: Expr, symbols_enumerated: fzs[Symbol], bounds: tuple[tuple[Symbol, int, int], ...]):
+def try_replace_single_term(
+    t: Expr,
+    symbols_enumerated: fzs[Symbol],
+    bounds: tuple[tuple[Symbol, int, int], ...],
+):
     return _try_replace_single_term(t, symbols_enumerated & t.free_symbols, bounds)
 
 
@@ -405,9 +410,9 @@ def _partition_formula(
             elif t.free_symbols.isdisjoint(symbols_enumerated):
                 no_relation.append(t)
             else:
-                others.setdefault(
-                    fzs(t.free_symbols - symbols_enumerated), []
-                ).append(t)
+                others.setdefault(fzs(t.free_symbols - symbols_enumerated), []).append(
+                    t
+                )
 
         # Grab the terms that we can evaluate directly first
         chosen = []
@@ -438,7 +443,9 @@ def _partition_formula(
             elif geq_result == ComparisonResult.ALWAYS_EQUAL_TO_ZERO:
                 pass
             else:
-                raise ValueError(f"Comparison result {geq_result} is not a valid comparison result")
+                raise ValueError(
+                    f"Comparison result {geq_result} is not a valid comparison result"
+                )
     else:
         terms = [_try_replace_unknowns(f)]
 
@@ -515,6 +522,7 @@ def append_vector(matrix: np.ndarray, vector: np.ndarray):
 def simplify(f: Expr):
     return f.simplify()
 
+
 def symbol2int(symbol: Symbol):
     return int(re.findall(r"(\d+)", symbol.name)[0])
 
@@ -568,7 +576,9 @@ def get_padded_choices(
             elif diff_result == ComparisonResult.UNKNOWN:
                 raise ValueError(f"Can't tell if {symbol} is increasing or decreasing")
             else:
-                raise ValueError(f"Comparison result {diff_result} is not a valid comparison result")
+                raise ValueError(
+                    f"Comparison result {diff_result} is not a valid comparison result"
+                )
 
     return choices_padded
 
@@ -684,10 +694,16 @@ def coalesce_symbols(
 
                 if not affects_comparison(formula, s, sym_enumerated_set):
                     formula = formula.subs(s, 1)
-                    log_message("coalesce symbols", f"dropping non-comparable symbol that does not affect comparison {s}: {formula}")
+                    log_message(
+                        "coalesce symbols",
+                        f"dropping non-comparable symbol that does not affect comparison {s}: {formula}",
+                    )
                     continue
                 else:
-                    log_message("coalesce symbols", f"keeping dropping symbol that affects comparison {s}: {formula}")
+                    log_message(
+                        "coalesce symbols",
+                        f"keeping dropping symbol that affects comparison {s}: {formula}",
+                    )
 
             # If there's only one symbol in the formula, we can try to replace it with
             # just the symbol.
@@ -739,7 +755,9 @@ def coalesce_symbols(
                         this_goal = g  # Make it agree
                     else:
                         diff_geq_leq_zero(formula, s, bounds)
-                        raise ValueError(f"Comparison result {diff_result} is not a valid comparison result")
+                        raise ValueError(
+                            f"Comparison result {diff_result} is not a valid comparison result"
+                        )
                     if g != this_goal:
                         disagrees.append(s)
                     continue
@@ -1090,15 +1108,22 @@ def get_tile_shape_choices(
         # choices possible), or diff if we're perfect (since perfect constrains choices
         # so we can't just min).
         for s in symbols_enumerated:
-            per_prime_factor = not (IMPERFECT or _get_n_prime_factors(what_tiles_symbol.get_max_size(s)) == 1)
+            per_prime_factor = not (
+                IMPERFECT
+                or _get_n_prime_factors(what_tiles_symbol.get_max_size(s)) == 1
+            )
             tiles = what_tiles_symbol.get_outer_tiles(s, none_if_fail=True)
             if isinstance(tiles, Symbol) and tiles not in symbols_enumerated:
-                update_symbol2goal(s, Goal("min_per_prime_factor" if per_prime_factor else "min"))
+                update_symbol2goal(
+                    s, Goal("min_per_prime_factor" if per_prime_factor else "min")
+                )
 
             # Same for inner loops depending on us, but maximize if we're imperfect
             tiled_by = what_tiles_symbol.get_inner_tiles(s, none_if_fail=True)
             if isinstance(tiled_by, Symbol) and tiled_by not in symbols_enumerated:
-                update_symbol2goal(s, Goal("max_per_prime_factor" if per_prime_factor else "max"))
+                update_symbol2goal(
+                    s, Goal("max_per_prime_factor" if per_prime_factor else "max")
+                )
 
         # If we need to keep this symbol, must preserve all choices for it
         for s in set(symbols_enumerated) & set(keep_symbols):
@@ -1446,9 +1471,7 @@ def _make_tile_shapes(job: "Job"):
 
     # Some initial tile shapes are invalid
     for nloops, n in enumerate(
-        node
-        for node in job.mapping.nodes
-        if isinstance(node, Loop) and node._fused
+        node for node in job.mapping.nodes if isinstance(node, Loop) and node._fused
     ):
         stride = n.tile_pattern.stride
         initial = (
@@ -1518,7 +1541,9 @@ def _make_tile_shapes(job: "Job"):
             msg += "\n"
         raise RuntimeError(f"negative energy:\n{msg}")
 
-    job.n_valid_pmappings = job.n_total_pmappings * prod(job.pmapping_keep_rates.values())
+    job.n_valid_pmappings = job.n_total_pmappings * prod(
+        job.pmapping_keep_rates.values()
+    )
     return df
 
 
@@ -1578,4 +1603,3 @@ def make_tile_shapes(job: "Job"):
         except (ValueError, OSError):
             # Ignore permission errors when trying to reset CPU limits
             pass
-

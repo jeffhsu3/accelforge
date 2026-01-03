@@ -237,8 +237,12 @@ def occupancies_from_mapping(
         tiling = branch_tiling[bte.einsum]
 
         accesses: Optional[isl.Map] = None
-        read_tensors: set[TensorName] = workload.einsums[bte.einsum.einsum].input_tensor_names
-        write_tensors: set[TensorName] = workload.einsums[bte.einsum.einsum].output_tensor_names
+        read_tensors: set[TensorName] = workload.einsums[
+            bte.einsum.einsum
+        ].input_tensor_names
+        write_tensors: set[TensorName] = workload.einsums[
+            bte.einsum.einsum
+        ].output_tensor_names
 
         if bte.tensor in read_tensors or bte.tensor in write_tensors:
             accesses = get_projection_map(

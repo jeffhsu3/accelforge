@@ -587,7 +587,9 @@ class ModelWithUnderscoreFields(BaseModel, FromYAMLAble):
 
     # Exclude is supported OK, but makes the docs a lot longer because it's in so many
     # objects and has a very long type.
-    def to_yaml(self, f: str | None = None) -> str:  # , exclude: IncEx | None = None) -> str:
+    def to_yaml(
+        self, f: str | None = None
+    ) -> str:  # , exclude: IncEx | None = None) -> str:
         """
         Dump the model to a YAML string.
 
@@ -597,7 +599,7 @@ class ModelWithUnderscoreFields(BaseModel, FromYAMLAble):
 
         R
         """
-        dump = self.model_dump()#exclude=exclude)
+        dump = self.model_dump()  # exclude=exclude)
 
         def _to_str(value: Any):
             if isinstance(value, list):

@@ -528,7 +528,9 @@ class ReservationAnalysisTracker:
 def insert_reservation_nodes(mapping, info: AnalysisInfo):
     trackers: list[ReservationAnalysisTracker] = []
     einsum = info.workload.einsums[mapping[-1].einsum]
-    non_intermediate_tensors = einsum.tensor_names - info.workload.tensor_names_used_in_multiple_einsums
+    non_intermediate_tensors = (
+        einsum.tensor_names - info.workload.tensor_names_used_in_multiple_einsums
+    )
     seen_tensors = set()  # reservation for top-level buffets cannot be lowered
 
     n_nodes = len(mapping)

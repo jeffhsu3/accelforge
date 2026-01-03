@@ -317,7 +317,9 @@ def paretoset_grouped_dirty(df: pd.DataFrame, sense: list[str]):
     def _row_from_group(mins, group):
         per_col_mins = group.min(axis=0)
         per_col_maxs = group.max(axis=0)
-        good_row = group.iloc[np.argmin((group ** (1 / len(group.columns))).prod(axis=1))]
+        good_row = group.iloc[
+            np.argmin((group ** (1 / len(group.columns))).prod(axis=1))
+        ]
         return [mins, per_col_mins, per_col_maxs, good_row, group]
 
     groups = list(df.groupby(group_by))
@@ -336,11 +338,23 @@ def paretoset_grouped_dirty(df: pd.DataFrame, sense: list[str]):
     # print(f'Grouped into {n_groups} groups, {orig_size} -> {new_size} rows, {n_cols} columns. Remaining {len(keepcols)} columns')
 
     for groups in groups_by_diff.values():
-        for i, (mins_a, per_col_mins_a, per_col_maxs_a, good_row_a, group_a) in enumerate(groups):
+        for i, (
+            mins_a,
+            per_col_mins_a,
+            per_col_maxs_a,
+            good_row_a,
+            group_a,
+        ) in enumerate(groups):
             if group_a is None:
                 continue
 
-            for j, (mins_b, per_col_mins_b, per_col_maxs_b, good_row_b, group_b) in enumerate(groups):
+            for j, (
+                mins_b,
+                per_col_mins_b,
+                per_col_maxs_b,
+                good_row_b,
+                group_b,
+            ) in enumerate(groups):
                 if group_b is None or i == j:
                     continue
 

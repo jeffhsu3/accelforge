@@ -31,6 +31,7 @@ class Mappings:
         The number of valid mappings that have been explored in order to get the
         mappings in the dataframe, equal to the valid mapspace size.
     """
+
     def __init__(
         self,
         spec: Spec,
@@ -245,7 +246,7 @@ class Mappings:
 
     @property
     def columns(self) -> list[str]:
-        """ The columns of the dataframe. """
+        """The columns of the dataframe."""
         return list(self.data.columns)
 
     def to_dict(self, value_if_one_mapping: bool = True) -> dict[str, list[float]]:

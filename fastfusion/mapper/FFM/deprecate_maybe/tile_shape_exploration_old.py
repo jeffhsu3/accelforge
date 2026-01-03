@@ -1178,7 +1178,9 @@ def _explore_tile_shapes_new(job: "Job"):
 
     df = pd.DataFrame(df, columns=df.keys())
     assert not df.isna().any().any()
-    job.n_valid_pmappings = job.n_total_pmappings * prod(job.pmapping_keep_rates.values())
+    job.n_valid_pmappings = job.n_total_pmappings * prod(
+        job.pmapping_keep_rates.values()
+    )
     return df
 
 

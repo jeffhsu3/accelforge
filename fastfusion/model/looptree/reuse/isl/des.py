@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 
 import islpy as isl
 
+
 @dataclass
 class IslReuseAnalysisOutput:
     ops: dict = field(default_factory=dict)

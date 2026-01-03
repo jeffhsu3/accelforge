@@ -74,7 +74,9 @@ def _make_pmappings(
         resource2capacity,
         einsum2jobs,
         can_combine_multiple_runs=can_combine_multiple_runs,
-        einsums_with_pmappings_generated=set(einsum_names if einsum_names else spec.workload.einsum_names),
+        einsums_with_pmappings_generated=set(
+            einsum_names if einsum_names else spec.workload.einsum_names
+        ),
     )
 
     return m
@@ -170,7 +172,9 @@ def join_pmappings(
     einsum2pmappings = pmappings.einsum2pmappings
     if not require_all_einsums:
         einsum2pmappings = {
-            k: v for k, v in pmappings.einsum2pmappings.items() if k in pmappings.einsums_with_pmappings_generated
+            k: v
+            for k, v in pmappings.einsum2pmappings.items()
+            if k in pmappings.einsums_with_pmappings_generated
         }
 
     for einsum_name, einsum_pmappings in einsum2pmappings.items():
@@ -213,7 +217,8 @@ def join_pmappings(
     rank_variable_bounds = get_rank_variable_bounds_for_all_einsums(spec)
     einsum_names = list(einsum2pmappings.keys())
     joined.data[f"Total<SEP>{MAPPING_COLUMN}"] = [
-        MappingFromRow(r, rank_variable_bounds, einsum_names) for _, r in joined.data.iterrows()
+        MappingFromRow(r, rank_variable_bounds, einsum_names)
+        for _, r in joined.data.iterrows()
     ]
     # Fill nans with 0. We might get missing columns for some mapping entries if there
     # are energy entries for some pmappings but not others (e.g., one pmapping accesses
