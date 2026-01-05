@@ -20,6 +20,7 @@ from pydantic_core.core_schema import (
 from typing import (
     Iterator,
     List,
+    Mapping,
     TypeVar,
     Generic,
     Any,
@@ -533,7 +534,7 @@ def _get_parsable_field_order(
     return order
 
 
-class _ModelWithUnderscoreFields(BaseModel, _FromYAMLAble):
+class _ModelWithUnderscoreFields(BaseModel, _FromYAMLAble, Mapping):
     def __init__(self, **kwargs):
         new_kwargs = {}
         for field, value in kwargs.items():
@@ -591,6 +592,22 @@ class _ModelWithUnderscoreFields(BaseModel, _FromYAMLAble):
 
     def model_dump_non_none(self, **kwargs):
         return {k: v for k, v in self.model_dump(**kwargs).items() if v is not None}
+
+    def __getitem__(self, key: str) -> Any:
+        return getattr(self, key)
+
+    def __setitem__(self, key: str, value: Any):
+        setattr(self, key, value)
+
+    def __delitem__(self, key: str):
+        delattr(self, key)
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self.get_fields())
+
+    def __len__(self) -> int:
+        return len(self.get_fields())
+
 
 
 class ParsableModel(_ModelWithUnderscoreFields, Parsable["ParsableModel"]):

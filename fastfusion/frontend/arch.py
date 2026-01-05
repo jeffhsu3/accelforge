@@ -260,10 +260,13 @@ class LeafAttributes(ParsableModel):
     pass
 
 
-class AttributesWithEnergy(ParsableModel):
+class AttributesWithExtras(ParsableModel):
+    model_config = ConfigDict(extra="allow")
+
+
+class AttributesWithEnergy(AttributesWithExtras):
     energy: ParsesTo[int | float | None] = None
     energy_scale: ParsesTo[int | float] = 1
-    model_config = ConfigDict(extra="allow")
 
 
 class ComponentAttributes(AttributesWithEnergy):
@@ -1112,9 +1115,10 @@ class Hierarchical(Branch):
         def _parse_node(node: Leaf, fanout: int):
             fanout *= node.get_fanout()
             node2 = node.model_copy()
-            node2.attributes = type(node.attributes)(
-                **{**attributes.model_dump(), **node.attributes.model_dump()}
-            )
+            attrs = {**node.attributes.model_dump()}
+            if isinstance(node.attributes, AttributesWithExtras):
+                attrs = {**attributes.model_dump(), **attrs}
+            node2.attributes = type(node.attributes)(**attrs)
             nodes.append(node2)
             return fanout
 
@@ -1258,7 +1262,7 @@ class Arch(Hierarchical):
         """
         area = {
             node.name: node.attributes.total_area
-            for node in self.get_nodes_of_type(Leaf)
+            for node in self.get_nodes_of_type(Component)
         }
         for k, v in area.items():
             if v is None:
@@ -1281,7 +1285,7 @@ class Arch(Hierarchical):
         """
         leak_power = {
             node.name: node.attributes.total_leak_power
-            for node in self.get_nodes_of_type(Leaf)
+            for node in self.get_nodes_of_type(Component)
         }
         for k, v in leak_power.items():
             if v is None:

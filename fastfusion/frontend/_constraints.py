@@ -48,8 +48,8 @@ from fastfusion._version import assert_version, __version__
 #     # """ A set of tensors or a set expression representing tensors that incur a
 #     # read-modify-write the first time they are updated in a memory. For tensors outputted
 #     # by an Einsum, the first update of a value only incurs a read, because the previous
-#     # value is null. If a tensor is given here, then the first update of that tensor will
-#     # incur a read and write.
+#     # value is the additive identity. If a tensor is given here, then the first update of
+#     # that tensor will incur a read and write.
 #     # """
 
 #     def _parse(self, symbol_table: dict[str, Any], location: str):
