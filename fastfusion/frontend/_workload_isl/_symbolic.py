@@ -5,7 +5,7 @@ from operator import mul
 
 import sympy
 
-from .workload import (
+from fastfusion.frontend.workload import (
     TensorName,
     Einsum,
     EinsumName,

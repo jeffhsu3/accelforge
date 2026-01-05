@@ -16,13 +16,13 @@ from fastfusion.frontend.mapping import (
     Temporal,
 )
 from fastfusion.frontend.spec import Spec
-from fastfusion.frontend.workload._isl import get_rank_variable_bounds
-from fastfusion.frontend.workload._symbolic import (
+from fastfusion.frontend._workload_isl._isl import get_rank_variable_bounds
+from fastfusion.frontend._workload_isl._symbolic import (
     get_rank_variable_relevancy,
     get_stride_and_halo,
     get_stride_and_halo_of_einsum,
 )
-from fastfusion.frontend.workload.workload import (
+from fastfusion.frontend.workload import (
     Einsum,
     EinsumName,
     RankVariable,

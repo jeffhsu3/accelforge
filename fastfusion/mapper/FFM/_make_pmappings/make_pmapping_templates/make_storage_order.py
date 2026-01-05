@@ -6,13 +6,13 @@ from typing import Any
 import fastfusion.frontend.arch as arch
 from fastfusion.frontend.mapping import MappingNode, TensorHolder
 from fastfusion.frontend.spec import Spec
-from fastfusion.frontend.workload.workload import TensorName, SymbolTable
+from fastfusion.frontend.workload import TensorName, SymbolTable
 from fastfusion.util._parse_expressions import MATH_FUNCS
 
 from fastfusion.mapper.FFM._make_pmappings.make_pmapping_templates.make_storages import (
     make_storage_choices_all_levels,
 )
-from fastfusion.frontend.workload.workload import EinsumName
+from fastfusion.frontend.workload import EinsumName
 
 
 def eval_enabled(component: arch.Component, symbol_table: SymbolTable) -> bool:

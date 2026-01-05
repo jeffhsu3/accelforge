@@ -40,7 +40,7 @@ from fastfusion.util._basetypes import (
     _get_tag,
     _InferFromTag,
 )
-from fastfusion.frontend.workload.workload import RankVariable, TensorName
+from fastfusion.frontend.workload import RankVariable, TensorName
 from fastfusion.util.parallel import _SVGJupyterRender, _pydot_graph
 from fastfusion._version import assert_version, __version__
 from fastfusion.frontend import arch

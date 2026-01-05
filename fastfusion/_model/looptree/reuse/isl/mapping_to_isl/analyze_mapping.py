@@ -38,8 +38,8 @@ from fastfusion.frontend.mapping import (
     Storage,
 )
 from fastfusion.frontend.workload import Workload
-from fastfusion.frontend.workload._isl import get_projection_map
-from fastfusion.frontend.workload.workload import TensorName
+from fastfusion.frontend._workload_isl._isl import get_projection_map
+from fastfusion.frontend.workload import TensorName
 
 from fastfusion._model.looptree.mapping_utilities import get_paths
 from fastfusion._model.looptree.types import Buffet

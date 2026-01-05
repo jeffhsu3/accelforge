@@ -1,7 +1,7 @@
 import math
 import islpy as isl
 
-from .workload import Workload, TensorName, Einsum
+from fastfusion.frontend.workload import Workload, TensorName, Einsum
 
 
 def get_einsum_operation_space(workload: Workload, einsum_name: str) -> isl.Set:

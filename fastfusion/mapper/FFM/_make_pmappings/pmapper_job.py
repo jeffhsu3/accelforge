@@ -10,8 +10,8 @@ from fastfusion.frontend.mapping import (
     Mapping,
 )
 from fastfusion.frontend.spec import Spec
-from fastfusion.frontend.workload._symbolic import Relevant, PartiallyRelevant
-from fastfusion.frontend.workload.workload import (
+from fastfusion.frontend._workload_isl._symbolic import Relevant, PartiallyRelevant
+from fastfusion.frontend.workload import (
     EinsumName,
     RankVariable,
     TensorName,

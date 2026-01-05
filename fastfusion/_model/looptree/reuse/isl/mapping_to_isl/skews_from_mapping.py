@@ -21,7 +21,7 @@ from fastfusion.frontend.mapping import (
     Storage,
     Compute,
 )
-from fastfusion.frontend.workload.workload import TensorName, Workload
+from fastfusion.frontend.workload import TensorName, Workload
 
 from fastfusion._model.looptree.mapping_utilities import get_paths
 from fastfusion._model.looptree.types import ComponentName

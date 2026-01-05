@@ -26,11 +26,11 @@ from fastfusion.frontend.mapping import (
     Temporal,
     Split,
 )
-from fastfusion.frontend.workload.workload import (
+from fastfusion.frontend.workload import (
     # Workload class for all of FastFusion.
     Workload,
 )
-from fastfusion.frontend.workload._isl import (
+from fastfusion.frontend._workload_isl._isl import (
     get_einsum_operation_space,
     get_projection_map,
 )

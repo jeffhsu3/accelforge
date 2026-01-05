@@ -1,7 +1,7 @@
 from fastfusion.frontend.spec import Spec
 from fastfusion.frontend.workload import EinsumName
 from fastfusion._accelerated_imports import pd
-from fastfusion.frontend.workload.workload import TensorName
+from fastfusion.frontend.workload import TensorName
 from fastfusion.mapper.FFM._make_pmappings.make_pmappings import (
     get_num_computes,
     get_per_tensor_size,

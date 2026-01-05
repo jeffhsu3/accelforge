@@ -14,7 +14,7 @@ from typing import List, TypeAlias
 import islpy as isl
 
 from fastfusion.frontend.mapping import Compute, MappingNode
-from fastfusion.frontend.workload.workload import TensorName
+from fastfusion.frontend.workload import TensorName
 from fastfusion._model.looptree.types import Buffet
 
 

@@ -11,8 +11,8 @@ from fastfusion import util
 from fastfusion._accelerated_imports import np
 from fastfusion._accelerated_imports import pd
 import fastfusion.frontend.arch as arch
-from fastfusion.frontend.workload._isl import get_rank_variable_bounds
-from fastfusion.frontend.workload._symbolic import get_projection_expr
+from fastfusion.frontend._workload_isl._isl import get_rank_variable_bounds
+from fastfusion.frontend._workload_isl._symbolic import get_projection_expr
 from fastfusion.frontend.workload import Einsum
 from fastfusion.frontend.mapping import (
     Loop,

@@ -4,7 +4,7 @@ from itertools import chain, combinations
 
 import fastfusion.frontend.arch as arch
 from fastfusion.frontend.mapping import Storage, TensorHolder, ProcessingStage
-from fastfusion.frontend.workload.workload import TensorName, SymbolTable
+from fastfusion.frontend.workload import TensorName, SymbolTable
 
 from fastfusion.util._setexpressions import InvertibleSet
 

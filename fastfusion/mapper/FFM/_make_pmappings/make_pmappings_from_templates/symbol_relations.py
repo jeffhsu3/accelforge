@@ -4,7 +4,7 @@ from numbers import Number
 from sympy import Symbol
 
 from fastfusion.frontend.workload import Workload
-from fastfusion.frontend.workload._symbolic import get_stride_and_halo
+from fastfusion.frontend._workload_isl._symbolic import get_stride_and_halo
 from fastfusion.frontend.mapping import (
     Loop,
     Mapping,

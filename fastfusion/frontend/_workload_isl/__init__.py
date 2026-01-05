@@ -1,2 +1,2 @@
-from .workload import *
+from fastfusion.frontend.workload import *
 from ._isl import get_rank_variable_bounds

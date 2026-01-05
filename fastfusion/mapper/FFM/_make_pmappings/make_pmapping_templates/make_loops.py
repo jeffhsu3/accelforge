@@ -9,7 +9,7 @@ from fastfusion.frontend.mapping import (
     Spatial,
     TensorHolder,
 )
-from fastfusion.frontend.workload.workload import (
+from fastfusion.frontend.workload import (
     Einsum,
     RankVariable,
     Workload,

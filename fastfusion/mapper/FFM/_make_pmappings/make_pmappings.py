@@ -10,12 +10,12 @@ from joblib import delayed
 from fastfusion.frontend import arch
 from fastfusion.frontend.spec import Spec
 from fastfusion.frontend.mapping import Loop, Mapping, TensorHolder
-from fastfusion.frontend.workload._isl import (
+from fastfusion.frontend._workload_isl._isl import (
     get_rank_variable_bounds,
     get_tensor_size,
     get_operation_space_size,
 )
-from fastfusion.frontend.workload.workload import EinsumName, TensorName
+from fastfusion.frontend.workload import EinsumName, TensorName
 
 from fastfusion.mapper.FFM._make_pmappings.make_pmapping_templates import (
     make_pmapping_templates,

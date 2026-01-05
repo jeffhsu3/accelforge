@@ -2,7 +2,7 @@ from typing import Any, NamedTuple
 
 from tqdm import tqdm
 from fastfusion._accelerated_imports import pd
-from fastfusion.frontend.workload.workload import EinsumName
+from fastfusion.frontend.workload import EinsumName
 from fastfusion.mapper.FFM._join_pmappings.pmapping_group import PmappingGroup
 from fastfusion.mapper.FFM._pareto_df.df_convention import (
     COMPRESSED_INDEX,

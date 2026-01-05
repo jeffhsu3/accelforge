@@ -6,7 +6,7 @@ from collections import defaultdict
 
 import sympy
 from fastfusion.frontend.mapping import Loop, Mapping, Spatial, Temporal
-from fastfusion.frontend.workload.workload import EinsumName
+from fastfusion.frontend.workload import EinsumName
 from fastfusion.mapper.FFM._join_pmappings.compatibility import (
     Compatibility,
 )

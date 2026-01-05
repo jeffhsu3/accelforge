@@ -15,8 +15,9 @@ from fastfusion.frontend.mapping import (
     TensorHolder,
     ProcessingStage,
 )
-from fastfusion.frontend.workload import Workload, TensorName, get_rank_variable_bounds
-from fastfusion.frontend.workload._symbolic import (
+from fastfusion.frontend.workload import Workload, TensorName
+from fastfusion.frontend._workload_isl._isl import get_rank_variable_bounds
+from fastfusion.frontend._workload_isl._symbolic import (
     get_projection_expr,
     get_rank_variable_relevancy,
     compute_dense_tile_occupancy,
