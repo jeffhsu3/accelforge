@@ -32,12 +32,8 @@ arch:
   - !Fanout
     name: ArrayFanout
     spatial:
-    - {name: reuse_weight, fanout: 14, may_reuse: weight}
-    - {name: reuse_output, fanout: 12, may_reuse: output}
-    constraints:
-      spatial:
-      - {name: reuse_weight, must_reuse: weight, min_utilization: 1}
-      - {name: reuse_output, must_reuse: output, min_utilization: 1}
+    - {name: reuse_weight, fanout: 14, may_reuse: weight, must_reuse: weight, min_utilization: 1 }
+    - {name: reuse_output, fanout: 12, may_reuse: output, must_reuse: output, min_utilization: 1 }
 
   - !Memory # Input scratchpad
     name: InputScratchpad
@@ -50,7 +46,7 @@ arch:
       depth: 12
       width: 16
       tech_node: 65e-9
-    constraints: {tensors: {keep: [Input]}}
+    tensors: {keep: input}
     actions:
     - {name: read, arguments: {_bits_per_action: 16}}
     - {name: write, arguments: {_bits_per_action: 16}}
@@ -66,7 +62,7 @@ arch:
       depth: 192
       width: 16
       tech_node: 65e-9
-    constraints: {tensors: {keep: [Weight]}}
+    tensors: {keep: weight}
     actions:
     - {name: read, arguments: {_bits_per_action: 16}}
     - {name: write, arguments: {_bits_per_action: 16}}
@@ -82,7 +78,7 @@ arch:
       depth: 16
       width: 16
       tech_node: 65e-9
-    constraints: {tensors: {keep: [Output]}}
+    tensors: {keep: output}
     actions:
     - {name: read, arguments: {_bits_per_action: 16}}
     - {name: write, arguments: {_bits_per_action: 16}}
