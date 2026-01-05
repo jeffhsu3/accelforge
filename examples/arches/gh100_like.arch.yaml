@@ -65,7 +65,7 @@ arch:
     component_class: dummy_storage
     spatial:
     - {name: X, fanout: 9} # Yes multicast across SMs within a CGA
-    - {name: CGA, fanout: 16, reuse: Nothing} # No multicast across CGAs
+    - {name: CGA, fanout: 16, may_reuse: Nothing} # No multicast across CGAs
     attributes: {_size: 0}
     constraints:
       tensors: {keep: Nothing}
@@ -103,13 +103,12 @@ arch:
     attributes: {_area: 0, _leak_power: 0, _energy: 0}
     constraints: {misc: {enabled: len(All) == 2}}
 
-  - !Memory
+  - !Fanout
     name: TensorCoreDummy
-    attributes: {_size: 0, _area: 0, _leak_power: 0, _energy: 0}
     spatial:
-    - {name: reuse_input, fanout: 128 / 8, reuse: input} # 8 is the datawidth
-    - {name: reuse_output, fanout: 4, reuse: output}
-    - {name: reuse_weight, fanout: 8, reuse: weight}
+    - {name: reuse_input, fanout: 128 / 8, may_reuse: input} # 8 is the datawidth
+    - {name: reuse_output, fanout: 4, may_reuse: output}
+    - {name: reuse_weight, fanout: 8, may_reuse: weight}
     constraints:
       tensors: {keep: Nothing}
       spatial:
