@@ -27,10 +27,6 @@ from fastfusion._version import assert_version, __version__
 #         )
 
 
-
-
-
-
 # class Spatial(ParsableModel):
 #     """
 #     A :class:`~.Loop` constraints that apply to spatial loops.
@@ -38,7 +34,6 @@ from fastfusion._version import assert_version, __version__
 
 #     name: str
 #     """ The dimension name across which different spatial iterations occur. """
-
 
 
 # class Temporal(Loop):
@@ -91,7 +86,6 @@ from fastfusion._version import assert_version, __version__
 
 #     tensors: Tensors = Tensors()
 #     """ Constraints that apply to tensors stored in this component. """
-
 
 
 # class Constraints(ParsableModel):
