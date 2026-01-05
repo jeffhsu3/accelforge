@@ -1,7 +1,8 @@
 .. _specifying-mapping:
 
-Mapping (with LoopTrees)
-========================
+Mapping Specification
+=====================
+
 
 
 What is a LoopTree

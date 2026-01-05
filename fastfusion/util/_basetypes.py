@@ -555,11 +555,17 @@ class _ModelWithUnderscoreFields(BaseModel, _FromYAMLAble):
         """
         Dump the model to a YAML string.
 
-        Paramete
-            f: The file to write the YAML to. If not given, then returns as a string.
-            exclude: The fields to exclude from the YAML.
+        Parameters
+        ----------
+        f: str | None
+            The file to write the YAML to. If not given, then returns as a string.
+        exclude: IncEx | None
+            The fields to exclude from the YAML.
 
-        R
+        Returns
+        -------
+        str
+            The YAML string.
         """
         dump = self.model_dump()  # exclude=exclude)
 

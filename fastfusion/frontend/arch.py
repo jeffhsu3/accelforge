@@ -237,7 +237,10 @@ class Spatial(ParsableModel):
                     location=location + ".may_reuse",
                 )
             ),
-            loop_bounds=[x._parse(symbol_table, location + ".loop_bounds") for x in self.loop_bounds],
+            loop_bounds=[
+                x._parse(symbol_table, location + ".loop_bounds")
+                for x in self.loop_bounds
+            ],
             min_utilization=parse_expression(
                 self.min_utilization,
                 symbol_table,
@@ -910,8 +913,7 @@ class Tensors(ParsableModel):
         keep_first = isinstance(may_keep, str) and re.findall(r"\bkeep\b", may_keep)
         if keep_first and may_keep_first:
             raise ValueError(
-                f"Keep and may_keep reference each other: "
-                f"{keep} and {may_keep}"
+                f"Keep and may_keep reference each other: " f"{keep} and {may_keep}"
             )
 
         if may_keep_first:
@@ -1306,7 +1308,6 @@ class Arch(Hierarchical):
             n = l.name
             leaves.setdefault(n, l)
             assert l is leaves[n], f"Duplicate name {n} found in architecture"
-
 
 
 # We had to reference Hierarchical before it was defined

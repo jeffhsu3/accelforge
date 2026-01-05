@@ -1,5 +1,5 @@
-Parts of the Specification
-==========================
+Input Specifications
+====================
 
 The :py:class:`~fastfusion.frontend.spec.Spec` class is the main class that contains all
 inputs to this framework. It includes the following:

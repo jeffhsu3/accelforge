@@ -1,5 +1,5 @@
-Architecture
-============
+Arch Specification
+==================
 
 The architecture, defined by the :py:class:`~fastfusion.frontend.arch.Arch` class,
 describes the hardware that is running the workload. An architecture is represented as a
@@ -98,52 +98,36 @@ example, in the architecture above, the ``LocalBuffer`` component has a size-4 s
 fanout in the ``Z`` dimension, meaning that there are 4 instances of the component. All
 child components are duplicated in the ``Z`` dimension as well.
 
-The ``ArrayDummy`` component also has a spatial fanout in two dimensions, the
-``reuse_input`` and ``reuse_output`` dimensions. Often, dummy components may be used to
-instantiate a spatial fanout-- in this case, we use a dummy memory, constraining it to
-keep nothing and have zero size, energy, area, and leakage power. This is equivalent to
-writing the spatial fanout directly on the component beneath.
+The ``ArrayFanout`` component also has a spatial fanout in two dimensions, the
+``reuse_input`` and ``reuse_output`` dimensions.
+:py:class:`~fastfusion.frontend.arch.Fanout` components can be used to instantiate
+spatial fanouts.
 
-Reuse in spatial dimensions may be controlled with the ``reuse`` keyword, which takes in
-a set expression that is parsed according to :ref:`set-expressions`. In the example,
-nothing is reused spatially betweeen ``LocalBuffer`` instances, while inputs and outputs
-are reused across registers in the ``reuse_input`` and ``reuse_output`` dimensions,
-respectively.
+Reuse in spatial dimensions may be controlled with the ``may_reuse`` keyword, which
+takes in a set expression that is parsed according to :ref:`set-expressions`. In the
+example, nothing is reused spatially betweeen ``LocalBuffer`` instances, while inputs
+and outputs are reused across registers in the ``reuse_input`` and ``reuse_output``
+dimensions, respectively. Additionally, the ``must_reuse`` keyword can be used to force
+reuse; for example, ``must_reuse: input`` means that all spatial instances must use the
+same input values, else the mapping will be invalid.
 
+Spatial fanouts support the following keywords:
 
-Constraints
------------
+.. include-attrs:: fastfusion.frontend.arch.Spatial
 
-Constraints restrict the available actions that may be taken by hardware. Constraints
-may be attached to any component in the architecture.
+Tensor Holders
+--------------
 
-Tensors
-~~~~~~~
+Tensor holders, which include :py:class:`~fastfusion.frontend.arch.Memory` and
+:py:class:`~fastfusion.frontend.arch.Fanout` components, hold tensors. Each of them
+support extra attributes in their ``attributes`` field, so check
+:py:class:`~fastfusion.frontend.arch.MemoryAttributes` and
+:py:class:`~fastfusion.frontend.arch.FanoutAttributes` for more information on the
+attributes that they support.
 
-Tensor constraints define how tensors may be stored and used by a particular component.
-They are supported by :py:class:`~fastfusion.frontend.arch.Memory` components. They are
-represented by the :py:class:`~fastfusion.frontend.constraints.Tensors` class, which
-supports the following fields:
+Additionally, they have an additional ``tensors`` field, which is used to define the
+tensors that are held by the component. They are represented by the
+:py:class:`~fastfusion.frontend.constraints.Tensors` class, which supports the following
+fields:
 
 .. include-attrs:: fastfusion.frontend.constraints.Tensors
-
-Spatial
-~~~~~~~
-
-Spatial constraints how data may be moved between components in a spatial fanout. They
-are represented by the :py:class:`~fastfusion.frontend.constraints.Spatial` class, which
-supports the following fields:
-
-.. include-attrs:: fastfusion.frontend.constraints.Spatial
-
-Spatial constraints are given as a dictionary, where keys match the name of a spatial
-fanout. Extra spatial keys are ignored. The following example shows a spatial constraint
-for the ``X`` and ``Y`` fanouts of the ``ArrayDummy`` component:
-
-.. include-yaml:: examples/arches/tpu_v4i_like.arch.yaml
-   :startfrom: ArrayDummy
-   :same-indent:
-
-
-
-Temporal

@@ -1,15 +1,15 @@
-Accelerator Modeling
-====================
+How Modeling Works
+==================
 
 .. _accelerator-modeling:
 
-Accelerator modeling is the process of calculating the energy, area, and latency of an
-accelerator. This is done in three steps:
+Modeling calculates the energy, area, and latency of an accelerator running a given
+workload. This is done in three steps:
 
 1. **Per-Component Energy, Area, and Leakage**: This step models the area and leakage
-   power of each :py:class:`~fastfusion.frontend.arch.Component` in the architecture. It
-   then generates *per-action energy*, which is used by later steps in the model to find
-   the energy of performing hardware
+   power of each :py:class:`~fastfusion.frontend.arch.Component` in the architecture.
+   It then generates *per-action energy*, which is used by later steps in the model to
+   find the energy of performing hardware
    :py:class:`~fastfusion.frontend.arch.ComponentAction`\ s.
 
 2. **Mapping the Workload onto the Accelerator**: This step generates mappings

@@ -35,6 +35,21 @@ is 32, then 1024 * 16 / 32 = 512 actions are incurred.
 Read+Modify+Writes (RMWs) to a component are counted as a read and a write. The first
 read of output data is skipped because the value has not been written yet.
 
+By default, the ``datawidth`` and ``bits_per_action`` attributes are set to 1.
+Generally, it works to leave these as 1. For example:
+
+- If ``bits_per_action`` is 1, then each action accesses one bit, so we can define
+  actions in terms of bits accessed
+- If ``datawidth`` is 1 and ``bits_per_action`` is 1, then each action accesses one
+  value, so we can define actions in terms of values accessed. Additionally, ``size``
+  will then be in terms of number of values that can be held, rather than number of
+  bits.
+
+The latter case is the default, and you may often see ``datawidth`` and
+``bits_per_action`` un-set, ``size`` set to the number of values in the tensor, and
+actions defined in terms of values accessed rather than bits.
+
+
 Calculating Latency from a Pmapping
 -----------------------------------
 

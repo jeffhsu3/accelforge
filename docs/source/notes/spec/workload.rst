@@ -1,7 +1,7 @@
 .. _specifying-workload:
 
-Specifying the Workload
-=======================
+Workload and Renames Specification
+==================================
 
 The :py:class:`~fastfusion.frontend.workload.Workload` object describes a cascade of
 Einsums. An Einsum, described in ..., can represent a variety of tensor algebra kernels,
