@@ -178,13 +178,15 @@ def cast_to_numeric(x: Any) -> int | float | bool:
     return float(x)
 
 
-def get_callable_lambda(func, expression):
-    l = lambda *args, **kwargs: func(*args, **kwargs)
-    l.__name__ = func.__name__
-    l.__doc__ = func.__doc__
-    l._original_expression = expression
-    l._func = func
-    return l
+class CallableLambda:
+    def __init__(self, func, expression):
+        self.__name__ = func.__name__
+        self.__doc__ = func.__doc__
+        self._original_expression = expression
+        self._func = func
+
+    def __call__(self, *args, **kwargs):
+        return self._func(*args, **kwargs)
 
 
 @functools.lru_cache(maxsize=1000)
@@ -221,7 +223,7 @@ def parse_expression(
         if isinstance(v, str):
             v = RawString(v)
         if isinstance(v, Callable):
-            v = get_callable_lambda(v, expression)
+            v = CallableLambda(v, expression)
         success = True
     except Exception as e:
         errstr = f"Failed to evaluate: {expression}\n"

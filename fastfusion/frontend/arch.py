@@ -26,6 +26,7 @@ from hwcomponents import (
 from fastfusion.util._basetypes import (
     ParsableModel,
     ParsableList,
+    ParseExtras,
     ParsesTo,
     _PostCall,
     _get_tag,
@@ -260,8 +261,8 @@ class LeafAttributes(ParsableModel):
     pass
 
 
-class AttributesWithExtras(ParsableModel):
-    model_config = ConfigDict(extra="allow")
+class AttributesWithExtras(ParseExtras):
+    pass
 
 
 class AttributesWithEnergy(AttributesWithExtras):

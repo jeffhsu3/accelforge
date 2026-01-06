@@ -811,6 +811,7 @@ class ParseExtras(ParsableModel):
     must be recognized directly. The leading underscore is removed before setting any
     variable names.
     """
+    model_config = ConfigDict(extra="allow")
 
     def get_validator(self, field: str) -> type:
         if field not in self.__class__.model_fields:
