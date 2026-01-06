@@ -203,7 +203,7 @@ class Spatial(ParsableModel):
     fanout: ParsesTo[int]
     """ The size of this fanout. """
 
-    may_reuse: str | InvertibleSet[TensorName] | set[TensorName] = "All()"
+    may_reuse: str | InvertibleSet[TensorName] | set[TensorName] = "All"
     """ The tensors that can be reused spatially across instances of this fanout. This
     expression will be parsed for each mapping template. """
 
@@ -800,7 +800,7 @@ class TensorHolderAttributes(ComponentAttributes):
     underscore-prefix attribute names. See `TODO: UNDERSCORE_PREFIX_DISCUSSION`.
     """
 
-    datawidth: ParsesTo[dict | int | float] = {"All()": 1}
+    datawidth: ParsesTo[dict | int | float] = {"All": 1}
     """
     Number of bits per value stored in this `TensorHolder`. If this is a dictionary,
     keys in the dictionary are parsed as expressions and may reference one or more
@@ -809,7 +809,7 @@ class TensorHolderAttributes(ComponentAttributes):
 
     def model_post_init(self, __context__=None) -> None:
         if not isinstance(self.datawidth, dict):
-            self.datawidth = {"All()": self.datawidth}
+            self.datawidth = {"All": self.datawidth}
 
     def _parse_expressions(self, *args, **kwargs):
         class MyPostCall(_PostCall):
