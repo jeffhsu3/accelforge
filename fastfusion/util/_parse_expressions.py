@@ -287,6 +287,37 @@ def parse_expression(
     return v
 
 
+class PicklingSafeCallable:
+    def __init__(self, func: Callable, path: str):
+        self.func = func
+        self.__name__ = func.__name__
+        self.path = path
+
+    def __call__(self, *args, **kwargs):
+        return self.func(*args, **kwargs)
+
+    def __getstate__(self):
+        return {
+            "func": self.func.__name__,
+            "module": self.func.__module__,
+            "path": self.path,
+        }
+
+    def __setstate__(self, state):
+        # Restore required attributes so subsequent pickling works
+        self.path = state.get("path")
+        func_name = state["func"]
+        self.func = load_functions_from_file(self.path)[func_name]
+        self.__name__ = func_name
+
+    def __copy__(self):
+        return PicklingSafeCallable(self.func, self.path)
+
+    def __deepcopy__(self, memo):
+        return PicklingSafeCallable(self.func, self.path)
+
+
+@functools.lru_cache(maxsize=100)
 def load_functions_from_file(path: str):
     path = path.strip()
     if not os.path.exists(path):
@@ -298,5 +329,5 @@ def load_functions_from_file(path: str):
     ]
     for func in defined_funcs:
         logging.info(f"Adding function {func} from {path} to the script library.")
-        funcs[func] = getattr(python_module, func)
+        funcs[func] = PicklingSafeCallable(getattr(python_module, func), path)
     return funcs
