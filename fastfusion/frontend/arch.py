@@ -483,7 +483,7 @@ class Component(Leaf, ABC):
                 self.attributes.model_dump(),
                 required_actions=list(x.name for x in self.actions),
                 models=models,
-                return_estimation_object=True,
+                _return_estimation_object=True,
             )
             self.component_model = estimation.value
             self.energy_area_log.extend(estimation.messages)
@@ -553,8 +553,8 @@ class Component(Leaf, ABC):
                 self.populate_component_model(models, in_place=True)
                 energy = self.component_model.try_call_arbitrary_action(
                     action_name=action.name,
-                    action_arguments={**attributes.model_dump(), **args.model_dump()},
-                    return_estimation_object=True,
+                    _return_estimation_object=True,
+                    **{**attributes.model_dump(), **args.model_dump()},
                 )
                 messages.extend(energy.messages)
                 energy = energy.value
