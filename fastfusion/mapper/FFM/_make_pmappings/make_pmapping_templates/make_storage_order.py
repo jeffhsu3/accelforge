@@ -206,12 +206,12 @@ def valid_tensor_holder_order(
                     return False, f"force_memory_hierarchy_order is True and memory {s1} is below memory {s2}"
 
             # # Persistent tensors must be at the top of the hierarchy
-            # if s2_persistent and not s1_persistent and i < j:
-            #     return False, f"Persistent {m0.compact_str()} is below non-persistent {m1.compact_str()}"
+            if s2_persistent and not s1_persistent and i < j:
+                return False, f"Persistent {m0.compact_str()} is below non-persistent {m1.compact_str()}"
 
             # # Persistent tensors must be at the top of the hierarchy
-            # if s1_persistent and not s2_persistent and j < i:
-            #     return False, f"Persistent {m1.compact_str()} is below non-persistent {m0.compact_str()}"
+            if s1_persistent and not s2_persistent and j < i:
+                return False, f"Persistent {m1.compact_str()} is below non-persistent {m0.compact_str()}"
 
             if s1 == s2 and s1 in required_orders and i != j:
                 if s1 not in memory_to_satisfied_constraints:
