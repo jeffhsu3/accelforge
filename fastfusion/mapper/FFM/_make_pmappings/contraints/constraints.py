@@ -1,6 +1,7 @@
 from collections import defaultdict
 from typing import List
 from fastfusion._accelerated_imports import np
+from fastfusion.frontend._workload_isl._symbolic import PartiallyRelevant, Relevant
 import fastfusion.frontend.arch as arch
 from fastfusion.frontend.arch import (
     Comparison,
@@ -16,6 +17,7 @@ from fastfusion.frontend.mapping import (
     Temporal,
     Spatial,
 )
+from fastfusion.frontend.renames import TensorName
 from fastfusion.frontend.workload import EinsumName, RankVariable
 from fastfusion.util._setexpressions import InvertibleSet
 from fastfusion.util._frozenset import fzs
@@ -190,6 +192,7 @@ def get_constraints(
     mapping: List[MappingNode],
     symbol_table: dict[str, InvertibleSet],
     einsum_name: EinsumName,
+    tensor_to_relevancy: dict[TensorName, dict[RankVariable, Relevant | PartiallyRelevant]],
 ) -> tuple[List[MappingNode], MappingConstraints]:
 
     constraints = MappingConstraints()
@@ -219,7 +222,9 @@ def get_constraints(
                 new_nodes = [n for n in nodes if n.rank_variable in exp]
                 constraint = _TileShapeConstraintLambda(c, new_nodes, exp)
                 constraints.tile_shape_constraints.append(constraint)
+
         exp = symbol_table[m.name] & tensor_constraints.no_refetch_from_above
+
         nodes = []
         for no_refetch in exp.iter_one_element_sets():
             # Start from the first index of the tensor holder, stop at index - 1
@@ -243,9 +248,8 @@ def get_constraints(
                     break
                 end_index += 1
 
-            rv = no_refetch.rank_variables
             for i in range(start_index, end_index):
-                if isinstance(mapping[i], Loop) and mapping[i].rank_variable in rv:
+                if isinstance(mapping[i], Loop) and not isinstance(tensor_to_relevancy[n][mapping[i].rank_variable], Relevant):
                     if mapping[i] not in nodes:
                         nodes.append(mapping[i])
 

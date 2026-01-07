@@ -19,11 +19,14 @@ from fastfusion.frontend.mapping import (
 from fastfusion.frontend.spec import Spec
 from fastfusion.frontend._workload_isl._isl import get_rank_variable_bounds
 from fastfusion.frontend._workload_isl._symbolic import (
+    Relevant,
     get_rank_variable_relevancy,
     get_stride_and_halo,
     get_stride_and_halo_of_einsum,
+    PartiallyRelevant,
 )
 from fastfusion.frontend.workload import (
+    TensorName,
     Einsum,
     EinsumName,
     RankVariable,
@@ -31,6 +34,7 @@ from fastfusion.frontend.workload import (
 )
 from fastfusion.mapper.FFM._make_pmappings.make_pmapping_templates.make_storage_order import (
     get_tensor_choices,
+    get_reservation_choices,
 )
 from fastfusion.mapper.FFM._make_pmappings.contraints.constraints import (
     MappingConstraints,
@@ -239,25 +243,30 @@ def iterate_mappings_no_constraints(
     ):
         logging.info('\tGenerated tensor choices: ' + ', '.join(m.compact_str() for m in mapping))
         mapping = copy.deepcopy(mapping)
-        for mapping, n_permutations in insert_temporal_loops(
+        for mapping, symbol_table in get_reservation_choices(
             mapping,
-            einsum,
-            first_memory,
-            rank_variable_bounds,
-            ranks_with_tile_pattern,
-            spec.workload,
-            spec.mapper.ffm._can_lower_outermost_memory,
+            arch_flattened,
+            spec,
         ):
-            mapping = copy.deepcopy(mapping)
-            insert_spatial_loops(mapping, einsum, arch_flattened)
-            mapping = unpack_loops_to_rank_variables(mapping)
-            if spec.mapper.ffm._timeloop_style_even:
-                mapping = _timeloop_style_even(mapping)
+            for mapping, n_permutations in insert_temporal_loops(
+                mapping,
+                einsum,
+                first_memory,
+                rank_variable_bounds,
+                ranks_with_tile_pattern,
+                spec.workload,
+                spec.mapper.ffm._can_lower_outermost_memory,
+            ):
+                mapping = copy.deepcopy(mapping)
+                insert_spatial_loops(mapping, einsum, arch_flattened)
+                mapping = unpack_loops_to_rank_variables(mapping)
+                if spec.mapper.ffm._timeloop_style_even:
+                    mapping = _timeloop_style_even(mapping)
 
-            place_missing_temporal_loops(mapping, einsum)
-            label_fused_loops(mapping)
-            assert_proper_fusion_labeling(mapping)
-            yield mapping, symbol_table, n_permutations
+                place_missing_temporal_loops(mapping, einsum)
+                label_fused_loops(mapping)
+                assert_proper_fusion_labeling(mapping)
+                yield mapping, symbol_table, n_permutations
 
 
 def iterate_mappings_constraints(
@@ -265,6 +274,7 @@ def iterate_mappings_constraints(
     einsum_names: list[str] | str | None = None,
     arch_flattened: list[arch.Leaf] | None = None,
     rank_variable_bounds: dict[RankVariable, int] | None = None,
+    tensor_to_relevancy: dict[TensorName, dict[RankVariable, Relevant | PartiallyRelevant]] | None = None,
 ) -> Iterator[tuple[Mapping, MappingConstraints, dict[str, str]]]:
     if arch_flattened is None:
         arch_flattened = spec.get_flattened_architecture()
@@ -294,7 +304,7 @@ def iterate_mappings_constraints(
         ):
             # MAPPING MUST NOT BE MODIFIED AFTER THIS POINT
             mapping, constraints = get_constraints(
-                arch_flattened, mapping, symbol_table, einsum_name
+                arch_flattened, mapping, symbol_table, einsum_name, tensor_to_relevancy
             )
             mapping.append(
                 Compute(
@@ -413,6 +423,7 @@ def make_pmapping_templates(job: Job) -> SameEinsumJobs:
             job.einsum_name,
             job.flattened_arch,
             job.rank_variable_bounds,
+            job.tensor_to_relevancy,
         ),
         desc=f"Generating pmapping templates for compute {compute_name} Einsum {job.einsum_name}",
     )
