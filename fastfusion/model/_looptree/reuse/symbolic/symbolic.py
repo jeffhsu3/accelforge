@@ -1238,6 +1238,9 @@ def insert_sympy_symbols(mapping: list[MappingNode], job: Job):
                 if rank_variable == node.rank_variable:
                     stride_halos.add((stride, halo))
 
+        if len(stride_halos) == 0:
+            raise RuntimeError(f"{repr(node.rank_variable)} not found in {job.stride_and_halo}")
+
         # We only explore imperfect for the outermost fused loops
         simple = (
             (len(stride_halos) <= 1 and next(iter(stride_halos)) == (1, 0))
@@ -1266,9 +1269,13 @@ def insert_sympy_symbols(mapping: list[MappingNode], job: Job):
             symbols.append(stride)
             node.stride = stride
 
-        assert (
-            node.calculated_n_iterations is None
-        ), "Number of iterations is derived from the model. Do not set it!"
+        # TODO: sometimes, a mapping is passed into the model twice.
+        #       E.g., after calling mapper, the model is called again for more
+        #       details.
+        #
+        # assert (
+        #     node.calculated_n_iterations is None
+        # ), "Number of iterations is derived from the model. Do not set it!"
         node.calculated_n_iterations = sympy.symbols(
             f"n_iterations{loop_idx}", positive=True, integer=True
         )
