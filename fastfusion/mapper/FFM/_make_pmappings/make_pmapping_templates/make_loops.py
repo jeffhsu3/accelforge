@@ -153,11 +153,11 @@ def insert_temporal_loops(
         if next_persistent:
             rank_variables &= set()
 
-
         #  The fanout for a prior node may be placed here, so spatial nodes may be moved
         #  here
-        someone_elses_spatials_may_be_placed_below = \
+        someone_elses_spatials_may_be_placed_below = (
             next_fanout > cur_fanout and max_fanout_before > cur_fanout
+        )
 
         # If the fanout is about to increase, then spatial loops may be placed below the
         # current node. There may have been constrained temporal loops earlier that need
@@ -170,7 +170,10 @@ def insert_temporal_loops(
         # another node's spatial loops below this one, because lowering would add move
         # the spatials down, which would constrain the temporals due to spatial-temporal
         # crossing.
-        if isinstance(prev_storages[0], ProcessingStage) and not someone_elses_spatials_may_be_placed_below:
+        if (
+            isinstance(prev_storages[0], ProcessingStage)
+            and not someone_elses_spatials_may_be_placed_below
+        ):
             rank_variables &= set()
 
         # Generally we want to only use rank variables that are irrelevant to the
@@ -210,7 +213,10 @@ def insert_temporal_loops(
         # may conflict with a spatial loop.
         if not is_fused_loops:
             for s in next_storages:
-                if not s._must_be_here and not someone_elses_spatials_may_be_placed_above:
+                if (
+                    not s._must_be_here
+                    and not someone_elses_spatials_may_be_placed_above
+                ):
                     for t in s.tensors:
                         rvs = tensor2irrelevant_rank_vars[t]
                         for t2 in prev_tensors:
@@ -275,8 +281,9 @@ def insert_temporal_loops(
             )
         )
         prev_fanout = cur_fanout
-        someone_elses_spatials_may_be_placed_above = \
+        someone_elses_spatials_may_be_placed_above = (
             someone_elses_spatials_may_be_placed_below
+        )
 
     # ==================================================================================
     # Iterate over all possible mappings

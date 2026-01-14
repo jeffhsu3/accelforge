@@ -140,9 +140,7 @@ class MappingConstraints:
 
     def remove_missing_targets(self, mapping: list[MappingNode]):
         for c in self.get_all_constraints():
-            c.target_mapping_nodes = [
-                n for n in c.target_mapping_nodes if n in mapping
-            ]
+            c.target_mapping_nodes = [n for n in c.target_mapping_nodes if n in mapping]
 
         self.tile_shape_constraints = [c for c in self.tile_shape_constraints if c]
         self.loop_bounds_constraints = [c for c in self.loop_bounds_constraints if c]
@@ -316,9 +314,7 @@ def get_constraints(
             target_mapping_nodes = [
                 n
                 for n in mapping
-                if isinstance(n, Spatial)
-                and n.component == m.name
-                and n.name == dim
+                if isinstance(n, Spatial) and n.component == m.name and n.name == dim
             ]
             if parsed.min_utilization > 0:
                 if not target_mapping_nodes:

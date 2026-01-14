@@ -934,7 +934,6 @@ def get_tile_shape_choices(
             inner_tiles = what_tiles_symbol.get_inner_tiles(symbol, none_if_fail=True)
             outer_tiles = what_tiles_symbol.get_outer_tiles(symbol, none_if_fail=True)
 
-
             # Figure out inner size and outer size
             if inner_tiles in symbols_enumerated:
                 inner_tiles_type = "enumerated"

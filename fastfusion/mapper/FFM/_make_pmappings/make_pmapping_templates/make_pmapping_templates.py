@@ -368,10 +368,10 @@ def iterate_mappings_constraints(
             # This goes after the constraints because constraints may remove some loops,
             # giving us fewer that may be reordered.
             for mapping in remove_unordered_spatial_temporal_loops(
-                    mapping,
-                    flattened_arch,
-                    spec.workload.einsums[einsum_name],
-                    spec.mapper.ffm.unordered_hierarchy_explore_removing_spatials_for_more_temporals,
+                mapping,
+                flattened_arch,
+                spec.workload.einsums[einsum_name],
+                spec.mapper.ffm.out_of_order_hierarchy_explore_removing_spatials_for_more_temporals,
             ):
                 constraints.remove_missing_targets(mapping)
 
@@ -392,6 +392,7 @@ def iterate_mappings_constraints(
                 n_yielded += 1
                 if n_yielded >= spec.mapper.ffm.max_pmapping_templates_per_einsum:
                     return
+
 
 # =================================================================================================
 # Make pmapping_groups

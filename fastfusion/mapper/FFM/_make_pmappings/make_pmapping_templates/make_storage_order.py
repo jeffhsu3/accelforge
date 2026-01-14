@@ -210,9 +210,10 @@ def valid_tensor_holder_order(
             assert len(m0.tensors) == 1
             assert len(m1.tensors) == 1
 
-
             # If they're persistent they're forced to be at the top.
-            force_order = spec.mapper.ffm.force_memory_hierarchy_order and not either_persistent
+            force_order = (
+                spec.mapper.ffm.force_memory_hierarchy_order and not either_persistent
+            )
             force_order &= m0.component_object.tensors.force_memory_hierarchy_order
             force_order &= m1.component_object.tensors.force_memory_hierarchy_order
 
@@ -225,7 +226,10 @@ def valid_tensor_holder_order(
             force_order |= bool(m0._backing)
 
             if force_order and i < j and s2_idx < s1_idx:
-                return False, f"Memory {s1} is below memory {s2}, violating memory hierarchy order."
+                return (
+                    False,
+                    f"Memory {s1} is below memory {s2}, violating memory hierarchy order.",
+                )
 
             s1_outermost = s1_persistent
             s2_outermost = s2_persistent
@@ -243,8 +247,15 @@ def valid_tensor_holder_order(
             # We don't really care about processing stage order, so just make it follow
             # the regular memory hierarchy order. For processing stages at a given
             # level, make them alphabetical.
-            if isinstance(m0, ProcessingStage) and m0.component == m1.component and m0.tensor < m1.tensor:
-                return False, f"Processing stage {m0} is not ordered alphabetically by tensor; has tensor {m0.tensor} before {m1.tensor}"
+            if (
+                isinstance(m0, ProcessingStage)
+                and m0.component == m1.component
+                and m0.tensor < m1.tensor
+            ):
+                return (
+                    False,
+                    f"Processing stage {m0} is not ordered alphabetically by tensor; has tensor {m0.tensor} before {m1.tensor}",
+                )
 
             # If there is a processing stage, don't explore order. If there's two
             # back-to-back nodes and one is a processing stage, make them follow the

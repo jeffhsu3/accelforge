@@ -514,9 +514,7 @@ def analyze_reuse_and_add_reservations_to_mapping(
         index_expressions.add(f"0 < {k} <= {v}")
     for tensor in all_tensors:
         cur_mapping = job.mapping._get_single_tensor_mapping(
-            tensor,
-            job.flattened_arch,
-            index_expressions
+            tensor, job.flattened_arch, index_expressions
         )
         # print(f'Cur mapping: {cur_mapping.compact_str()}')
         # print(f'Cur mapping:')
@@ -754,9 +752,11 @@ def analyze_temporal(
         accumulated_buffet_stats = result_accumulator.buffet_stats
         for buffet, stats in child_result.buffet_stats.items():
             if str(buffet.tensor) == "T1" and buffet.level == "FreeCompute":
-                print(f'Temporal {node.compact_str()} tensor {buffet.tensor} memory {buffet.level}')
-                print(f'\tBEFORE Reads to parent: {stats.total_reads_to_parent}')
-                print(f'\tBEFORE Writes to parent: {stats.total_writes_to_parent}')
+                print(
+                    f"Temporal {node.compact_str()} tensor {buffet.tensor} memory {buffet.level}"
+                )
+                print(f"\tBEFORE Reads to parent: {stats.total_reads_to_parent}")
+                print(f"\tBEFORE Writes to parent: {stats.total_writes_to_parent}")
             relevancy = info.tensor_to_relevancy[buffet.tensor][node.rank_variable]
             is_fully_relevant = isinstance(relevancy, Relevant)
             accumulated_stats = accumulated_buffet_stats.setdefault(
@@ -769,11 +769,11 @@ def analyze_temporal(
 
             if str(buffet.tensor) == "T1" and buffet.level == "FreeCompute":
                 # print(f'Temporal {node.compact_str()} tensor {buffet.tensor}')
-                print(f'\trelevancy {relevancy}')
-                print(f'\tRepeating temporal {shape_repeats} times')
-                print(f'\tRead actions: {accumulated_stats.total_read_actions}')
-                print(f'\tReads to parent: {accumulated_stats.total_reads_to_parent}')
-                print(f'\tWrites to parent: {accumulated_stats.total_writes_to_parent}')
+                print(f"\trelevancy {relevancy}")
+                print(f"\tRepeating temporal {shape_repeats} times")
+                print(f"\tRead actions: {accumulated_stats.total_read_actions}")
+                print(f"\tReads to parent: {accumulated_stats.total_reads_to_parent}")
+                print(f"\tWrites to parent: {accumulated_stats.total_writes_to_parent}")
 
         for einsum, child_steps in child_result.temporal_steps.items():
             if einsum not in result_accumulator.temporal_steps:
@@ -859,22 +859,24 @@ def analyze_spatial(node_idx, current_shape, info: AnalysisInfo):
             )
 
             if str(buffet.tensor) == "T1" and buffet.level == "FreeCompute":
-                print(f'Spatial {node.compact_str()} tensor {buffet.tensor} memory {buffet.level}')
-                print(f'\tBEFORE Reads to parent: {stats.total_reads_to_parent}')
-                print(f'\tBEFORE Writes to parent: {stats.total_writes_to_parent}')
+                print(
+                    f"Spatial {node.compact_str()} tensor {buffet.tensor} memory {buffet.level}"
+                )
+                print(f"\tBEFORE Reads to parent: {stats.total_reads_to_parent}")
+                print(f"\tBEFORE Writes to parent: {stats.total_writes_to_parent}")
 
             accumulated_stats += stats.repeat_spatial(
                 shape_repeats, reuse_parent_accesses=reuse_parent_accesses
             )
             if str(buffet.tensor) == "T1" and buffet.level == "FreeCompute":
-                print(f'\tlast_buffet {last_buffet}')
-                print(f'\treuse_parent_accesses {reuse_parent_accesses}')
-                print(f'\trelevancy {relevancy}')
-                print(f'\tRepeating spatial {shape_repeats} times')
-                print(f'\tRead actions: {accumulated_stats.total_read_actions}')
-                print(f'\tReads to parent: {accumulated_stats.total_reads_to_parent}')
-                print(f'\tWrites to parent: {accumulated_stats.total_writes_to_parent}')
-                print(f'\treuse_parent_accesses {reuse_parent_accesses}')
+                print(f"\tlast_buffet {last_buffet}")
+                print(f"\treuse_parent_accesses {reuse_parent_accesses}")
+                print(f"\trelevancy {relevancy}")
+                print(f"\tRepeating spatial {shape_repeats} times")
+                print(f"\tRead actions: {accumulated_stats.total_read_actions}")
+                print(f"\tReads to parent: {accumulated_stats.total_reads_to_parent}")
+                print(f"\tWrites to parent: {accumulated_stats.total_writes_to_parent}")
+                print(f"\treuse_parent_accesses {reuse_parent_accesses}")
             accumulated_stats.n_loops_above = stats.n_loops_above + 1
 
         for einsum, child_steps in child_result.temporal_steps.items():
@@ -1106,7 +1108,6 @@ def analyze_storage(
                 stats.max_per_unit_write_actions += (
                     child.max_per_parent_writes_to_parent * write_scale
                 )
-
 
     return child_result
 
