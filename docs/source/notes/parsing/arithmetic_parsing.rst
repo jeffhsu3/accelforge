@@ -5,7 +5,7 @@ Objects can include expressions that are parsed when the
 :py:class:`~fastfusion.frontend.spec.Spec` is parsed. Parsing occurs when the
 :py:func:`~fastfusion.frontend.spec.Spec` is going to be used to model the energy, area,
 or latency of an accelerator, such as when the
-:py:func:`~fastfusion.frontend.spec.Spec.calculate_component_energy_area` method is
+:py:func:`~fastfusion.frontend.spec.Spec.calculate_component_area_energy_latency_leak` method is
 called.
 
 To-be-parsed expressions can include Python code, and supported

@@ -42,4 +42,4 @@ They are available as the following:
     doi={10.1109/ISPASS57527.2023.00038}}
 
 
-TODO: Need f&f and turbo-charged citations.
+TODO: More citations

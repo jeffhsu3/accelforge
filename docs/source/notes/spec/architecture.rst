@@ -107,8 +107,8 @@ Reuse in spatial dimensions may be controlled with the ``may_reuse`` keyword, wh
 takes in a set expression that is parsed according to :ref:`set-expressions`. In the
 example, nothing is reused spatially betweeen ``LocalBuffer`` instances, while inputs
 and outputs are reused across registers in the ``reuse_input`` and ``reuse_output``
-dimensions, respectively. Additionally, the ``must_reuse`` keyword can be used to force
-reuse; for example, ``must_reuse: input`` means that all spatial instances must use the
+dimensions, respectively. Additionally, the ``reuse`` keyword can be used to force
+reuse; for example, ``reuse: input`` means that all spatial instances must use the
 same input values, else the mapping will be invalid.
 
 Spatial fanouts support the following keywords:

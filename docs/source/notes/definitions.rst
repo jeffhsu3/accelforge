@@ -29,5 +29,15 @@ Pmapping Template
   (dataplacement) and loop nodes (dataflow), but does not have loop bounds defined (tile
   shapes).
 
+Reuse
+  Reuse occurs when a piece of data is used used in multiple computations, but fetched
+  fewer times from some memory. For example, we may fetch a piece of data from DRAM to
+  on-chip memory once, then use it in ten computations. This would incur nine reuses of
+  the piece of data.
+
+Reuse Opportunity
+  Reuse opportunity is when a piece of data is used multiple times by the workload. It
+  may or may not be turned into reuse if the hardware successfully leverages it.
+
 Tile
   TODO
