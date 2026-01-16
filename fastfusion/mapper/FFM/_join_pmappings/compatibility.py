@@ -541,11 +541,11 @@ class Compatibility(Updatable):
         ), f"Tensors {backing_remaining} not found in mapping"
 
         def get_rank(rank_variable, tensor):
-            rv = rank_variable_to_ranks[tensor][rank_variable]
+            rv = rank_variable_to_ranks[tensor].get(rank_variable, set())
             assert (
-                len(rv) == 1
+                len(rv) <= 1
             ), f"Rank variable {rank_variable} indexes into multiple ranks {rv} for tensor {tensor} "
-            return next(iter(rv))
+            return next(iter(rv), Rank("NO RANK. RECOMPUTED."))
 
         def make_loops(above_index: int, tensor_name: TensorName) -> list[MappingLoop]:
             loops = [
