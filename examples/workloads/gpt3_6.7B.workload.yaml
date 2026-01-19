@@ -29,7 +29,7 @@ workload:
     J: 4096
     G: 4096
 
-  bits_per_value: {All: 32}
+  bits_per_value: {All: 8}
 
   einsums:
   - name: I

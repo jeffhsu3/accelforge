@@ -14,7 +14,7 @@ workload:
     T1: 192
     N2: 24
 
-  bits_per_value: {All: 32}
+  bits_per_value: {All: 8}
 
   einsums:
   - name: PiecewiseA0

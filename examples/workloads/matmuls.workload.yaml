@@ -7,7 +7,7 @@ workload:
     n{{i}}: 0 <= n{{i}} < {{KN}}
     {% endfor %}
 
-  bits_per_value: {All: 32}
+  bits_per_value: {All: 8}
 
   einsums:
   {% for i in range(N_EINSUMS) %}
