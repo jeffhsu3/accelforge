@@ -1595,6 +1595,18 @@ class Mapping(Nested):
                 new_nodes.append(node)
         self.nodes = new_nodes
 
+    def split_tensor_holders_with_multiple_tensors(self):
+        new_nodes = []
+        for node in self.nodes:
+            if isinstance(node, TensorHolder) and len(node.tensors) > 1:
+                for tensor in node.tensors:
+                    new_node = copy.copy(node)
+                    new_node.tensors = [tensor]
+                    new_nodes.append(new_node)
+            else:
+                new_nodes.append(node)
+        self.nodes = new_nodes
+
     def _get_fused_slice(self, fusable_tensors: set[TensorName]) -> "Mapping":
         """
         Return a mapping with:

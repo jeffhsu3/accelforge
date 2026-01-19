@@ -60,8 +60,9 @@ def evaluate_mapping(spec: Spec):
     for pmapping in _split_mapping_to_pmappings(spec.mapping, spec.workload):
         pmapping_id = uuid4()
         job = copy(original_job)
-        pmapping.split_loop_with_multiple_rank_variables()
         pmapping.remove_reservations()
+        pmapping.split_loop_with_multiple_rank_variables()
+        pmapping.split_tensor_holders_with_multiple_tensors()
         _add_backing_to_tensor_holders(pmapping)
         job.mapping = pmapping
         job.einsum_name = pmapping.nodes[-1].einsum
