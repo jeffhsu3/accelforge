@@ -21,7 +21,7 @@ workload:
   # Describe the number of bits of each value of each tensor. This is a dictionary of
   # set expressions to bits per value for the tensors given by those expressions. They
   # can be overridden by the bits_per_value attribute of any tensor access.
-  bits_per_value: {All: 32}
+  bits_per_value: {All: 8}
 
   # The Einsums in the workload.
   einsums:
