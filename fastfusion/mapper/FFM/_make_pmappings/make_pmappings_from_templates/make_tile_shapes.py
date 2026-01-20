@@ -1325,6 +1325,7 @@ def _make_tile_shapes(job: "Job"):
     pmapping = job.mapping
     constraints = job.constraints
     constraints.set_loop_indices(pmapping.nodes)
+    set_last_tile_shape_to_one(pmapping)
     t0 = time.time()
     (
         symbols,
