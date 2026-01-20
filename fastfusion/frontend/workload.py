@@ -6,13 +6,14 @@ from itertools import product
 import itertools
 import logging
 import re
-from typing import Annotated, TypeAlias
+from typing import TypeAlias
 
 import pydot
 
-from fastfusion.util.parallel import _SVGJupyterRender, _pydot_graph
+from fastfusion.util.parallel import _SVGJupyterRender
 
 from fastfusion.util._basetypes import ParsableDict, ParsableList, ParsableModel
+from fastfusion.util._visualization import _pydot_graph
 from fastfusion.frontend.renames import (
     EinsumName,
     RankVariable,
@@ -25,7 +26,7 @@ from fastfusion.frontend.renames import (
 )
 from fastfusion.util._parse_expressions import ParseError, parse_expression
 from fastfusion.util._setexpressions import InvertibleSet, eval_set_expression
-from fastfusion._version import assert_version, __version__
+from fastfusion._version import __version__
 
 from fastfusion.frontend.renames import (
     EinsumName,
