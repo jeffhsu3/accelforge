@@ -3,8 +3,8 @@
 Mapping Specification
 =====================
 A *mapping* is the scheduling (in both time and space) of operations in every computation step in a workload
-on an architecture~\cite{eyeriss,timeloop,efficient_processing_of_dnn}.
-Mappings in FastFusion is written in LoopTree notation (in Python and YAML equivalents).
+on an architecture [eyeriss]_ [timeloop]_ [efficient_processing_of_dnn]_.
+Mappings in FastFusion is written in LoopTree notation [looptree]_ (in Python and YAML equivalents).
 This documentation covers the LoopTree notation, and how to write LoopTrees in YAML (and the equivalent Python class).
 
 
@@ -23,7 +23,7 @@ The LoopTree in Fig.~\ref{fig:looptree_example} clearly shows loops belonging to
 \input{looptree_example}
 
 There are four node types in LoopTree:
-    - *Loop nodes*, rectangles in the LoopTree, represent nested \texttt{for} loops that iterate over rank variables in the workload.
+    - *Loop nodes*, rectangles in the LoopTree, represent nested for loops that iterate over rank variables in the workload.
       A loop may be shared between multiple fused Einsums, such as the outer :math:`nA` loop.
     - *Storage nodes*, cylinders in the LoopTree, represent the storage for tensor tiles.
     - *Compute nodes*, ovals in the LoopTree, represent the Einsum computation that is performed in that branch. In this example, they represent the multiply-accumulate operations in the Einsum.
@@ -62,3 +62,14 @@ To use a ``Nested`` node, simply place subsequent nodes as the list elements of 
     - node_0
     - node_1
     - node_2
+
+References
+==========
+
+.. [efficient_processing_of_dnn]
+
+.. [eyeriss]
+
+.. [timeloop]
+
+.. [looptree]
