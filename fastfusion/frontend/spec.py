@@ -1,5 +1,5 @@
 from fastfusion.frontend.mapper.mapper import Mapper
-from fastfusion.frontend.renames import Renames
+from fastfusion.frontend.renames import EinsumName, Renames
 from fastfusion.util._parse_expressions import ParseError, ParseExpressionsContext
 from fastfusion.frontend.arch import Compute, Leaf, Component, Arch, Fanout
 
@@ -47,43 +47,95 @@ class Spec(ParsableModel):
 
     def _parse_expressions(
         self,
-        symbol_table: Optional[Dict[str, Any]] = None,
+        einsum_name: EinsumName | None = None,
         **kwargs,
     ) -> tuple[Self, dict[str, Any]]:
+        raise NotImplementedError("Call _spec_parse_expressions instead.")
+
+    def _spec_parse_expressions(
+        self,
+        einsum_name: EinsumName | None = None,
+        _parse_arch: bool = True,
+        _parse_non_arch: bool = True,
+    ) -> Self:
         """
         Parse all string expressions in the spec into concrete values.
 
         Parameters
         ----------
-        symbol_table : dict, optional
-            Optional pre-populated symbols to seed parsing; a shallow copy is made and
-            augmented with ``spec`` and ``variables``.
-        kwargs : dict, optional
-            Additional keyword arguments forwarded to the base
-            ``ParsableModel._parse_expressions``.
+        einsum_name: EinsumName | None = None
+            Optional Einsum name to populate symbols with the Einsum's symbols from the
+            workload. If None, no symbols are populated from the workload.
+
+        _parse_arch: bool = True
+            Whether to parse the architecture.
+
+        _parse_non_arch: bool = True
+            Whether to parse the non-architecture fields.
 
         Returns
         -------
-        tuple[Self, dict[str, Any]]
-            A tuple of ``(parsed_specification, final_symbol_table)``.
+        Self
+            The parsed specification.
 
         Raises
-        ------ParseError
+        ------
+        ParseError
             If any field fails to parse; the error is annotated with the field path.
         """
-        symbol_table = {} if symbol_table is None else symbol_table.copy()
-        symbol_table["spec"] = self
+        st = {}
+        st["spec"] = self
         with ParseExpressionsContext(self):
-            try:
-                parsed_variables, _ = self.variables._parse_expressions(
-                    symbol_table, **kwargs
-                )
-            except ParseError as e:
-                e.add_field("Spec().variables")
-                raise e
-            symbol_table.update(parsed_variables)
-            symbol_table["variables"] = parsed_variables
-            return super()._parse_expressions(symbol_table, **kwargs)
+            already_parsed = {}
+
+            parsed_variables = self.variables
+            if _parse_non_arch:
+                try:
+                    parsed_variables, st = self.variables._parse_expressions(st)
+                except ParseError as e:
+                    e.add_field("Spec().variables")
+                    raise e
+            already_parsed["variables"] = parsed_variables
+            st.update(parsed_variables)
+            st["variables"] = parsed_variables
+
+            parsed_renames = self.renames
+            if _parse_non_arch:
+                try:
+                    parsed_renames, st = self.renames._parse_expressions(st)
+                except ParseError as e:
+                    e.add_field("Spec().renames")
+                    raise e
+            already_parsed["renames"] = parsed_renames
+            st["renames"] = parsed_renames
+
+            parsed_workload = self.workload
+            if _parse_non_arch:
+                try:
+                    parsed_workload, st = self.workload._parse_expressions(st, renames=parsed_renames)
+                except ParseError as e:
+                    e.add_field("Spec().workload")
+                    raise e
+            already_parsed["workload"] = parsed_workload
+            st["workload"] = parsed_workload
+
+            if einsum_name is not None:
+                renames = parsed_workload.einsums[einsum_name].renames
+                st.update(**{k.name: k.source for k in renames})
+
+            if _parse_arch:
+                parsed_arch, st = self.arch._parse_expressions(st)
+            else:
+                parsed_arch = self.arch
+            st["arch"] = parsed_arch
+            already_parsed["arch"] = parsed_arch
+
+            parsed_spec, _ = super()._parse_expressions(
+                st,
+                already_parsed=already_parsed,
+            )
+            parsed_spec._parsed = True
+            return parsed_spec
 
     def calculate_component_area_energy_latency_leak(
         self,
@@ -91,6 +143,7 @@ class Spec(ParsableModel):
         energy: bool = True,
         latency: bool = True,
         leak: bool = True,
+        einsum_name: EinsumName | None = None,
     ) -> "Spec":
         """
         Populates per-component area, energy, latency, and/or leak power. For each
@@ -100,6 +153,10 @@ class Spec(ParsableModel):
         ``arguments.latency`` fields. Extends the ``component_modeling_log`` field with
         log messages. Also populates the ``component_model`` attribute for each
         component if not already set.
+
+        Some architectures' attributes may depend on the workload. In that case, an
+        Einsum name can be provided to populate those symbols with the Einsum's symbols
+        from the workload.
 
         Parameters
         ----------
@@ -111,6 +168,9 @@ class Spec(ParsableModel):
             Whether to compute and populate latency entries.
         leak : bool, optional
             Whether to compute and populate leak power entries.
+        einsum_name : EinsumName | None, optional
+            Optional Einsum name to populate symbols with the Einsum's symbols from the
+            workload. If None, no symbols are populated from the workload.
         """
         if not area and not energy and not latency and not leak:
             return self
@@ -121,10 +181,20 @@ class Spec(ParsableModel):
         )
 
         components = set()
-        if not getattr(self, "_parsed", False):
-            self, _ = self._parse_expressions()
-        else:
-            self = self.copy()
+        try:
+            if not getattr(self, "_parsed", False):
+                self = self._spec_parse_expressions(einsum_name=einsum_name)
+            else:
+                self = self.copy()
+        except ParseError as e:
+            if "arch" in e.message:
+                e.add_note(
+                    "If this error seems to be caused by a missing symbol that depends on \n"
+                    "the workload, you may need to provide an appropriate einsum_name to \n"
+                    "calculate_component_area_energy_latency_leak. This may occur if the \n"
+                    "architecture depends on something in the workload.\n"
+                )
+            raise
 
         for arch in self._get_flattened_architecture():
             fanout = 1
@@ -159,12 +229,14 @@ class Spec(ParsableModel):
         return self
 
     def _get_flattened_architecture(
-        self, compute_node: str | Compute | None = None
+        self,
+        compute_node: str | Compute | None = None,
     ) -> list[list[Leaf]] | list[Leaf]:
         """
         Return the architecture as paths of ``Leaf`` instances from the highest-level
         node to each ``Compute`` node. Parses arithmetic expressions in the
-        architecture for each one.
+        architecture for each one. If a symbol table is provided, it will be used to
+        parse the expressions.
 
         Parameters
         ----------
@@ -206,7 +278,7 @@ class Spec(ParsableModel):
             ]
 
         for c in compute_nodes:
-            found.append(self.arch._flatten(self.variables, c))
+            found.append(self.arch._flatten(c))
             if found[-1][-1].name != c:
                 raise ParseError(f"Compute node {c} not found in architecture")
 

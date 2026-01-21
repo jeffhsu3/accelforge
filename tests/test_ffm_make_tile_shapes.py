@@ -23,7 +23,7 @@ class TestTileShapeExploration(unittest.TestCase):
 
         mapping = Mapping.from_yaml(PARENT_DIR / "conv_sym.mapping.yaml")
 
-        flattened_arch = spec.get_flattened_architecture()
+        flattened_arch = spec._get_flattened_architecture()
         memories_track_all = [
             m.name for m in flattened_arch if isinstance(m, arch.Memory)
         ]

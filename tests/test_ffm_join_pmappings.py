@@ -21,7 +21,7 @@ class TestPreJoin(unittest.TestCase):
         config_names = ["snowcat.arch", "mha_full.workload", "mha.renames"]
         paths = [PARENT_DIR / f"{config_name}.yaml" for config_name in config_names]
         spec = Spec.from_yaml(*paths)
-        flattened_arch = spec.get_flattened_architecture()
+        flattened_arch = spec._get_flattened_architecture()
 
         pmapping_cache = make_pmapping_pickle_cache(config_names)
         pmapping_groups, decompress_data = pmapping_cache.get(
@@ -54,7 +54,7 @@ class TestJoin(unittest.TestCase):
             PARENT_DIR / "mha.renames.yaml",
         )
 
-        flattened_arch = spec.get_flattened_architecture()
+        flattened_arch = spec._get_flattened_architecture()
         pmapping_groups, decompress_data = make_pmappings(spec, flattened_arch)
         mappings = join_pmappings(
             pmapping_groups, spec, flattened_arch, drop_valid_reservations=False
@@ -64,7 +64,7 @@ class TestJoin(unittest.TestCase):
         config_names = ["snowcat.arch", "mha_full.workload", "mha.renames"]
         paths = [PARENT_DIR / f"{config_name}.yaml" for config_name in config_names]
         spec = Spec.from_yaml(*paths)
-        flattened_arch = spec.get_flattened_architecture()
+        flattened_arch = spec._get_flattened_architecture()
 
         pmapping_cache = make_pmapping_pickle_cache(config_names)
         pmapping_groups, decompress_data = pmapping_cache.get(
@@ -77,7 +77,7 @@ class TestJoin(unittest.TestCase):
         config_names = ["snowcat.arch", "mha_full.workload", "mha.renames"]
         paths = [PARENT_DIR / f"{config_name}.yaml" for config_name in config_names]
         spec = Spec.from_yaml(*paths)
-        flattened_arch = spec.get_flattened_architecture()
+        flattened_arch = spec._get_flattened_architecture()
 
         pmapping_cache = make_pmapping_pickle_cache(config_names)
         pmapping_groups, decompress_data = pmapping_cache.get(
@@ -96,7 +96,7 @@ class TestJoin(unittest.TestCase):
         ]
         paths = [PARENT_DIR / f"{config_name}.yaml" for config_name in config_names]
         spec = Spec.from_yaml(*paths)
-        flattened_arch = spec.get_flattened_architecture()
+        flattened_arch = spec._get_flattened_architecture()
 
         pmapping_cache = make_pmapping_pickle_cache(config_names)
         pmapping_groups, decompress_data = pmapping_cache.get(

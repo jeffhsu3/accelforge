@@ -3,8 +3,10 @@ from math import prod
 
 from typing import Callable, Optional
 import uuid
+import copy
 
 from joblib import delayed
+from tqdm import tqdm
 
 
 from fastfusion.frontend import arch
@@ -70,47 +72,56 @@ def get_per_tensor_size(spec: Spec) -> dict[TensorName, int]:
 
 
 def get_jobs(
-    spec: Spec,
-    flattened_arches: list[list[arch.Leaf]],
+    spec_parsed_non_arch: Spec,
     metrics: Metrics,
     einsum_names: list[EinsumName],
     fail_if_no_pmappings_for_einsum: bool,
-    einsum2symbol_table: dict[EinsumName, SymbolTable],
-    tensor2bits_per_value: dict[TensorName, int],
 ) -> dict[EinsumName, dict[Compatibility, SameCompatibilityJobs]]:
+
+    spec = spec_parsed_non_arch
 
     einsum2jobs = {}
     fusable_tensors = spec.workload.tensor_names_used_in_multiple_einsums
     rank_variable_bounds = get_rank_variable_bounds_for_all_einsums(spec)
 
-    def make_jobs_for_einsum(einsum_name: EinsumName, flattened_arch: list[arch.Leaf]):
-        workload_einsum = spec.workload.einsums[einsum_name]
-        # Create jobs for each Einsum
-        jobs = {}
-        job = Job(
-            spec=spec,
+    einsum2spec: dict[EinsumName, Spec] = {}
+    s = f"Getting energy, latency, and leak power for components running "
+    pbar = tqdm(einsum_names, desc=s)
+    for einsum_name in pbar:
+        pbar.set_description(s + einsum_name)
+        einsum2spec[einsum_name] = spec._spec_parse_expressions(
             einsum_name=einsum_name,
-            metrics=metrics,
-            rank_variable_bounds=rank_variable_bounds,
-            flattened_arch=flattened_arch,
-            job_id=uuid.uuid4(),
-            fusable_tensors=fusable_tensors & workload_einsum.tensor_names,
-            symbol_table=einsum2symbol_table[einsum_name],
-            bits_per_value=tensor2bits_per_value,
+            _parse_arch=True,
+            _parse_non_arch=False,
+        ).calculate_component_area_energy_latency_leak(
+            einsum_name=einsum_name,
+            area=False,
         )
-        for j in make_pmapping_templates(job):
-            jobs.setdefault(j.compatibility, SameCompatibilityJobs()).append(j)
+        einsum2spec[einsum_name] = _memmap_read(einsum2spec[einsum_name])
+
+    def make_jobs_for_einsum(einsum_name: EinsumName, spec: Spec):
+        jobs = {}
+        workload_einsum = spec.workload.einsums[einsum_name]
+        for flattened_arch in spec._get_flattened_architecture():
+            # Create jobs for each Einsum
+            job = Job(
+                spec=spec,
+                einsum_name=einsum_name,
+                metrics=metrics,
+                rank_variable_bounds=rank_variable_bounds,
+                flattened_arch=_memmap_read(flattened_arch),
+                job_id=uuid.uuid4(),
+                fusable_tensors=fusable_tensors & workload_einsum.tensor_names,
+            )
+            for j in make_pmapping_templates(job):
+                jobs.setdefault(j.compatibility, SameCompatibilityJobs()).append(j)
 
         return einsum_name, jobs
 
-    spec = _memmap_read(spec)
-    flattened_arches = [_memmap_read(f) for f in flattened_arches]
-
     for einsum_name, jobs in parallel(
         [
-            delayed(make_jobs_for_einsum)(einsum_name, flattened_arch)
-            for einsum_name in einsum_names
-            for flattened_arch in flattened_arches
+            delayed(make_jobs_for_einsum)(einsum_name, spec)
+            for einsum_name, spec in einsum2spec.items()
         ],
         pbar="Generating jobs",
         return_as="generator",
@@ -150,33 +161,35 @@ def get_jobs(
 
 
 def get_memory_to_size(
-    flattened_arches: list[list[arch.Leaf]],
+    jobs: list[Job],
 ) -> dict[str, tuple[arch.Memory, int]]:
-    result = {}
-    for flattened_arch in flattened_arches:
-        for l in flattened_arch:
-            if not isinstance(l, arch.Memory):
-                continue
-            size = l.attributes.size
-            result.setdefault(l.name, (l, size))
-            if result[l.name][1] != size:
+    resource2capacity = {}
+    who_set = {}
+    for job in jobs:
+        memories = [m for m in job.flattened_arch if isinstance(m, arch.Memory)]
+        for m in memories:
+            resource2capacity.setdefault(m.name, m.attributes.size)
+            who_set.setdefault(m.name, job.einsum_name)
+            if resource2capacity[m.name] != m.attributes.size:
                 raise ValueError(
-                    f"Memory {l.name} has different sizes in different flattened "
-                    f"architectures: {result[l.name]} and {size}. Size may not depend "
-                    f"on which compute node is used."
+                    f"Memory {m.name} has different sizes depending on which Einsum "
+                    f"is being mapped. Memory sizes should not depend on which Einsum "
+                    f"is being mapped. Einsum {who_set[m.name]} set the size to "
+                    f"{resource2capacity[m.name]}, but Einsum {job.einsum_name} set "
+                    f"the size to {m.attributes.size}."
                 )
-    return result
+            resource2capacity[m.name] = m.attributes.size
+    return resource2capacity
 
 
 def get_memories_to_track(
     spec: Spec,
-    flattened_arches: list[list[arch.Leaf]],
     jobs: list[Job],
     metrics: Metrics,
     can_combine_multiple_runs: bool,
 ) -> tuple[list[str], list[str]]:
 
-    memory_to_size = get_memory_to_size(flattened_arches)
+    memory_to_size = get_memory_to_size(jobs)
     memories_track_all = list(memory_to_size.keys())
     memories_track_pmappings_only = []
     ignored_resources = set()
@@ -212,12 +225,14 @@ def get_memories_to_track(
 
     # If the memory is big enough to hold all the tensors then we don't need to consider
     # it
-    max_bits_per_value = max(max(j.bits_per_value.values()) for j in jobs)
-    for m in list(memories_track_all):
-        memory, size = memory_to_size[m]
-        if size >= total_tensor_sizes * max_bits_per_value * max(
-            memory.attributes.bits_per_value_scale.values(), default=1
-        ):
+    max_bits_per_value = max(t.bits_per_value for e in spec.workload.einsums for t in e.tensor_accesses)
+    for m, size in memory_to_size.items():
+        max_bits_per_value_scale = 0
+        for job in jobs:
+            mem = job.spec.arch.find(m)
+            max_bits_per_value_scale = max(max_bits_per_value_scale, max(mem.attributes.bits_per_value_scale.values()))
+
+        if size >= total_tensor_sizes * max_bits_per_value * max_bits_per_value_scale:
             memories_track_all.remove(m)
             logging.info(
                 f"Not tracking memory {m}. It is big enough to hold "
@@ -251,10 +266,7 @@ def get_memories_to_track(
 
 def make_pmappings(
     spec: Spec,
-    flattened_arches: list[list[arch.Leaf]],
     can_combine_multiple_runs: bool,
-    einsum2symbol_table: dict[EinsumName, SymbolTable],
-    tensor2bits_per_value: dict[TensorName, int],
     metrics: Metrics = Metrics.ENERGY | Metrics.LATENCY,
     einsum_names: Optional[list[EinsumName]] = None,
     fail_if_no_pmappings_for_einsum: bool | None = None,
@@ -266,24 +278,28 @@ def make_pmappings(
     """
     Explores pmapspace of `einsum_names` (default: all Einsums in workload).
     """
+    spec = copy.deepcopy(spec)
+
     if einsum_names is None:
         einsum_names = spec.workload.einsum_names
 
     if fail_if_no_pmappings_for_einsum is None:
         fail_if_no_pmappings_for_einsum = not can_combine_multiple_runs
 
+    spec_parsed_non_arch = spec._spec_parse_expressions(
+        _parse_arch=False,
+        _parse_non_arch=True,
+    )
+
     einsum2jobs = {}
     new_einsum2jobs = get_jobs(
-        spec,
-        flattened_arches,
+        spec_parsed_non_arch,
         metrics,
         einsum_names,
         fail_if_no_pmappings_for_einsum,
-        einsum2symbol_table,
-        tensor2bits_per_value,
     )
     _fill_jobs_with_memories_to_track(
-        new_einsum2jobs, spec, flattened_arches, metrics, can_combine_multiple_runs
+        new_einsum2jobs, spec_parsed_non_arch, metrics, can_combine_multiple_runs
     )
     for einsum_name, jobs in new_einsum2jobs.items():
         einsum2jobs.setdefault(einsum_name, {})
@@ -307,7 +323,7 @@ def make_pmappings(
     # random.shuffle(calls)
 
     pmapping_objects = {}
-    pmapping_groups = {einsum_name: [] for einsum_name in spec.workload.einsum_names}
+    pmapping_groups = {einsum_name: [] for einsum_name in spec_parsed_non_arch.workload.einsum_names}
     return_jobs = {}
     for (
         einsum_name,
@@ -381,7 +397,6 @@ def _allocate_jobs(einsum2jobs):
 def _fill_jobs_with_memories_to_track(
     einsum2jobs,
     spec,
-    flattened_arches,
     metrics,
     can_combine_multiple_runs,
 ):
@@ -394,7 +409,6 @@ def _fill_jobs_with_memories_to_track(
     memories_track_all, memories_track_pmappings_only, ignored_resources = (
         get_memories_to_track(
             spec,
-            flattened_arches,
             jobs_flattened,
             metrics,
             can_combine_multiple_runs,

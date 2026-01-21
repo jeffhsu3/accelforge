@@ -29,6 +29,7 @@ from typing import (
     Optional,
     Type,
     TypeAlias,
+    Union,
     get_args,
     get_origin,
     TYPE_CHECKING,
@@ -39,9 +40,14 @@ from fastfusion.util import _yaml
 from fastfusion.util._parse_expressions import (
     parse_expression,
     ParseError,
-    RawString,
-    is_raw_string,
+    LiteralString,
+    is_literal_string,
 )
+
+# Import will be resolved at runtime to avoid circular dependency
+TYPE_CHECKING_RUNTIME = False
+if TYPE_CHECKING or TYPE_CHECKING_RUNTIME:
+    from fastfusion.util._setexpressions import InvertibleSet, eval_set_expression
 
 T = TypeVar("T")
 M = TypeVar("M", bound=BaseModel)
@@ -199,13 +205,15 @@ class ParsesTo(Generic[T]):
             c: str  # Regular string, no parsing
     """
 
+    _class_name: str = "ParsesTo"
+
     def __init__(self, value: str):
         self._value = value
-        self._is_raw_string = is_raw_string(value)
+        self._is_literal_string = is_literal_string(value)
         self._type = T
 
         assert self._type != str, (
-            f"ParsesTo[str] is not allowed. Use str directly instead."
+            f"{self._class_name}[str] is not allowed. Use str directly instead."
             f"If something should just be a string, no expressions are allowed. "
             f"This is so the users don't have to quote-wrap all strings."
         )
@@ -214,7 +222,7 @@ class ParsesTo(Generic[T]):
         return str(self._value)
 
     def __repr__(self) -> str:
-        return f"ParsesTo({repr(self._value)})"
+        return f"{self._class_name}({repr(self._value)})"
 
     @classmethod
     def __get_pydantic_core_schema__(
@@ -224,7 +232,8 @@ class ParsesTo(Generic[T]):
         type_args = get_args(source_type)
         if not type_args:
             raise TypeError(
-                f"ParsesTo must be used with a type parameter, e.g. ParsesTo[int]"
+                f"{cls._class_name} must be used with a type parameter, "
+                f"e.g. {cls._class_name}[int]"
             )
         target_type = type_args[0]
 
@@ -232,8 +241,8 @@ class ParsesTo(Generic[T]):
         target_schema = handler(target_type)
 
         def validate_raw_string(value):
-            if isinstance(value, str) and is_raw_string(value):
-                return RawString(value)
+            if isinstance(value, str) and is_literal_string(value):
+                return LiteralString(value)
             # raise ValueError("Not a raw string")
 
         # Create a union schema that either validates as raw string or normal validation
@@ -260,12 +269,71 @@ class ParsesTo(Generic[T]):
         )
 
 
+class TryParseTo(ParsesTo, Generic[T]):
+    """
+    A type that tries to parse to the specified type T. If the parsing fails, the value
+    is returned as a string.
+    """
+
+    _class_name: str = "TryParseTo"
+
+    def __init__(self, value: str):
+        super().__init__(value)
+
+    @classmethod
+    def __get_pydantic_core_schema__(
+        cls, source_type: Any, handler: Callable
+    ) -> CoreSchema:
+        # Get the type parameter T from ParsesTo[T]
+        type_args = get_args(source_type)
+        if not type_args:
+            raise TypeError(
+                f"{cls._class_name} must be used with a type parameter, "
+                f"e.g. {cls._class_name}[int]"
+            )
+        target_type = type_args[0]
+
+        # Get the schema for the target type
+        target_schema = handler(target_type)
+
+        def validate_raw_string(value):
+            if isinstance(value, str) and is_literal_string(value):
+                return LiteralString(value)
+            # raise ValueError("Not a raw string")
+
+        # Create a union schema that either validates as raw string or normal validation
+        return union_schema(
+            [
+                # First option: validate as raw string
+                chain_schema(
+                    [
+                        no_info_plain_validator_function(validate_raw_string),
+                        str_schema(),
+                        # target_schema
+                    ]
+                ),
+                # Second option: normal validation (string then target type)
+                chain_schema(
+                    [
+                        str_schema(),
+                        # target_schema
+                    ]
+                ),
+                # Third option: direct target type validation
+                target_schema,
+                # Fourth option: return the value as a string
+                str_schema(),
+            ]
+        )
+
+
 if TYPE_CHECKING:
     try:
         from typing_extensions import TypeAliasType
 
         _T_alias = TypeVar("_T_alias")
         ParsesTo = TypeAliasType("ParsesTo", _T_alias, type_params=(_T_alias,))
+        TryParseTo = TypeAliasType("TryParseTo", _T_alias, type_params=(_T_alias,))
     except Exception:
         # Best-effort fallback for type checkers that don't support TypeAliasType
         pass
@@ -299,28 +367,43 @@ class Parsable(Generic[M]):
         order: tuple[str, ...],
         post_calls: tuple[_PostCall[T], ...],
         use_setattr: bool = True,
+        already_parsed: dict[str, Any] | None = None,
         **kwargs,
     ) -> tuple["Parsable", dict[str, Any]]:
         self._parsed = True
+
+        if already_parsed is None:
+            already_parsed = {}
+
+        fields = [f for f in self.get_fields() if f not in already_parsed]
+
         field_order = _get_parsable_field_order(
             order,
             [
                 (
-                    field,
-                    getattr(self, field) if use_setattr else self[field],
-                    self.get_validator(field),
+                    f,
+                    getattr(self, f) if use_setattr else self[f],
+                    self.get_validator(f),
                 )
-                for field in self.get_fields()
+                for f in fields
             ],
         )
         prev_symbol_table = symbol_table.copy()
-        for k, v in symbol_table.items():
-            if isinstance(k, str) and k.startswith("global_") and v is None:
-                raise ParseError(
-                    f"Global variable {k} is required. Please set it in "
-                    f"either the attributes or an outer scope. Try setting it with "
-                    f"Spec.variables.{k} = [value]."
-                )
+        # for k, v in symbol_table.items():
+        #     if isinstance(k, str) and k.startswith("global_") and v is None:
+        #         raise ParseError(
+        #             f"Global variable {k} is required. Please set it in "
+        #             f"either the attributes or an outer scope. Try setting it with "
+        #             f"Spec.variables.{k} = [value]."
+        #         )
+
+        for field, value in already_parsed.items():
+            symbol_table[field] = value
+            if use_setattr:
+                setattr(self, field, value)
+            else:
+                self[field] = value
+            symbol_table[field] = value
 
         for field in field_order:
             value = getattr(self, field) if use_setattr else self[field]
@@ -378,13 +461,6 @@ class _FromYAMLAble:
             A dict containing the combined dictionaries.
         """
 
-        """Loads a dictionary from a list of yaml files. Each yaml file
-        should contain a dictionary. Dictionaries are in the given order.
-        Keyword arguments are also added to the dictionary.
-        !@param files A list of yaml files to load.
-        !@param jinja_parse_data A dictionary of data to use when parsing
-        !@param kwargs Extra keyword arguments to add to the dictionary.
-        """
         allfiles = []
         jinja_parse_data = jinja_parse_data or {}
         for f in files:
@@ -470,44 +546,93 @@ class _FromYAMLAble:
         return c
 
 
-def _parse_field(field, value, validator, symbol_table, parent, **kwargs):
-    try:
-        # Get the origin type (ParsesTo) and its arguments
-        origin = get_origin(validator)
-        if origin is ParsesTo:
-            if value == "REQUIRED":
-                if field in symbol_table:
-                    parsed = copy.deepcopy(symbol_table[field])
-                else:
-                    raise ParseError(
-                        f"{field} is required. Please set it in "
-                        f"either the attributes or an outer scope."
-                    )
-            elif is_raw_string(value):
-                parsed = RawString(value)
-            else:
-                parsed = copy.deepcopy(parse_expression(value, symbol_table))
+def _parse_field(
+        field,
+        value,
+        validator,
+        symbol_table,
+        parent,
+        must_parse_try_parse_to: bool = False,
+        must_copy: bool = True,
+        **kwargs
+):
+    from fastfusion.util._setexpressions import InvertibleSet, eval_set_expression
 
-            # Get the target type from the validator
-            target_type = get_args(validator)[0]
-            target_any = (
-                target_type is Any
-                or isinstance(target_type, tuple)
-                and Any in target_type
-            )
-            if not target_any and not isinstance(parsed, target_type):
-                raise ParseError(
-                    f'{value} parsed to "{parsed}" with type {type(parsed).__name__}.'
-                    f" Expected {target_type}.",
+    try:
+        # Get the origin type (ParsesTo or TryParseTo) and its arguments
+        origin = get_origin(validator)
+        if origin is ParsesTo or origin is TryParseTo:
+            try:
+                target_type = get_args(validator)[0]
+                parsed = value
+                if isinstance(target_type, tuple) and any(issubclass(t, InvertibleSet) for t in target_type):
+                    raise NotImplementedError(
+                        f"InvertibleSet must be used directly, not as a part of a "
+                        f"union, else this function must be updated."
+                    )
+
+                # Check if validator is for InvertibleSet
+                if issubclass(target_type, InvertibleSet):
+                    # Get the target type from the validator
+
+                    # If the given type is a set, replace it with a string that'll parse
+                    if isinstance(value, set):
+                        value = " | ".join(str(v) for v in value)
+
+                    type_args = target_type.__pydantic_generic_metadata__['args']
+                    assert len(type_args) == 1, "Expected exactly one type argument"
+                    expected_element_type = type_args[0]
+
+                    try:
+                        # eval_set_expression does the type checking for us
+                        return eval_set_expression(
+                            value,
+                            symbol_table,
+                            expected_space=expected_element_type,
+                            location=field,
+                        )
+                    except ParseError as e:
+                        if origin is TryParseTo and not must_parse_try_parse_to:
+                            return LiteralString(value)
+                        raise
+                elif is_literal_string(value):
+                    parsed = LiteralString(value)
+                else:
+                    parsed = parse_expression(value, symbol_table)
+
+                if must_copy and id(parsed) == id(value):
+                    parsed = copy.deepcopy(parsed)
+
+                # Get the target type from the validator
+                target_any = (
+                    target_type is Any
+                    or isinstance(target_type, tuple)
+                    and Any in target_type
                 )
-            return parsed
-        elif isinstance(value, Parsable):
-            parsed, _ = value._parse_expressions(symbol_table=symbol_table, **kwargs)
-            return parsed
-        elif isinstance(value, str):
-            return RawString(value)
+                if not target_any and not isinstance(parsed, target_type):
+                    raise ParseError(
+                        f'{value} parsed to "{parsed}" with type {type(parsed).__name__}.'
+                        f" Expected {target_type}.",
+                    )
+            except ParseError as e:
+                if origin is TryParseTo and not must_parse_try_parse_to:
+                    return LiteralString(value)
+                raise
         else:
-            return value
+            parsed = value
+
+        if isinstance(parsed, Parsable):
+            parsed, _ = parsed._parse_expressions(
+                symbol_table=symbol_table,
+                must_copy=must_copy,
+                must_parse_try_parse_to=must_parse_try_parse_to,
+                **kwargs
+            )
+            return parsed
+        elif isinstance(parsed, str):
+            return LiteralString(parsed)
+        else:
+            return parsed
     except ParseError as e:
         try:
             e.add_field(parent[field].name)
@@ -530,7 +655,7 @@ def _get_parsable_field_order(
         if get_origin(validator) is not ParsesTo:
             order.append(field)
             continue
-        if not isinstance(value, str) or is_raw_string(value):
+        if not isinstance(value, str) or is_literal_string(value):
             order.append(field)
             continue
         to_sort.append((field, value))
@@ -616,8 +741,19 @@ class _ModelWithUnderscoreFields(BaseModel, _FromYAMLAble, Mapping):
     def model_dump_non_none(self, **kwargs):
         return {k: v for k, v in self.model_dump(**kwargs).items() if v is not None}
 
+    def __contains__(self, key: str) -> bool:
+        try:
+            self[key]
+            return True
+        except KeyError:
+            return False
+
     def __getitem__(self, key: str) -> Any:
-        return getattr(self, key)
+        try:
+            return getattr(self, key)
+        except AttributeError:
+            pass
+        raise KeyError(f"Key {key} not found in {self.__class__.__name__}")
 
     def __setitem__(self, key: str, value: Any):
         setattr(self, key, value)
@@ -673,15 +809,20 @@ class ParsableModel(_ModelWithUnderscoreFields, Parsable["ParsableModel"]):
         symbol_table: dict[str, Any] = None,
         order: tuple[str, ...] = (),
         post_calls: tuple[_PostCall[T], ...] = (),
+        already_parsed: dict[str, Any] | None = None,
         **kwargs,
     ) -> tuple[Self, dict[str, Any]]:
         new = self.model_copy()
         symbol_table = symbol_table.copy() if symbol_table is not None else {}
         kwargs = dict(kwargs)
         return new._parse_expressions_final(
-            symbol_table, order, post_calls, use_setattr=True, **kwargs
+            symbol_table,
+            order,
+            post_calls,
+            use_setattr=True,
+            already_parsed=already_parsed,
+            **kwargs,
         )
-
 
 class NonParsableModel(_ModelWithUnderscoreFields):
     """A model that will not parse any fields."""
@@ -707,13 +848,19 @@ class ParsableList(list[T], Parsable["ParsableList[T]"], Generic[T]):
         symbol_table: dict[str, Any] = None,
         order: tuple[str, ...] = (),
         post_calls: tuple[_PostCall[T], ...] = (),
+        already_parsed: dict[str, Any] | None = None,
         **kwargs,
     ) -> tuple["ParsableList[T]", dict[str, Any]]:
         new = ParsableList[T](x for x in self)
         symbol_table = symbol_table.copy() if symbol_table is not None else {}
         order = order + tuple(x for x in range(len(new)) if x not in order)
         return new._parse_expressions_final(
-            symbol_table, order, post_calls, use_setattr=False, **kwargs
+            symbol_table,
+            order,
+            post_calls,
+            use_setattr=False,
+            already_parsed=already_parsed,
+            **kwargs,
         )
 
     def get_fields(self) -> list[str]:
@@ -763,7 +910,20 @@ class ParsableList(list[T], Parsable["ParsableList[T]"], Generic[T]):
                     found = elem
             if found is not None:
                 return found
-        raise KeyError(f'No element with name "{key}" found.')
+
+        fields = self.get_fields()
+        fields += [
+            (
+                x.name
+                if hasattr(x, "name")
+                else x.get("name", None) if isinstance(x, dict) else None
+            )
+            for x in self
+        ]
+        fields = sorted(str(x) for x in fields if x is not None)
+        raise KeyError(
+            f'No element with name "{key}" found. Available names: {', '.join(fields)}'
+        )
 
     def __contains__(self, item: Any) -> bool:
         try:
@@ -771,6 +931,9 @@ class ParsableList(list[T], Parsable["ParsableList[T]"], Generic[T]):
             return True
         except KeyError:
             return super().__contains__(item)
+
+    def __copy__(self) -> Self:
+        return type(self)(x for x in self)
 
 
 class ParsableDict(
@@ -792,12 +955,18 @@ class ParsableDict(
         symbol_table: dict[str, Any] = None,
         order: tuple[str, ...] = (),
         post_calls: tuple[_PostCall[V], ...] = (),
+        already_parsed: dict[str, Any] | None = None,
         **kwargs,
     ) -> tuple["ParsableDict[K, V]", dict[str, Any]]:
         new = ParsableDict[K, V](self)
         symbol_table = symbol_table.copy() if symbol_table is not None else {}
         return new._parse_expressions_final(
-            symbol_table, order, post_calls, use_setattr=False, **kwargs
+            symbol_table,
+            order,
+            post_calls,
+            use_setattr=False,
+            already_parsed=already_parsed,
+            **kwargs,
         )
 
     @classmethod
@@ -824,6 +993,8 @@ class ParsableDict(
             ]
         )
 
+    def __copy__(self) -> Self:
+        return type(self)({k: v for k, v in self.items()})
 
 class ParseExtras(ParsableModel):
     """

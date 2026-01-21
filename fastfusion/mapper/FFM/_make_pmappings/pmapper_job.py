@@ -12,6 +12,7 @@ from fastfusion.frontend.mapping import (
 from fastfusion.frontend.spec import Spec
 from fastfusion.frontend._workload_isl._symbolic import Relevant, PartiallyRelevant
 from fastfusion.frontend.workload import (
+    Einsum,
     EinsumName,
     RankVariable,
     SymbolTable,
@@ -85,8 +86,11 @@ class Job:
 
     _update_compatibility_with_tile_shapes_args: dict[str, Any] | None = None
 
-    bits_per_value: dict[TensorName, int] | None = None
     symbol_table: SymbolTable | None = None
+
+    @property
+    def einsum(self) -> Einsum:
+        return self.spec.workload.einsums[self.einsum_name]
 
     @property
     def compatibility(self) -> Compatibility:

@@ -33,6 +33,7 @@ from fastfusion.frontend.workload import (
     RankVariable,
     Workload,
     isl_expression_has_variable,
+    SymbolTable,
 )
 from fastfusion.mapper.FFM._make_pmappings.make_pmapping_templates.make_storage_order import (
     get_tensor_choices,
@@ -285,7 +286,7 @@ def iterate_mappings_no_constraints(
     flattened_arch: list[arch.Leaf],
     rank_variable_bounds: dict[RankVariable, int],
     job: Job,
-):
+) -> Iterator[tuple[Mapping, SymbolTable, arch.Compute, int]]:
     first_memory = None
     for node in flattened_arch:
         if isinstance(node, arch.Memory):
@@ -297,14 +298,16 @@ def iterate_mappings_no_constraints(
     ranks_with_tile_pattern = get_ranks_with_tile_pattern(einsum_name, spec.workload)
 
     einsum = spec.workload.einsums[einsum_name]
-    for mapping, symbol_table in get_tensor_choices(
-        einsum_name, flattened_arch, job.symbol_table, spec, first_memory
+    symbol_table = {r.name: r.source for r in einsum.renames}
+
+    for mapping, symbol_table, compute in get_tensor_choices(
+        einsum_name, flattened_arch, symbol_table, spec, first_memory
     ):
         logging.info(
             "\tGenerated tensor choices: " + ", ".join(m.compact_str() for m in mapping)
         )
         mapping = copy.deepcopy(mapping)
-        for mapping, n_permutations in insert_temporal_loops(
+        for mapping, n_orders in insert_temporal_loops(
             mapping,
             einsum,
             first_memory,
@@ -323,7 +326,7 @@ def iterate_mappings_no_constraints(
             place_missing_temporal_loops(mapping, einsum)
             label_fused_loops(mapping)
             assert_proper_fusion_labeling(mapping)
-            yield mapping, symbol_table, n_permutations
+            yield mapping, symbol_table, compute, n_orders
 
 
 def iterate_mappings_constraints(
@@ -349,7 +352,7 @@ def iterate_mappings_constraints(
             f"{einsum_name}"
         )
 
-        for mapping, symbol_table, n_permutations in iterate_mappings_no_constraints(
+        for mapping, symbol_table, compute, n_orders in iterate_mappings_no_constraints(
             spec,
             einsum_name,
             flattened_arch,
@@ -374,7 +377,7 @@ def iterate_mappings_constraints(
                     Compute(
                         einsum=einsum_name,
                         component=compute_name,
-                        component_object=flattened_arch[-1],
+                        component_object=compute,
                     )
                 )
 
@@ -382,7 +385,7 @@ def iterate_mappings_constraints(
                 constraints.set_loop_indices(mapping)
 
                 mapping = Mapping(nodes=[copy.copy(n) for n in mapping])
-                mapping._n_loop_orders = n_permutations
+                mapping._n_loop_orders = n_orders
                 yield mapping, constraints, symbol_table
                 n_yielded += 1
                 if n_yielded >= spec.mapper.ffm.max_pmapping_templates_per_einsum:
@@ -415,7 +418,7 @@ def parse_flattened_arch(
             key_parsed = eval_set_expression(
                 expression=key,
                 symbol_table=symbol_table,
-                expected_space_name="tensors",
+                expected_space=TensorName,
                 location=f"{location} {key}",
             )
             for k2 in key_parsed:
@@ -452,24 +455,6 @@ def parse_flattened_arch(
                 tensors = {tensors} if isinstance(tensors, str) else set(tensors)
                 tensor_names.update(tensors)
 
-        s = f"{node.name}.attributes.bits_per_value_scale"
-        node.attributes.bits_per_value_scale = parse_tensor2bits(
-            node.attributes.bits_per_value_scale,
-            location=f"{s} for Einsum {job.einsum_name}",
-            symbol_table=symbol_table,
-            extra_error_message=(
-                f"Set {s} either as a dictionary of tensors to bits per value scale, "
-                f"or as a single value that will be used for all tensors."
-            ),
-            tensor_names=tensor_names,
-        )
-        node.spatial = ParsableList(
-            s._parse(
-                symbol_table=symbol_table,
-                location=f"Einsum {job.einsum_name} arch {node.name}.spatial.{s.name}",
-            )
-            for s in node.spatial
-        )
     return flattened_arch
 
 

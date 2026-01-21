@@ -7,6 +7,7 @@ import fastfusion.frontend.arch as arch
 from fastfusion.frontend.mapping import Storage, TensorHolder, ProcessingStage
 from fastfusion.frontend.workload import TensorName, SymbolTable
 
+from fastfusion.util._parse_expressions import ParseError
 from fastfusion.util._setexpressions import InvertibleSet
 
 
@@ -16,6 +17,7 @@ def make_tensor_choices_one_level(
     persistent_tensors: set[TensorName],
     seen_tensors: set[TensorName] = (),
     is_copy_op: bool = False,
+    einsum_name: str = None,
 ) -> Generator[tuple[list[TensorHolder], SymbolTable, set[TensorName]], None, None]:
     """
     Generate combinations of TensorHolder nodes based on keep and bypass
@@ -41,10 +43,23 @@ def make_tensor_choices_one_level(
         raise ValueError(f"Unexpected tensor holder type: {type(node)}")
 
     new_symbol_table = copy.copy(symbol_table)
-    tensor_constraints = node.tensors._parse_keep(symbol_table, f"{node.name}.tensors")
-    must_keep = tensors.to_my_space(tensor_constraints.keep)
-    may_keep = tensors.to_my_space(tensor_constraints.may_keep)
+
+    node = copy.copy(node)
+    try:
+        node.tensors: arch.Tensors = node.tensors._parse_expressions(
+            symbol_table=symbol_table,
+            must_parse_try_parse_to=True,
+            must_copy=False,
+            location=f"arch.{node.name}.tensors"
+        )[0]
+    except ParseError as e:
+        e.add_field(f"Einsum {einsum_name} arch.{node.name}.tensors")
+        raise e
+
+    must_keep = tensors.to_my_space(node.tensors.keep)
+    may_keep = tensors.to_my_space(node.tensors.may_keep)
     may_keep -= must_keep
+
 
     if must_keep - tensors:
         raise KeyError(
@@ -70,7 +85,6 @@ def make_tensor_choices_one_level(
         subset = tensors.to_my_space(set(subset))
         keep_choice = tensors.to_my_space(subset | must_keep)
         # Below line is so users can do MainMemory().tensors() or MainMemory.tensors
-        keep_choice.tensors = keep_choice
         new_symbol_table[node.name] = keep_choice
         new_symbol_table["Above"] |= keep_choice
         new_seen_tensors = seen_tensors | set(keep_choice)
@@ -102,6 +116,7 @@ def make_storage_choices_all_levels(
     persistent_tensors: set[TensorName],
     seen_tensors: set[TensorName] = None,
     is_copy_op: bool = False,
+    einsum_name: str = None,
 ) -> Generator[tuple[dict[str, list[TensorHolder]], SymbolTable], None, None]:
     """
     Generate combinations of TensorHolder nodes based on keep and bypass
@@ -120,6 +135,7 @@ def make_storage_choices_all_levels(
         persistent_tensors=persistent_tensors,
         seen_tensors=seen_tensors,
         is_copy_op=is_copy_op,
+        einsum_name=einsum_name,
     ):
         for subchoices, symbol_table in make_storage_choices_all_levels(
             nodes=nodes[1:],
@@ -127,6 +143,7 @@ def make_storage_choices_all_levels(
             persistent_tensors=persistent_tensors,
             seen_tensors=new_seen_tensors,
             is_copy_op=is_copy_op,
+            einsum_name=einsum_name,
         ):
             yield {**subchoices, nodes[0].name: choice}, symbol_table
 

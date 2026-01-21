@@ -110,7 +110,6 @@ def make_pmappings(
     Returns:
         A MultiEinsumPmappings object.
     """
-
     kwargs = dict(
         spec=spec,
         einsum_names=einsum_names,
@@ -172,48 +171,18 @@ def _make_pmappings(
     einsum_names: list[EinsumName] | None = None,
     can_combine_multiple_runs: bool = False,
 ) -> MultiEinsumPmappings:
-    parsed_spec = spec.calculate_component_area_energy_latency_leak(area=False)
     if einsum_names is None:
         einsum_names = [e.name for e in spec.workload.einsums]
 
-    flattened_arches = parsed_spec._get_flattened_architecture()
-    for i, flattened_arch in enumerate(flattened_arches):
-        logger.info(f"Flattened arch {i} uses compute {flattened_arch[-1].name}")
-
-    einsum2symbol_table = spec.workload.get_constraint_symbol_table(
-        einsum_names, spec.renames
-    )
-    tensor2bits_per_value = spec.workload._get_bits_per_value(einsum2symbol_table)
-    for einsum_name, symbol_table in einsum2symbol_table.items():
-        for tensor in spec.workload.einsums[einsum_name].tensor_names:
-            if tensor not in tensor2bits_per_value:
-                raise ValueError(
-                    f"Tensor {tensor} not found in bits per value for Einsum {einsum_name}. "
-                    f"Bits per value:\n\t"
-                    + "\n\t".join(f"{k}: {v}" for k, v in tensor2bits_per_value.items())
-                )
-            if tensor not in symbol_table:
-                raise ValueError(
-                    f"Tensor {tensor} not found in symbol table for Einsum {einsum_name}. "
-                    f"Symbol table:\n\t"
-                    + "\n\t".join(f"{k}: {v}" for k, v in symbol_table.items())
-                )
-            symbol_table[tensor].bits_per_value = tensor2bits_per_value[tensor]
-
     pmapping_groups, pmapping_objects, einsum2jobs = pmapper.make_pmappings(
-        parsed_spec,
-        flattened_arches,
+        spec,
         metrics=spec.mapper.ffm.metrics,
         einsum_names=einsum_names,
         can_combine_multiple_runs=can_combine_multiple_runs,
-        einsum2symbol_table=einsum2symbol_table,
-        tensor2bits_per_value=tensor2bits_per_value,
     )
-    resource2capacity = {}
-    for flattened_arch in flattened_arches:
-        for l in flattened_arch:
-            if isinstance(l, arch.Memory):
-                resource2capacity[l.name] = l.attributes.size
+
+    jobs_flattened = [j for jobs in einsum2jobs.values() for j in jobs]
+    resource2capacity = pmapper.get_memory_to_size(jobs_flattened)
 
     m = MultiEinsumPmappings(
         pmapping_groups,

@@ -8,4 +8,5 @@ from fastfusion.frontend import workload
 from fastfusion.frontend.spec import Spec, Spec
 from fastfusion.mapper.FFM import Metrics
 from fastfusion.util import set_n_parallel_jobs
+from fastfusion.util import LiteralString
 import fastfusion.mapper as mapper

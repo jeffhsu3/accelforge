@@ -233,7 +233,7 @@ class TestSymbolicLatency(unittest.TestCase):
             ]
         )
         workload = spec.workload
-        architecture = spec.get_flattened_architecture()
+        architecture = spec._get_flattened_architecture()
         mapping = Mapping.from_yaml(Path(__file__).parent / "Q_mapping.yaml")
 
         result = analyze_reuse_and_add_reservations_to_mapping(

@@ -1,7 +1,9 @@
 import copy
-from typing import Annotated, TypeAlias
-from fastfusion.util._basetypes import ParsableList, ParsableModel
+from typing import Annotated, Any, TypeAlias
+from fastfusion.util._basetypes import ParsableList, ParsableModel, ParsesTo, TryParseTo, _PostCall
 from fastfusion._version import assert_version, __version__
+from fastfusion.util._parse_expressions import ParseError
+from fastfusion.util._setexpressions import InvertibleSet
 
 TensorName: TypeAlias = str
 RankVariable: TypeAlias = str
@@ -15,18 +17,30 @@ class Rename(ParsableModel):
     """
 
     name: str
-    """ The name of the thing to be renamed. This is a string representing the new name.
-    """
-    source: str
+    """ The name of the thing to be renamed. This is a string representing the new name."""
+
+    source: TryParseTo[InvertibleSet[TensorName | RankVariable]]
     """ The source of the rename. This is a set expression that can be parsed, yielding
     a set that can be referenced by the new name. """
 
-    expected_count: int | None = None
+    expected_count: ParsesTo[int] | None = None
     """
     The expected count of the source set expression. If this is set, then the source
     expression must resolve to the expected count or an error will be raised. Otherwise,
     any count (including zero for an empty set) is allowed.
     """
+
+    def _parse_expressions(self, symbol_table: dict[str, Any], *args, **kwargs):
+        parsed, symbol_table = super()._parse_expressions(symbol_table, *args, **kwargs)
+        expected_count = parsed.expected_count
+        if expected_count is not None and isinstance(parsed.source, InvertibleSet) and len(parsed.source) != expected_count:
+            parsed, symbol_table = super()._parse_expressions(symbol_table, *args, **kwargs)
+            raise ParseError(
+                f"Expected count is {parsed.expected_count}, but got "
+                f"{len(parsed.source)}: {parsed.source}",
+                source_field="source",
+            )
+        return parsed, symbol_table
 
 
 def rename_list_factory(rename_list: list | dict) -> "RenameList":
@@ -46,7 +60,19 @@ def rename_list_factory(rename_list: list | dict) -> "RenameList":
 class RenameList(ParsableList[Rename]):
     """A list of renames."""
 
-    pass
+    def __dict__(self) -> dict[str, Any]:
+        return {r.name: r.source for r in self}
+
+    def _parse_expressions(self, symbol_table: dict[str, Any], *args, **kwargs):
+
+        cur_symbol_table = symbol_table.copy()
+        class PostCallRenameList(_PostCall[Rename]):
+            def __call__(self, field, value, parsed, symbol_table):
+                symbol_table[parsed.name] = parsed.source
+                return parsed
+
+        new, _ = super()._parse_expressions(cur_symbol_table, *args, **kwargs, post_calls=(PostCallRenameList(),))
+        return new, symbol_table
 
 
 class EinsumRename(ParsableModel):
@@ -83,7 +109,7 @@ class EinsumRename(ParsableModel):
 
 class Renames(ParsableModel):
     # version: Annotated[str, assert_version] = __version__
-    einsums: ParsableList[EinsumRename] = ParsableList()
+    einsums: list[EinsumRename] = list()
     """
     Renames for a workload. The Einsum list is a list of EinsumRename objects, and
     renames will be applied to Einsums whose names match the EinsumRename.name. If an
@@ -97,12 +123,13 @@ class Renames(ParsableModel):
             rename = EinsumRename(name=einsum_name)
         else:
             rename = copy.deepcopy(self.einsums[einsum_name])
-        if "default" in self.einsums:
-            default = self.einsums["default"]
-            for tensor_rename in default.tensor_accesses:
+        for einsum in self.einsums:
+            if einsum.name != "default":
+                continue
+            for tensor_rename in einsum.tensor_accesses:
                 if tensor_rename.name not in rename.tensor_accesses:
                     rename.tensor_accesses.append(tensor_rename)
-            for rank_variable_rename in default.rank_variables:
+            for rank_variable_rename in einsum.rank_variables:
                 if rank_variable_rename.name not in rename.rank_variables:
                     rename.rank_variables.append(rank_variable_rename)
         return rename

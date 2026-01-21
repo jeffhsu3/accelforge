@@ -6,7 +6,7 @@ from itertools import product
 import itertools
 import logging
 import re
-from typing import TypeAlias
+from typing import Annotated, Any, TypeAlias
 
 import pydot
 
@@ -455,6 +455,146 @@ class Einsum(ParsableModel):
                 result.add(projection)
         return result
 
+    def _parse_expressions(self, symbol_table: dict[str, Any], *args, **kwargs):
+        workload: Workload = symbol_table["spec_workload"]
+        renames: Renames = symbol_table["spec_renames"]
+
+        # Put together renames symbol table
+        inputs = self.input_tensor_names
+        outputs = self.output_tensor_names
+        all_ = inputs | outputs
+        persistent = {t.name for t in self.tensor_accesses if t.persistent}
+        element_to_child_space = {}
+        all_rank_variables = self.rank_variables
+        for tensor in self.tensor_names:
+            element_to_child_space[tensor] = InvertibleSet(
+                instance=all_rank_variables,
+                full_space=all_rank_variables,
+                space_type=RankVariable,
+            )
+
+        intermediates = {
+            t
+            for t in all_
+            if workload.einsums_with_tensor_as_input(t)
+            and workload.einsums_with_tensor_as_output(t)
+        }
+        shared = {
+            t
+            for t in all_
+            if len(
+                set(e.name for e in workload.einsums_with_tensor_as_input(t))
+                | set(e.name for e in workload.einsums_with_tensor_as_output(t))
+            )
+            > 1
+        }
+
+        kwargs_tensors = dict(
+            full_space=all_,
+            space_type=TensorName,
+            child_access_name="rank_variables",
+            element_to_child_space=element_to_child_space,
+        )
+        kwargs_rank_variables = dict(
+            full_space=all_rank_variables,
+            space_type=RankVariable,
+        )
+        rename_symbol_table = {
+            "All": InvertibleSet(instance=all_, **kwargs_tensors),
+            "Tensors": InvertibleSet(instance=all_, **kwargs_tensors),
+            "Nothing": InvertibleSet(instance=(), **kwargs_tensors),
+            "Inputs": InvertibleSet(instance=inputs, **kwargs_tensors),
+            "Outputs": InvertibleSet(instance=outputs, **kwargs_tensors),
+            "Intermediates": InvertibleSet(instance=intermediates, **kwargs_tensors),
+            "Shared": InvertibleSet(instance=shared, **kwargs_tensors),
+            "Persistent": InvertibleSet(instance=persistent, **kwargs_tensors),
+            **{t: InvertibleSet(instance=(t,), **kwargs_tensors) for t in all_},
+            **{
+                r: InvertibleSet(instance=(r,), **kwargs_rank_variables)
+                for r in all_rank_variables
+            },
+            "Einsum": self.name,
+            "Above": InvertibleSet(instance=(), **kwargs_tensors),
+        }
+        st = {**rename_symbol_table, **symbol_table}
+
+        self: Einsum = self.model_copy()
+        self.renames = RenameList(self.renames)
+
+        # Grab the default renames and update the renames with more values
+        default_renames = renames.get_renames_for_einsum("default")
+        for tensor_rename in default_renames.tensor_accesses:
+            if tensor_rename.name not in self.renames:
+                self.renames.append(tensor_rename)
+        for rank_variable_rename in default_renames.rank_variables:
+            if rank_variable_rename.name not in self.renames:
+                self.renames.append(rank_variable_rename)
+
+        # Parse me!
+        kwargs["must_parse_try_parse_to"] = True
+        try:
+            parsed, _ = super(self.__class__, self)._parse_expressions(
+                st,
+                *args,
+                **kwargs
+            )
+        except:
+            parsed, _ = super(self.__class__, self)._parse_expressions(
+                st,
+                *args,
+                **kwargs
+            )
+
+        # Update the renames with the new values
+        for k, v in rename_symbol_table.items():
+            if k not in parsed.renames:
+                parsed.renames.append(Rename(name=k, source=v))
+
+        # Parse the bits per value
+        bits_per_value = dict()
+        bpv_to_source = dict()
+        for k, v in symbol_table["workload_bits_per_value"].items():
+            bpv = eval_set_expression(
+                expression=k,
+                symbol_table=st,
+                expected_space=TensorName,
+                location=f"(workload global bits_per_value)[{k}]",
+            )
+            for t in bpv:
+                if t in bits_per_value:
+                    raise ParseError(
+                        f"Tensor {t} is specified in multiple entries in the workload "
+                        f"global bits_per_value dictionary.",
+                        source_field=f"({k} AND {bpv_to_source[t]})"
+                    )
+                bits_per_value[t] = v
+                bpv_to_source[t] = k
+
+        for t in parsed.tensor_accesses:
+            if t.bits_per_value is None and t.name not in bits_per_value:
+                raise ParseError(
+                    f"Tensor {t.name} in Einsum does not have a bits per value "
+                    f"specified. Ensure that the tensor is either covered by the set "
+                    f"expressions in the workload.bits_per_value dictionary "
+                    f"or bits_per_value is specified for the tensor access."
+                    f"",
+                    source_field=f"tensor_accesses[{t.name}].bits_per_value"
+                )
+            if t.bits_per_value is None:
+                t.bits_per_value = bits_per_value[t.name]
+
+        for r in parsed.renames:
+            src: InvertibleSet = r.source
+            if isinstance(src, InvertibleSet) and len(src) == 1 and src.space_type == TensorName and next(iter(src)) in bits_per_value:
+                src.bits_per_value = bits_per_value[next(iter(src))]
+
+        for t in parsed.tensor_accesses:
+            assert t.bits_per_value is not None
+
+        return parsed, symbol_table
+
+
+
 
 class Workload(ParsableModel):
     """
@@ -646,7 +786,6 @@ class Workload(ParsableModel):
     @property
     def tensor_names_used_in_multiple_einsums(self) -> set[TensorName]:
         """Returns the names of the tensors that are used in multiple Einsums."""
-        self._check_consistent_persistent()
         return {t for t in self.tensor_names if len(self.einsums_with_tensor(t)) > 1}
 
     @property
@@ -700,10 +839,53 @@ class Workload(ParsableModel):
                     graph.add_edge(edge)
         return _SVGJupyterRender(graph.create_svg(prog="dot").decode("utf-8"))
 
-    def get_constraint_symbol_table(
+    def _parse_expressions(
+            self,
+            symbol_table: dict[str, Any],
+            *args,
+            renames: Renames,
+            **kwargs
+    ):
+        bpv, _ = self.bits_per_value._parse_expressions(symbol_table, *args, **kwargs)
+        new_st = {
+            **symbol_table,
+            "spec_workload": self,
+            "spec_renames": renames,
+            "workload_bits_per_value": bpv,
+        }
+        parsed, new_st = super()._parse_expressions(new_st, *args, **kwargs)
+
+        # Ensure bits_per_value is consistent across Einsums
+        bits_per_value_per_einsum = {}
+        bits_per_value = {}
+        for einsum in self.einsums:
+            cur_bpv = {t.name: t.bits_per_value for t in einsum.tensor_accesses}
+            # Check for consistency across Einsums
+            for prev_einsum, prev_bpv in bits_per_value_per_einsum.items():
+                for t0, t1 in itertools.product(cur_bpv.keys(), prev_bpv.keys()):
+                    b0 = cur_bpv[t0]
+                    b1 = prev_bpv[t1]
+                    if b0 != b1:
+                        raise ValueError(
+                            f"Tensor {t0} has bits per value {b0} in Einsum "
+                            f"{einsum.name} and {b1} in Einsum {prev_einsum}. "
+                            "Bits per value must be consistent across all Einsums that "
+                            "access a tensor."
+                        )
+            bits_per_value_per_einsum[einsum.name] = cur_bpv
+            bits_per_value.update(cur_bpv)
+
+        parsed._check_consistent_persistent()
+
+        return parsed, symbol_table
+
+
+
+
+
+
+    def _get_einsum_symbol_table(
         self,
-        einsum_name: EinsumName | list[EinsumName],
-        renames: Renames | None = None,
     ) -> SymbolTable | dict[EinsumName, SymbolTable]:
         """
         Return a table that maps symbols (e.g., Nothing, All, Inputs, X) to tensors or
@@ -730,140 +912,6 @@ class Workload(ParsableModel):
         ParseError
             If the renames are invalid or any parsing fails.
         """
-        if isinstance(einsum_name, list):
-            return {
-                e: self.get_constraint_symbol_table(e, renames) for e in einsum_name
-            }
-
-        einsum = self.einsums[einsum_name]
-        inputs = einsum.input_tensor_names
-        outputs = einsum.output_tensor_names
-        all_ = inputs | outputs
-        intermediates = {
-            t
-            for t in all_
-            if self.einsums_with_tensor_as_input(t)
-            and self.einsums_with_tensor_as_output(t)
-        }
-        shared = {
-            t
-            for t in all_
-            if len(
-                set(e.name for e in self.einsums_with_tensor_as_input(t))
-                | set(e.name for e in self.einsums_with_tensor_as_output(t))
-            )
-            > 1
-        }
-        persistent = {
-            t for t in all_ if self.einsums[einsum_name].tensor_accesses[t].persistent
-        }
-
-        element_to_child_space = {}
-        all_rank_variables = einsum.rank_variables
-        for tensor in self.tensor_names:
-            if tensor in all_:
-                rank_variables = einsum.tensor_accesses[tensor].rank_variables
-            else:
-                rank_variables = set()
-            element_to_child_space[tensor] = InvertibleSet(
-                instance=rank_variables,
-                full_space=all_rank_variables,
-                space_name="rank_variables",
-            )
-
-        kwargs_tensors = dict(
-            full_space=all_,
-            space_name=f"tensors",
-            child_access_name="rank_variables",
-            element_to_child_space=element_to_child_space,
-        )
-        kwargs_rank_variables = dict(
-            full_space=all_rank_variables,
-            space_name=f"rank_variables",
-        )
-
-        symbol_table = {
-            "All": InvertibleSet(instance=all_, **kwargs_tensors),
-            "Tensors": InvertibleSet(instance=all_, **kwargs_tensors),
-            "Nothing": InvertibleSet(instance=(), **kwargs_tensors),
-            "Inputs": InvertibleSet(instance=inputs, **kwargs_tensors),
-            "Outputs": InvertibleSet(instance=outputs, **kwargs_tensors),
-            "Intermediates": InvertibleSet(instance=intermediates, **kwargs_tensors),
-            "Shared": InvertibleSet(instance=shared, **kwargs_tensors),
-            "Persistent": InvertibleSet(instance=persistent, **kwargs_tensors),
-            **{t: InvertibleSet(instance=(t,), **kwargs_tensors) for t in all_},
-            **{
-                r: InvertibleSet(instance=(r,), **kwargs_rank_variables)
-                for r in all_rank_variables
-            },
-            "Einsum": einsum_name,
-            "Above": InvertibleSet(instance=(), **kwargs_tensors),
-        }
-
-        taken_renames = set()
-        for rename in self.einsums[einsum_name].renames:
-            symbol_table[rename.name] = eval_set_expression(
-                rename.source,
-                symbol_table,
-                None,
-                f"Einsum {einsum_name} renames",
-                rename.expected_count,
-            )
-            taken_renames.add(rename.name)
-
-        if renames is not None:
-            rename = renames.get_renames_for_einsum(einsum_name)
-            for rename_tensor in rename.tensor_accesses:
-                if (name := rename_tensor.name) in taken_renames:
-                    continue
-                source = rename_tensor.source
-                expected_count = rename_tensor.expected_count
-                try:
-                    symbol_table[name] = eval_set_expression(
-                        source,
-                        symbol_table,
-                        "tensors",
-                        f"{name} tensor renames",
-                        expected_count=expected_count,
-                    )
-                except ParseError as e:
-                    e.add_field(einsum_name)
-                    raise
-            for rename_rank_variable in rename.rank_variables:
-                if (name := rename_rank_variable.name) in taken_renames:
-                    continue
-                source = rename_rank_variable.source
-                expected_count = rename_rank_variable.expected_count
-                try:
-                    symbol_table[name] = eval_set_expression(
-                        source,
-                        symbol_table,
-                        "rank_variables",
-                        f"{name} rank variable renames",
-                        expected_count=expected_count,
-                    )
-                except ParseError as e:
-                    e.add_field(einsum_name)
-                    raise
-
-        for rank_variable in einsum.rank_variables:
-            symbol_table[rank_variable] = InvertibleSet(
-                instance=(rank_variable,),
-                space_name="rank_variables",
-                full_space=einsum.rank_variables,
-            )
-
-        for t in self.tensor_names:
-            if t not in symbol_table:
-                symbol_table[t] = InvertibleSet(
-                    instance=(),
-                    space_name="tensors",
-                    full_space=all_,
-                    child_access_name="rank_variables",
-                    element_to_child_space=element_to_child_space,
-                )
-
-        return symbol_table
 
     def _get_ranks_that_share_indexing_rank_variables(self) -> dict[Rank, set[Rank]]:
         """
@@ -926,93 +974,3 @@ class Workload(ParsableModel):
                 tensor_copies.setdefault(input_tensor, set()).add(output_tensor)
                 tensor_copies.setdefault(output_tensor, set()).add(input_tensor)
         return tensor_copies
-
-    def _get_bits_per_value(
-        self,
-        einsum2symbol_table: dict[EinsumName, SymbolTable],
-    ) -> dict[TensorName, int]:
-        """
-        Returns a dictionary of tensor names to bits per value for the given Einsum.
-
-        Parameters
-        ----------
-        einsum2symbol_table : dict[EinsumName, SymbolTable]
-            A dictionary of Einsum names to symbol tables.
-
-        Returns
-        -------
-        dict[TensorName, int]
-            A dictionary of tensor names to bits per value for the given Einsum.
-        """
-        bits_per_value_per_einsum = {}
-        bits_per_value = {}
-
-        for einsum, symbol_table in einsum2symbol_table.items():
-            cur_bpv = {}
-            seen_tensors = set()
-
-            # Parse the global bits per value expressions
-            for set_expression, n_bits in self.bits_per_value.items():
-                tensors = eval_set_expression(
-                    set_expression,
-                    symbol_table,
-                    "tensors",
-                    f"workload.bits_per_value for Einsum {einsum}",
-                )
-                n_bits = parse_expression(
-                    n_bits,
-                    symbol_table,
-                    "bits_per_value",
-                    location=f"workload.bits_per_value[{set_expression}] for Einsum {einsum}",
-                )
-                if tensors & seen_tensors:
-                    raise ValueError(
-                        f"Tensors {sorted(tensors & seen_tensors)} are used in multiple "
-                        f"entries in the workload.bits_per_value dictionary. This "
-                        f"occured while parsing the bits per value for Einsum {einsum}."
-                    )
-                cur_bpv.update({t: n_bits for t in tensors})
-
-            # Override with the local bits per value expressions
-            for tensor_access in self.einsums[einsum].tensor_accesses:
-                if tensor_access.bits_per_value is not None:
-                    cur_bpv[tensor_access.name] = parse_expression(
-                        tensor_access.bits_per_value,
-                        symbol_table,
-                        "bits_per_value",
-                        str(tensor_access.bits_per_value),
-                        location=f"workload.einsums[{einsum}].tensor_accesses[{tensor_access.name}].bits_per_value",
-                    )
-                if tensor_access.name not in cur_bpv:
-                    if tensor_access.name in bits_per_value:
-                        logging.warning(
-                            f"Einsum {einsum} does not specify the bits per value "
-                            f"for tensor {tensor_access.name}, but it is already "
-                            f"specified in another Einsum. Taking the other value."
-                        )
-                    else:
-                        raise ValueError(
-                            f"Tensor {tensor_access.name} in Einsum {einsum} does "
-                            f"not have a bits per value specified. Ensure that the "
-                            f"tensor is either covered by the set expressions in the "
-                            f"workload.bits_per_value dictionary or bits_per_value is "
-                            f"specified for the tensor access."
-                        )
-
-            # Check for consistency across Einsums
-            for prev_einsum, prev_bpv in bits_per_value_per_einsum.items():
-                for t0, t1 in itertools.product(cur_bpv.keys(), prev_bpv.keys()):
-                    b0 = cur_bpv[t0]
-                    b1 = prev_bpv[t1]
-                    if b0 != b1:
-                        raise ValueError(
-                            f"Tensor {t0} has bits per value {b0} in Einsum "
-                            f"{einsum} and {b1} in Einsum {prev_einsum}. Bits per "
-                            "value must be consistent across all Einsums that access "
-                            "the same tensor."
-                        )
-
-            bits_per_value_per_einsum[einsum] = cur_bpv
-            bits_per_value.update(cur_bpv)
-
-        return bits_per_value

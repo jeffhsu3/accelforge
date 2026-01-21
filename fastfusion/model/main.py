@@ -75,7 +75,7 @@ def evaluate_mapping(spec: Spec):
         }
         einsum2jobs[job.einsum_name] = job
 
-        symbol_table = spec.workload.get_constraint_symbol_table(job.einsum_name)
+        symbol_table = spec.workload._get_einsum_symbol_table(job.einsum_name)
         flattened_arch = parse_flattened_arch(
             job,
             symbol_table,

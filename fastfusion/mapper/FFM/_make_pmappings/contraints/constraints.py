@@ -215,18 +215,12 @@ def get_constraints(
         if not isinstance(m, arch.Memory):
             continue
 
-        cur_symbol_table = {**symbol_table, **m.attributes.model_dump_non_none()}
-
         # Ignore if it doesn't hold any tensors
         if (index := first_tensor_holder_index(mapping, m.name)) is None:
             continue
 
-        tensor_constraints = m.tensors._parse_non_keep(
-            cur_symbol_table, f"{m.name}.tensors"
-        )
-
         # Tile shape constraints
-        for c in tensor_constraints.tile_shape:
+        for c in m.tensors.tile_shape:
             nodes = constrained_loops(
                 mapping, c.expression, index - 1, look_behind=True
             )
@@ -235,7 +229,7 @@ def get_constraints(
                 constraint = _TileShapeConstraintLambda(c, new_nodes, exp)
                 constraints.tile_shape_constraints.append(constraint)
 
-        exp = symbol_table[m.name] & tensor_constraints.no_refetch_from_above
+        exp = symbol_table[m.name] & m.tensors.no_refetch_from_above
 
         nodes = []
         for no_refetch in exp.iter_one_element_sets():
@@ -284,7 +278,8 @@ def get_constraints(
         cur_symbol_table = {**symbol_table, **m.attributes.model_dump_non_none()}
 
         for dim in m.spatial:
-            parsed = dim._parse(cur_symbol_table, f"{m.name}.spatial")
+            # parsed = dim._parse(cur_symbol_table, f"{m.name}.spatial")
+            parsed = dim
             dim = dim.name
             loops = [
                 n

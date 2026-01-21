@@ -43,6 +43,9 @@ combination. The following set expressions are supported:
 
 Additionally, the following special variables are available:
 
+- ``Above``: The set of all tensors that are stored in all memory objects above the
+  current memory object in the hierarchy. Includes the same caveats as the previous
+  ``MemoryObject``.
 - ``<Any Tensor Name>``: Resolves to the tensor with the given name. If the tensor is
   not used in the current Einsum, then it resolves to the empty set.
 - ``Einsum``: The name of the currently-processed Einsum. May be used in expressions
@@ -51,7 +54,8 @@ Additionally, the following special variables are available:
 - ``MemoryObject.Tensors``: The set of all tensors that are stored in the memory object.
   Architectures are parsed from the top down, so this will only be available
   ``MemoryObject`` has been parsed. Lower-level memory objects may reference upper-level
-  memory objects, but not vice versa.
+  memory objects, but not vice versa. Additionally, this may not be used for energy and
+  area calculations.
 
 All tensor expressions can be converted into relevant rank variables by accessing
 ``.rank_variables``, which will return the set of all rank variables that index into the

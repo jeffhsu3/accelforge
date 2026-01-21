@@ -27,16 +27,21 @@ class ParseError(Exception):
         s = f"{self.__class__.__name__} in {'.'.join(str(field) for field in self._fields[::-1])}"
         if self.message is not None:
             s += f": {self.message}"
+        if getattr(self, "__notes__", None):
+            s += f"\n\n{'\n\n'.join(self.__notes__)}"
         return s
 
 
-class RawString(str):
+class LiteralString(str):
+    """
+    A string literal that should not be parsed.
+    """
     pass
 
 
-def is_raw_string(value: Any) -> bool:
+def is_literal_string(value: Any) -> bool:
     return isinstance(
-        value, (DoubleQuotedScalarString, SingleQuotedScalarString, RawString)
+        value, (DoubleQuotedScalarString, SingleQuotedScalarString, LiteralString)
     )
 
 
@@ -208,7 +213,7 @@ def parse_expression(
     if expression in symbol_table:
         result = symbol_table[expression]
         if isinstance(result, str):
-            result = RawString(result)
+            result = LiteralString(result)
         return result
 
     FUNCTION_BINDINGS = {}
@@ -221,7 +226,7 @@ def parse_expression(
         v = eval(expression, FUNCTION_BINDINGS, symbol_table)
         infostr = f'Calculated "{expression}" = {v}.'
         if isinstance(v, str):
-            v = RawString(v)
+            v = LiteralString(v)
         if isinstance(v, Callable):
             v = CallableLambda(v, expression)
         success = True
@@ -273,9 +278,9 @@ def parse_expression(
                 + "\n\t".join(f"{k} = {v}" for k, v in possibly_used.items())
             )
         errstr += (
-            f"\n\nIf you meant to enter a string in a YAML file, please wrap the\n"
-            f"expression in single or double quotes. If you meant to enter a raw string,:\n"
-            f"use the RawString class."
+            "\n\nIf you meant to enter a string in a YAML file, please wrap the\n"
+            "expression in single or double quotes. If you meant to enter a raw \n"
+            "string, cast it to a fastfusion.LiteralString object."
         )
         success = False
 

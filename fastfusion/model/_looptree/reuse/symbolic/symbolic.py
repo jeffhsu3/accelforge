@@ -1013,7 +1013,7 @@ def analyze_storage(
             node.component, info.job.flattened_arch
         )
         bits_per_value_scale = component_object.attributes.bits_per_value_scale[tensor]
-        bits_per_value = bits_per_value_scale * info.job.bits_per_value[tensor]
+        bits_per_value = bits_per_value_scale * info.job.einsum.tensor_accesses[tensor].bits_per_value
         read_bits_per_action = component_object.actions[
             "read"
         ].arguments.bits_per_action
@@ -1120,7 +1120,7 @@ def analyze_reservation(node_idx, current_shape, info: AnalysisInfo):
     projection = info.einsum_tensor_to_projection[(einsum_name, tensor)]
     component_object = find_component_object(node.resource, info.job.flattened_arch)
     bits_per_value_scale = component_object.attributes.bits_per_value_scale[tensor]
-    bits_per_value = bits_per_value_scale * info.job.bits_per_value[tensor]
+    bits_per_value = bits_per_value_scale * info.job.einsum.tensor_accesses[tensor].bits_per_value
     stats.max_occupancy = (
         compute_dense_tile_occupancy(projection, current_shape) * bits_per_value
     )

@@ -1,4 +1,5 @@
 import copy
+import itertools
 import math
 from numbers import Number
 import re
@@ -28,6 +29,7 @@ from fastfusion.util._basetypes import (
     ParsableList,
     ParseExtras,
     ParsesTo,
+    TryParseTo,
     _PostCall,
     _get_tag,
 )
@@ -72,15 +74,19 @@ class ArchNodes(ParsableList):
     def __repr__(self):
         return f"{self.__class__.__name__}({super().__repr__()})"
 
-    def _parse_expressions(self, *args, **kwargs):
+    def _parse_expressions(self, symbol_table: dict[str, Any], *args, **kwargs):
         class PostCallArchNode(_PostCall):
             def __call__(self, field, value, parsed, symbol_table):
-                if isinstance(parsed, Container):
-                    symbol_table.update(parsed.attributes)
+                # if isinstance(parsed, Container):
+                #     symbol_table.update(parsed.attributes)
+                symbol_table[parsed.name] = parsed
                 return parsed
 
+        for i, node in enumerate(self):
+            symbol_table[i] = node
+
         return super()._parse_expressions(
-            *args, **kwargs, post_calls=(PostCallArchNode(),)
+            symbol_table, *args, **kwargs, post_calls=(PostCallArchNode(),)
         )
 
 
@@ -97,7 +103,7 @@ class Comparison(ParsableModel):
     mapping is only valid if A0 <= 10 and B0 <= 10.
     """
 
-    expression: str | InvertibleSet[RankVariable] | set[RankVariable]
+    expression: TryParseTo[InvertibleSet[RankVariable]]
     """ The expression to compare. This expression should resolve to a set of rank
     variables. A comparison is performed for each rank variable independently, and the
     result passes if and only if all comparisons pass. The LHS of each comparison is the
@@ -121,19 +127,25 @@ class Comparison(ParsableModel):
     value: ParsesTo[int]
     """ The value to compare against. """
 
-    def _parse(self, symbol_table: dict[str, Any], location: str):
-        # if len(self) != 3:
-        #     raise ValueError(f"Comparison can only have 3 elements. got {len(self)}")
-        new = type(self)(
-            expression=eval_set_expression(
-                self.expression, symbol_table, "rank_variables", location
-            ),
-            operator=self.operator,
-            value=self.value,
-        )
-        if len(new.expression) == 1 and "product" in new.operator:
-            new.operator = new.operator.replace("product", "")
-        return new
+    def _parse_expressions(self, *args, **kwargs):
+        result, symbol_table = super()._parse_expressions(*args, **kwargs)
+        if len(result.expression) == 1 and "product" in result.operator:
+            result.operator = result.operator.replace("product", "")
+        return result, symbol_table
+
+    # def _parse(self, symbol_table: dict[str, Any], location: str):
+    #     # if len(self) != 3:
+    #     #     raise ValueError(f"Comparison can only have 3 elements. got {len(self)}")
+    #     new = type(self)(
+    #         expression=eval_set_expression(
+    #             self.expression, symbol_table, "rank_variables", location
+    #         ),
+    #         operator=self.operator,
+    #         value=self.value,
+    #     )
+    #     if len(new.expression) == 1 and "product" in new.operator:
+    #         new.operator = new.operator.replace("product", "")
+    #     return new
 
     def _constrained_to_one(self) -> bool:
         return self.value == 1 and self.operator in [
@@ -205,7 +217,7 @@ class Spatial(ParsableModel):
     fanout: ParsesTo[int]
     """ The size of this fanout. """
 
-    may_reuse: str | InvertibleSet[TensorName] | set[TensorName] = "All"
+    may_reuse: TryParseTo[InvertibleSet[TensorName]] = "All"
     """ The tensors that can be reused spatially across instances of this fanout. This
     expression will be parsed for each mapping template. """
 
@@ -222,7 +234,7 @@ class Spatial(ParsableModel):
     return the highest-utilization mappings.
     """
 
-    reuse: str | InvertibleSet[TensorName] | set[TensorName] = "Nothing"
+    reuse: TryParseTo[InvertibleSet[TensorName]] = "Nothing"
     """ A set of tensors or a set expression representing tensors that must be reused
     across spatial iterations. Spatial loops may only be placed that reuse ALL tensors
     given here.
@@ -234,35 +246,35 @@ class Spatial(ParsableModel):
     10/20 spatial instances are used, then the usage will be scaled to 20/20.
     """
 
-    def _parse(self, symbol_table: dict[str, Any], location: str):
-        return type(self)(
-            name=self.name,
-            fanout=self.fanout,
-            may_reuse=set(
-                eval_set_expression(
-                    self.may_reuse,
-                    symbol_table,
-                    expected_space_name="tensors",
-                    location=location + ".may_reuse",
-                )
-            ),
-            loop_bounds=[
-                x._parse(symbol_table, location + ".loop_bounds")
-                for x in self.loop_bounds
-            ],
-            min_usage=parse_expression(
-                self.min_usage,
-                symbol_table,
-                "min_usage",
-                location + ".min_usage",
-            ),
-            reuse=eval_set_expression(
-                self.reuse,
-                symbol_table,
-                "tensors",
-                location + ".reuse",
-            ),
-        )
+    # def _parse(self, symbol_table: dict[str, Any], location: str):
+    #     return type(self)(
+    #         name=self.name,
+    #         fanout=self.fanout,
+    #         may_reuse=set(
+    #             eval_set_expression(
+    #                 self.may_reuse,
+    #                 symbol_table,
+    #                 expected_space=TensorName,
+    #                 location=location + ".may_reuse",
+    #             )
+    #         ),
+    #         loop_bounds=[
+    #             x._parse(symbol_table, location + ".loop_bounds")
+    #             for x in self.loop_bounds
+    #         ],
+    #         min_usage=parse_expression(
+    #             self.min_usage,
+    #             symbol_table,
+    #             "min_usage",
+    #             location + ".min_usage",
+    #         ),
+    #         reuse=eval_set_expression(
+    #             self.reuse,
+    #             symbol_table,
+    #             "tensors",
+    #             location + ".reuse",
+    #         ),
+    #     )
 
 
 class LeafAttributes(ParsableModel):
@@ -441,15 +453,27 @@ class Leaf(ArchNode):
     specified at this level also apply to lower-level `Leaf` nodes in the architecture.
     """
 
-    def _parse_expressions(self, *args, **kwargs):
+    def _parse_expressions(self, symbol_table: dict[str, Any], *args, **kwargs):
         class PostCallLeaf(_PostCall):
             def __call__(self, field, value, parsed, symbol_table):
                 if field == "attributes":
                     symbol_table.update(parsed.model_dump())
                 return parsed
 
+        for k, v in symbol_table["arch_attributes"].items():
+            if k not in self.attributes:
+                try:
+                    self.attributes[k] = v
+                except ValueError:
+                    # OK if attribute dicts do not allow extra fields
+                    pass
+
         parsed, symbol_table = super()._parse_expressions(
-            *args, **kwargs, post_calls=(PostCallLeaf(),), order=("attributes",)
+            symbol_table,
+            *args,
+            **kwargs,
+            post_calls=(PostCallLeaf(),),
+            order=("attributes",)
         )
         symbol_table[self.name] = self
         return parsed, symbol_table
@@ -458,6 +482,13 @@ class Leaf(ArchNode):
         """The spatial fanout of this node."""
         return int(math.prod(x.fanout for x in self.spatial))
 
+
+_COMPONENT_MODEL_CACHE: dict[tuple, "Component"] = {}
+
+def _set_component_model_cache(key: tuple, value: "Component"):
+    while len(_COMPONENT_MODEL_CACHE) > 1000:
+        _COMPONENT_MODEL_CACHE.popitem(last=False)
+    _COMPONENT_MODEL_CACHE[key] = value
 
 @_uninstantiable
 class Component(Leaf):
@@ -486,7 +517,7 @@ class Component(Leaf):
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    enabled: str | bool = True
+    enabled: TryParseTo[bool] = True
     """ Whether this component is enabled. If the expression resolves to False, then
     the component is disabled. This is parsed per-pmapping-template, so it is a function
     of the tensors in the current Einsum. For example, you may say `len(All) >= 3` and
@@ -855,7 +886,10 @@ class Component(Leaf):
         return self
 
     def calculate_area_energy_latency_leak(
-        self: T, models: list[ComponentModel] | None = None, in_place: bool = False
+        self: T,
+        models: list[ComponentModel] | None = None,
+        in_place: bool = False,
+        _use_cache: bool = False
     ) -> T:
         """
         Calculates the area, energy, latency, and leak power for this component.
@@ -871,8 +905,9 @@ class Component(Leaf):
         area. If you call them yourself, note that string expressions may not be parsed
         because they need the Spec's global scope. If you are sure that all necessary
         values are present and not a result of an expression, you can call these
-        directly. Otherwise, you can call the ``Spec.calculate_component_area_energy_latency_leak``
-        and then grab components from the returned ``Spec``.
+        directly. Otherwise, you can call the
+        ``Spec.calculate_component_area_energy_latency_leak`` and then grab components
+        from the returned ``Spec``.
 
         Parameters
         ----------
@@ -882,6 +917,10 @@ class Component(Leaf):
         in_place : bool
             If True, the component will be modified in place. Otherwise, a copy will be
             returned.
+        _use_cache : bool
+            If True, the component model will be cached and reused if the same component
+            class, attributes, and actions are provided. Note that this may return
+            copies of the same object across multiple calls.
 
         Returns
         -------
@@ -889,24 +928,40 @@ class Component(Leaf):
             The component with the calculated energy, area, and leak power.
         """
         if not in_place:
-            self = self.model_copy()
+            self: Component = self.model_copy()
             self.attributes = self.attributes.model_copy()
             self.actions = type(self.actions)([a.model_copy() for a in self.actions])
             for action in self.actions:
                 action.arguments = action.arguments.model_copy()
+
+        if _use_cache and self.component_model is None:
+            cachekey = (
+                self.component_class,
+                self.attributes,
+                self.actions,
+            )
+            if cachekey in _COMPONENT_MODEL_CACHE:
+                component = _COMPONENT_MODEL_CACHE[cachekey]
+                self.component_model = component.component_model
+                self.component_modeling_log = component.component_modeling_log
+                self.actions = component.actions
+                return self
+
         self.calculate_area(models, in_place=True)
         self.calculate_action_energy(models, in_place=True)
         self.calculate_action_latency(models, in_place=True)
         self.calculate_leak_power(models, in_place=True)
+        if _use_cache:
+            _set_component_model_cache(cachekey, self)
         return self
 
 
-class Container(Leaf):
-    """A `Container` is an abstract node in the architecture that contains other nodes.
-    For example, a P` may be a `Container` that contains `Memory`s and `Compute` units.
-    """
+# class Container(Leaf):
+#     """A `Container` is an abstract node in the architecture that contains other nodes.
+#     For example, a P` may be a `Container` that contains `Memory`s and `Compute` units.
+#     """
 
-    pass
+#     pass
 
 
 MEMORY_ACTIONS = ParsableList[TensorHolderAction](
@@ -931,20 +986,41 @@ COMPUTE_ACTIONS = ParsableList(
 
 
 def _parse_tensor2bits(
-    to_parse: dict[str, Any], location: str, symbol_table: dict[str, Any]
+    to_parse: dict[str, Any],
+    location: str,
+    symbol_table: dict[str, Any]
 ) -> dict[str, Any]:
     result = {}
     for key, value in to_parse.items():
-        if isinstance(value, Number):
-            result[key] = value
-            continue
-        result[key] = parse_expression(
+        key_parsed = eval_set_expression(
+            expression=key,
+            symbol_table=symbol_table,
+            expected_space=TensorName,
+            location=f"{location} key {key}",
+        ).instance
+        result[key_parsed] = parse_expression(
             expression=value,
             symbol_table=symbol_table,
             attr_name=key,
             location=location,
         )
-    return result
+
+    all = symbol_table["All"].instance
+    for k in result:
+        all -= k
+
+    if all:
+        raise ValueError(
+            f"Missing bits_per_value_scale for {all}"
+        )
+
+    for a, b in itertools.combinations(to_parse.keys(), 2):
+        if a & b:
+            raise ValueError(
+                f"bits_per_value_scale for {a} and {b} overlap"
+            )
+
+    return {k2: v for k, v in result.items() for k2 in k}
 
 
 class TensorHolderAttributes(ComponentAttributes):
@@ -954,7 +1030,7 @@ class TensorHolderAttributes(ComponentAttributes):
     underscore-prefix attribute names. See `TODO: UNDERSCORE_PREFIX_DISCUSSION`.
     """
 
-    bits_per_value_scale: ParsesTo[dict | int | float] = {"All": 1}
+    bits_per_value_scale: ParsesTo[dict] = {"All": 1}
     """
     A scaling factor for the bits per value of the tensors in this `TensorHolder`. If
     this is a dictionary, keys in the dictionary are parsed as expressions and may
@@ -999,14 +1075,14 @@ class Tensors(ParsableModel):
     what order their nodes may appear in the mapping.
     """
 
-    keep: str | InvertibleSet[TensorName] | set[TensorName] = "<Defaults to Nothing>"
+    keep: TryParseTo[InvertibleSet[TensorName]] = "<Defaults to Nothing>"
     """
     A set expression describing which tensors must be kept in this
     :class:`fastfusion.frontend.arch.TensorHolder`. If this is not defined, then all
     tensors must be kept.
     """
 
-    may_keep: str | InvertibleSet[TensorName] | set[TensorName] = (
+    may_keep: TryParseTo[InvertibleSet[TensorName]] = (
         "<Nothing if keep is defined, else All>"
     )
     """
@@ -1023,7 +1099,7 @@ class Tensors(ParsableModel):
     valid mapping.
     """
 
-    no_refetch_from_above: str | InvertibleSet[TensorName] | set[TensorName] = "~All"
+    no_refetch_from_above: TryParseTo[InvertibleSet[TensorName]] = "~All"
     """
     The tensors that are not allowed to be refetched from above. This is given as a set
     of :class:`~.TensorName` objects or a set expression that resolves to them. These
@@ -1033,7 +1109,7 @@ class Tensors(ParsableModel):
     """
 
     tensor_order_options: ParsableList[
-        ParsableList[str | InvertibleSet[TensorName] | set[TensorName]]
+        ParsableList[TryParseTo[InvertibleSet[TensorName]]]
     ] = ParsableList()
     """
     Options for the order of tensor storage nodes in the mapping. This is given as a
@@ -1059,70 +1135,92 @@ class Tensors(ParsableModel):
     but only applies to this tensor holder.
     """
 
-    def _parse_tensor_order_options(
-        self, symbol_table: dict[str, Any], location: str
-    ) -> "Tensors":
-        result = type(self)(
-            tensor_order_options=[
-                [
-                    eval_set_expression(x, symbol_table, "tensors", location)
-                    for x in order_choice
-                ]
-                for order_choice in self.tensor_order_options
-            ],
-        )
+    def _parse_expressions(self, *args, **kwargs):
+        self = copy.copy(self)
+        keep, may_keep = self.keep, self.may_keep
+        if may_keep == "<Nothing if keep is defined, else All>":
+            self.may_keep = "All" if keep == "<Defaults to Nothing>" else "~All"
+        if keep == "<Defaults to Nothing>":
+            self.keep = "Nothing"
+        parsed, symbol_table = super(self.__class__, self)._parse_expressions(*args, **kwargs)
+
         # Assert that there are no intersecting sets
-        for order in result.tensor_order_options:
+        for order in parsed.tensor_order_options:
             for i, s0 in enumerate(order):
                 for j, s1 in enumerate(order):
                     if i == j:
                         continue
                     if s0 & s1:
                         raise ValueError(
-                            f"Intersecting entries in dataflow constraint: {s0} and {s1}"
+                            f"Intersecting entries in tensor_order_options: {s0} and {s1}"
                         )
-        return result
 
-    def _parse_keep(self, symbol_table: dict[str, Any], location: str) -> "Tensors":
-        keep, may_keep = self.keep, self.may_keep
-        if may_keep == "<Nothing if keep is defined, else All>":
-            may_keep = "All" if keep == "<Defaults to Nothing>" else "~All"
-        if keep == "<Defaults to Nothing>":
-            keep = "Nothing"
+        return parsed, symbol_table
 
-        may_keep_first = isinstance(keep, str) and re.findall(r"\bmay_keep\b", keep)
-        keep_first = isinstance(may_keep, str) and re.findall(r"\bkeep\b", may_keep)
-        if keep_first and may_keep_first:
-            raise ValueError(
-                f"Keep and may_keep reference each other: " f"{keep} and {may_keep}"
-            )
+    # def _parse_tensor_order_options(
+    #     self, symbol_table: dict[str, Any], location: str
+    # ) -> "Tensors":
+    #     result = type(self)(
+    #         tensor_order_options=[
+    #             [
+    #                 eval_set_expression(x, symbol_table, "tensors", location)
+    #                 for x in order_choice
+    #             ]
+    #             for order_choice in self.tensor_order_options
+    #         ],
+    #     )
+    #     # Assert that there are no intersecting sets
+    #     for order in result.tensor_order_options:
+    #         for i, s0 in enumerate(order):
+    #             for j, s1 in enumerate(order):
+    #                 if i == j:
+    #                     continue
+    #                 if s0 & s1:
+    #                     raise ValueError(
+    #                         f"Intersecting entries in dataflow constraint: {s0} and {s1}"
+    #                     )
+    #     return result
 
-        if may_keep_first:
-            may_keep = eval_set_expression(may_keep, symbol_table, "tensors", location)
-            symbol_table = copy.copy(symbol_table)
-            symbol_table["may_keep"] = may_keep
-            keep = eval_set_expression(keep, symbol_table, "tensors", location)
-            return type(self)(keep=keep, may_keep=may_keep)
-        else:
-            keep = eval_set_expression(keep, symbol_table, "tensors", location)
-            symbol_table = copy.copy(symbol_table)
-            symbol_table["keep"] = keep
-            may_keep = eval_set_expression(may_keep, symbol_table, "tensors", location)
-            return type(self)(keep=keep, may_keep=may_keep)
+    # def _parse_keep(self, symbol_table: dict[str, Any], location: str) -> "Tensors":
+    #     keep, may_keep = self.keep, self.may_keep
+    #     if may_keep == "<Nothing if keep is defined, else All>":
+    #         may_keep = "All" if keep == "<Defaults to Nothing>" else "~All"
+    #     if keep == "<Defaults to Nothing>":
+    #         keep = "Nothing"
 
-    def _parse_non_keep(self, symbol_table: dict[str, Any], location: str) -> "Tensors":
-        return type(self)(
-            tile_shape=[x._parse(symbol_table, location) for x in self.tile_shape],
-            no_refetch_from_above=eval_set_expression(
-                self.no_refetch_from_above, symbol_table, "tensors", location
-            ),
-            force_memory_hierarchy_order=parse_expression(
-                self.force_memory_hierarchy_order,
-                symbol_table,
-                "force_memory_hierarchy_order",
-                location,
-            ),
-        )
+    #     may_keep_first = isinstance(keep, str) and re.findall(r"\bmay_keep\b", keep)
+    #     keep_first = isinstance(may_keep, str) and re.findall(r"\bkeep\b", may_keep)
+    #     if keep_first and may_keep_first:
+    #         raise ValueError(
+    #             f"Keep and may_keep reference each other: " f"{keep} and {may_keep}"
+    #         )
+
+    #     if may_keep_first:
+    #         may_keep = eval_set_expression(may_keep, symbol_table, "tensors", location)
+    #         symbol_table = copy.copy(symbol_table)
+    #         symbol_table["may_keep"] = may_keep
+    #         keep = eval_set_expression(keep, symbol_table, "tensors", location)
+    #         return type(self)(keep=keep, may_keep=may_keep)
+    #     else:
+    #         keep = eval_set_expression(keep, symbol_table, "tensors", location)
+    #         symbol_table = copy.copy(symbol_table)
+    #         symbol_table["keep"] = keep
+    #         may_keep = eval_set_expression(may_keep, symbol_table, "tensors", location)
+    #         return type(self)(keep=keep, may_keep=may_keep)
+
+    # def _parse_non_keep(self, symbol_table: dict[str, Any], location: str) -> "Tensors":
+    #     return type(self)(
+    #         tile_shape=[x._parse(symbol_table, location) for x in self.tile_shape],
+    #         no_refetch_from_above=eval_set_expression(
+    #             self.no_refetch_from_above, symbol_table, "tensors", location
+    #         ),
+    #         force_memory_hierarchy_order=parse_expression(
+    #             self.force_memory_hierarchy_order,
+    #             symbol_table,
+    #             "force_memory_hierarchy_order",
+    #             location,
+    #         ),
+    #     )
 
 
 @_uninstantiable
@@ -1256,31 +1354,22 @@ class Branch(ArchNode):
 class Parallel(Branch):
     def _flatten(
         self,
-        attributes: dict,
         compute_node: str,
         fanout: int = 1,
         return_fanout: bool = False,
     ):
         nodes = []
 
-        def _parse_node(node: Leaf, fanout: int):
-            fanout *= node.get_fanout()
-            node2 = node.model_copy()
-            node2.attributes = type(node.attributes)(
-                **{**attributes.model_dump(), **node.attributes.model_dump()}
-            )
-            nodes.append(node2)
-            return fanout
-
         for node in self.nodes:
             if isinstance(node, Compute) and node.name == compute_node:
-                fanout = _parse_node(node, fanout)
+                fanout *= node.get_fanout()
+                nodes.append(node)
                 break
             if isinstance(node, Branch):
                 computes = node.get_nodes_of_type(Compute)
                 if compute_node in [c.name for c in computes]:
                     new_nodes, new_fanout = node._flatten(
-                        attributes, compute_node, fanout, return_fanout=True
+                        compute_node, fanout, return_fanout=True
                     )
                     nodes.extend(new_nodes)
                     fanout *= new_fanout
@@ -1294,22 +1383,11 @@ class Parallel(Branch):
 class Hierarchical(Branch):
     def _flatten(
         self,
-        attributes: dict,
         compute_node: str,
         fanout: int = 1,
         return_fanout: bool = False,
     ):
         nodes = []
-
-        def _parse_node(node: Leaf, fanout: int):
-            fanout *= node.get_fanout()
-            node2 = node.model_copy()
-            attrs = {**node.attributes.model_dump()}
-            if isinstance(node.attributes, AttributesWithExtras):
-                attrs = {**attributes.model_dump(), **attrs}
-            node2.attributes = type(node.attributes)(**attrs)
-            nodes.append(node2)
-            return fanout
 
         for i, node in enumerate(self.nodes):
             try:
@@ -1320,7 +1398,7 @@ class Hierarchical(Branch):
                             "hierarchical node"
                         )
                     new_nodes, new_fanout = node._flatten(
-                        attributes, compute_node, fanout, return_fanout=True
+                        compute_node, fanout, return_fanout=True
                     )
                     nodes.extend(new_nodes)
                     fanout *= new_fanout
@@ -1331,12 +1409,12 @@ class Hierarchical(Branch):
                         break
                 elif isinstance(node, Compute):
                     if node.name == compute_node:
-                        fanout = _parse_node(node, fanout)
+                        fanout *= node.get_fanout()
+                        nodes.append(node)
                         break
-                elif isinstance(node, Leaf) and not isinstance(node, Container):
-                    fanout = _parse_node(node, fanout)
-                elif isinstance(node, Container):
+                elif isinstance(node, Leaf):
                     fanout *= node.get_fanout()
+                    nodes.append(node)
                 else:
                     raise TypeError(f"Can't flatten {node}")
             except ParseError as e:
@@ -1426,6 +1504,12 @@ class Arch(Hierarchical):
     # version: Annotated[str, assert_version] = __version__
     # """ The version of the architecture spec. """
 
+    attributes: AttributesWithExtras = AttributesWithExtras()
+    """
+    The attributes of the architecture. These values are available to all components in
+    the architecture.
+    """
+
     @property
     def total_area(self) -> float:
         """
@@ -1496,11 +1580,24 @@ class Arch(Hierarchical):
                 )
         return leak_power
 
-    def _parse_expressions(self, *args, **kwargs):
-        symbol_table = kwargs["symbol_table"]
+    def _parse_expressions(self, symbol_table: dict[str, Any], *args, **kwargs):
+        class PostCallArch(_PostCall):
+            def __call__(self, field, value, parsed, symbol_table):
+                if field == "attributes":
+                    parsed_dump = parsed.model_dump()
+                    symbol_table.update(parsed_dump)
+                    symbol_table["arch_attributes"] = parsed_dump
+                return parsed
+
+        cur_st = dict(symbol_table)
+
         for node in self.get_nodes_of_type(Leaf):
-            symbol_table[node.name] = node
-        return super()._parse_expressions(*args, **kwargs)
+            cur_st[node.name] = node
+
+        parsed, _ = super()._parse_expressions(
+            cur_st, *args, **kwargs, post_calls=(PostCallArch(),), order=("attributes",)
+        )
+        return parsed, symbol_table
 
     def __getitem__(self, name: str) -> Leaf:
         return self.name2leaf(name)

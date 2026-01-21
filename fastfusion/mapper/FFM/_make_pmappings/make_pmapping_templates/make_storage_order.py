@@ -36,7 +36,7 @@ def get_tensor_choices(
     symbol_table: SymbolTable,
     spec: Spec,
     first_memory: arch.Memory,
-) -> Generator[tuple[list[TensorHolder], Any], None, None]:
+) -> Generator[tuple[list[TensorHolder], SymbolTable, arch.Compute], None, None]:
     nodes, compute = nodes[:-1], nodes[-1]
     while True:
         if not nodes:
@@ -44,7 +44,8 @@ def get_tensor_choices(
         if not isinstance(nodes[0], arch.Memory):
             nodes = nodes[1:]
             continue
-        if not eval_enabled(nodes[0], symbol_table):
+        assert isinstance(nodes[0].enabled, bool)
+        if not nodes[0].enabled:
             nodes = nodes[1:]
             continue
         break
@@ -63,6 +64,7 @@ def get_tensor_choices(
         is_copy_op=is_copy_op,
         persistent_tensors=persistent_tensors,
         seen_tensors=set(),
+        einsum_name=einsum_name,
     ):
         x = [y for z in choice.values() for y in z]
         logging.info(
@@ -80,8 +82,10 @@ def get_tensor_choices(
         # Get the dataflow constraints for the mapping
         required_order = get_tensor_order_constraint(nodes, symbol_table, tensors)
 
-        # If the compute is not enabled, then this mapping is not valid
-        if not eval_enabled(compute, symbol_table):
+        symbol_table["arch_attributes"] = {}
+        cur_compute = compute._parse_expressions(symbol_table, location=f"arch.{compute.name}", must_parse_try_parse_to=True, must_copy=False)[0]
+        assert isinstance(cur_compute.enabled, bool)
+        if not cur_compute.enabled:
             continue
 
         for mapping in recursive_order_tensor_choices(
@@ -95,7 +99,7 @@ def get_tensor_choices(
             is_copy_op,
             first_memory,
         ):
-            yield mapping, symbol_table
+            yield mapping, symbol_table, cur_compute
 
 
 def get_tensor_order_constraint(nodes, symbol_table, tensors):
@@ -103,23 +107,19 @@ def get_tensor_order_constraint(nodes, symbol_table, tensors):
     for node in nodes:
         if isinstance(node, arch.Fanout):
             continue
-        constraint = node.tensors._parse_tensor_order_options(
-            symbol_table, f"{node.name}.tensors"
-        )
-        if constraint.tensor_order_options:
-            for order_constraint in constraint.tensor_order_options:
-                order = Order()
-                for together_tensors in order_constraint:
-                    in_mapping_together_tensors = [
-                        tensor for tensor in together_tensors if tensor in tensors
-                    ]
-                    if len(in_mapping_together_tensors) == 1:
-                        only_tensor = in_mapping_together_tensors[0]
-                        order.add_tensor(only_tensor)
-                    elif len(in_mapping_together_tensors) > 1:
-                        order.add_together_tensors(in_mapping_together_tensors)
-                if order.order:
-                    required_order.setdefault(node.name, []).append(order)
+        for order_constraint in node.tensors.tensor_order_options:
+            order = Order()
+            for together_tensors in order_constraint:
+                in_mapping_together_tensors = [
+                    tensor for tensor in together_tensors if tensor in tensors
+                ]
+                if len(in_mapping_together_tensors) == 1:
+                    only_tensor = in_mapping_together_tensors[0]
+                    order.add_tensor(only_tensor)
+                elif len(in_mapping_together_tensors) > 1:
+                    order.add_together_tensors(in_mapping_together_tensors)
+            if order.order:
+                required_order.setdefault(node.name, []).append(order)
     return required_order
 
 
