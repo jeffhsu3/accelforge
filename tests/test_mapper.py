@@ -11,8 +11,8 @@ EXAMPLES_DIR = Path(__file__).parent.parent / "examples"
 class TestMapper(unittest.TestCase):
     def test_one_matmul(self):
         spec = Spec.from_yaml(
-            EXAMPLES_DIR / "arches" / "simple.arch.yaml",
-            EXAMPLES_DIR / "workloads" / "matmuls.workload.yaml",
+            EXAMPLES_DIR / "arches" / "simple.yaml",
+            EXAMPLES_DIR / "workloads" / "matmuls.yaml",
             jinja_parse_data={"N_EINSUMS": 1, "M": 64, "KN": 64},
         )
 
@@ -22,8 +22,8 @@ class TestMapper(unittest.TestCase):
 
     def test_two_matmuls(self):
         spec = Spec.from_yaml(
-            EXAMPLES_DIR / "arches" / "simple.arch.yaml",
-            EXAMPLES_DIR / "workloads" / "matmuls.workload.yaml",
+            EXAMPLES_DIR / "arches" / "simple.yaml",
+            EXAMPLES_DIR / "workloads" / "matmuls.yaml",
             jinja_parse_data={"N_EINSUMS": 2, "M": 64, "KN": 64},
         )
 
