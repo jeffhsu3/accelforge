@@ -605,7 +605,7 @@ def _parse_field(
                     )
 
                 # Check if validator is for InvertibleSet
-                if issubclass(target_type, InvertibleSet):
+                if isinstance(target_type, type) and issubclass(target_type, InvertibleSet):
                     # Get the target type from the validator
 
                     # If the given type is a set, replace it with a string that'll parse
