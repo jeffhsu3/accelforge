@@ -23,10 +23,11 @@ arch:
     - {name: write, arguments: {_energy: 0, _latency: 0}}
 
   - !Fanout
-    name: MACArray
+    name: MACArray 
     spatial:
     - name: X
       fanout: 4
+      reuse: input
 
   - !Compute
     name: MAC
