@@ -2,10 +2,14 @@ import unittest
 from pathlib import Path
 
 from fastfusion.frontend.spec import Spec
+from fastfusion.mapper import Metrics
 from fastfusion.mapper.FFM.main import map_workload_to_arch
 
 
 EXAMPLES_DIR = Path(__file__).parent.parent / "examples"
+
+M_SHAPE = 64
+KN_SHAPE = 64
 
 
 class ActionChecker(unittest.TestCase):
@@ -42,43 +46,50 @@ class TestMapper(ActionChecker, unittest.TestCase):
         self._check_memory_actions_exist(spec, ["MainMemory", "GlobalBuffer"], result)
 
 
-class TestMapperFanoutOneMatmul(ActionChecker, unittest.TestCase):
-    def test_at_mac(self):
+class TestFanout(ActionChecker):
+    FANOUT = 4
+    """Need to sync this with YAMLs somehow."""
+
+    def _run_with_arch(self, arch_fname: str, n_einsums=1):
         spec = Spec.from_yaml(
-            EXAMPLES_DIR / "arches" / "fanout_variations" / "at_mac.yaml",
+            EXAMPLES_DIR / "arches" / "fanout_variations" / arch_fname,
             EXAMPLES_DIR / "workloads" / "matmuls.yaml",
-            jinja_parse_data={"N_EINSUMS": 1, "M": 64, "KN": 64},
+            jinja_parse_data={"N_EINSUMS": n_einsums, "M": 64, "KN": 64},
         )
+        spec.mapper.ffm.metrics = Metrics.LATENCY
 
         result = map_workload_to_arch(spec)
         self._check_memory_actions_exist(spec, ["MainMemory", "GlobalBuffer"], result)
+        self.assertEqual(
+            result.data["Matmul0<SEP>Total<SEP>latency"].iloc[0],
+            M_SHAPE*KN_SHAPE**2/self.FANOUT
+        )
+        return result
+
+
+class TestMapperFanoutOneMatmul(TestFanout):
+    def test_at_mac(self):
+        self._run_with_arch("at_mac.yaml")
 
     def test_at_glb(self):
-        spec = Spec.from_yaml(
-            EXAMPLES_DIR / "arches" / "fanout_variations" / "at_glb.yaml",
-            EXAMPLES_DIR / "workloads" / "matmuls.yaml",
-            jinja_parse_data={"N_EINSUMS": 1, "M": 64, "KN": 64},
-        )
-
-        result = map_workload_to_arch(spec)
-        self._check_memory_actions_exist(spec, ["MainMemory", "GlobalBuffer"], result)
+        self._run_with_arch("at_glb.yaml")
 
     def test_at_mac_with_fanout_node(self):
-        spec = Spec.from_yaml(
-            EXAMPLES_DIR / "arches" / "fanout_variations" / "at_mac_with_fanout_node.yaml",
-            EXAMPLES_DIR / "workloads" / "matmuls.yaml",
-            jinja_parse_data={"N_EINSUMS": 1, "M": 64, "KN": 64},
-        )
-
-        result = map_workload_to_arch(spec)
-        self._check_memory_actions_exist(spec, ["MainMemory", "GlobalBuffer"], result)
+        self._run_with_arch("at_mac_with_fanout_node.yaml")
 
     def test_at_glb_with_fanout_node(self):
-        spec = Spec.from_yaml(
-            EXAMPLES_DIR / "arches" / "fanout_variations" / "at_glb_with_fanout_node.yaml",
-            EXAMPLES_DIR / "workloads" / "matmuls.yaml",
-            jinja_parse_data={"N_EINSUMS": 1, "M": 64, "KN": 64},
-        )
+        self._run_with_arch("at_glb_with_fanout_node.yaml")
 
-        result = map_workload_to_arch(spec)
-        self._check_memory_actions_exist(spec, ["MainMemory", "GlobalBuffer"], result)
+
+class TestMapperFanoutTwoMatmuls(TestFanout):
+    def test_at_mac(self):
+        self._run_with_arch("at_mac.yaml", n_einsums=2)
+
+    def test_at_glb(self):
+        self._run_with_arch("at_glb.yaml", n_einsums=2)
+
+    def test_at_mac_with_fanout_node(self):
+        self._run_with_arch("at_mac_with_fanout_node.yaml", n_einsums=2)
+
+    def test_at_glb_with_fanout_node(self):
+        self._run_with_arch("at_glb_with_fanout_node.yaml", n_einsums=2)

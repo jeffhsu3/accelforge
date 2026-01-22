@@ -161,6 +161,17 @@ class BuffetStats:
         return new
 
     def repeat_spatial(self, factor: int, reuse_parent_accesses: bool) -> "BuffetStats":
+        """
+        Duplicate attributes to account for spatial fanout.
+
+        Paramters
+        ---------
+        factor:
+            duplication factor
+        reuse_parent_access:
+            whether to reuse accesses to parent (if True, multicast is assumed
+            and accesses to parents are not duplicated).
+        """
         new = copy.copy(self)
         for attr in self.__dict__:
             if not attr.startswith(("total_", "max_", "min_")):
@@ -813,6 +824,8 @@ def analyze_spatial(node_idx, current_shape, info: AnalysisInfo):
     node: Spatial = mapping[node_idx]
     rank_var = node.rank_variable
     node_dim = node.name
+    spatial_component = node.component_object
+    component_spatial_dim = spatial_component.spatial[node_dim]
     stride_and_shape = get_stride_and_tile_shape(node, current_shape, node_idx, info)
 
     result_accumulator = SymbolicAnalysisOutput()
@@ -848,7 +861,7 @@ def analyze_spatial(node_idx, current_shape, info: AnalysisInfo):
             reuse_parent_accesses = (
                 last_buffet
                 and isinstance(relevancy, Irrelevant)
-                and buffet.tensor in node._may_reuse
+                and buffet.tensor in component_spatial_dim.may_reuse
             )
 
             accumulated_stats += stats.repeat_spatial(
