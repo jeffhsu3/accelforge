@@ -46,7 +46,7 @@ def partition_col(col, prefix, expected_len=None) -> list[str] | None:
 @dict_cached
 def action2col(action: ActionKey | VerboseActionKey) -> str:
     if isinstance(action, VerboseActionKey):
-        return f"{action.einsum}<SEP>action<SEP>{action.level}<SEP>{action.tensor}<SEP>{action.action}"
+        return f"action<SEP>{action.level}<SEP>{action.tensor}<SEP>{action.action}"
     elif isinstance(action, ActionKey):
         return f"action<SEP>{action.level}<SEP>{action.action}"
 
@@ -57,7 +57,7 @@ def col2action(colname: str) -> ActionKey | VerboseActionKey:
     if len(separated_names) == 3:
         assert separated_names[0] == "action"
         return ActionKey(separated_names[1], separated_names[2])
-    elif len(separated_names) == 4:
+    elif len(separated_names) == 5:
         assert separated_names[1] == "action"
         return VerboseActionKey(
             separated_names[2],
@@ -72,7 +72,7 @@ def col2action(colname: str) -> ActionKey | VerboseActionKey:
 @dict_cached
 def energy2col(action: ActionKey | VerboseActionKey) -> str:
     if isinstance(action, VerboseActionKey):
-        return f"{action.einsum}<SEP>energy<SEP>{action.level}<SEP>{action.tensor}<SEP>{action.action}"
+        return f"energy<SEP>{action.level}<SEP>{action.tensor}<SEP>{action.action}"
     elif isinstance(action, ActionKey):
         return f"energy<SEP>{action.level}<SEP>{action.action}"
 
