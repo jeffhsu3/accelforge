@@ -10,3 +10,4 @@ from fastfusion.mapper.FFM import Metrics
 from fastfusion.util import set_n_parallel_jobs
 from fastfusion.util import LiteralString
 import fastfusion.mapper as mapper
+from fastfusion.examples import examples

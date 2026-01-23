@@ -12,20 +12,6 @@ from fastfusion.frontend._workload_isl._symbolic import (
     get_stride_and_halo_of_einsum,
     get_rank_variable_relevancy,
 )
-from fastfusion.mapper.FFM._join_pmappings.compatibility import Compatibility
-from fastfusion.mapper.FFM._join_pmappings.pmapping_dataframe import PmappingDataframe
-from fastfusion.mapper.FFM._join_pmappings.pmapping_group import PmappingGroup
-from fastfusion.mapper.FFM._join_pmappings.join_pmappings import (
-    clean_compress_and_join_pmappings,
-)
-from fastfusion.mapper.FFM.pmappings import MultiEinsumPmappings
-from fastfusion.mapper.FFM._make_pmappings.make_pmappings import (
-    get_rank_variable_bounds_for_all_einsums,
-)
-from fastfusion.mapper.FFM._make_pmappings.make_pmappings_from_templates.run_model import (
-    run_model,
-)
-from fastfusion.mapper.FFM._make_pmappings.pmapper_job import Job
 
 
 def evaluate_mapping(spec: Spec):
@@ -37,6 +23,22 @@ def evaluate_mapping(spec: Spec):
     spec:
         The specification of architecture, workload, and mapping.
     """
+    from fastfusion.mapper.FFM._join_pmappings.compatibility import Compatibility
+    from fastfusion.mapper.FFM._join_pmappings.pmapping_dataframe import PmappingDataframe
+    from fastfusion.mapper.FFM._join_pmappings.pmapping_group import PmappingGroup
+    from fastfusion.mapper.FFM._join_pmappings.join_pmappings import (
+        clean_compress_and_join_pmappings,
+    )
+    from fastfusion.mapper.FFM.pmappings import MultiEinsumPmappings
+    from fastfusion.mapper.FFM._make_pmappings.make_pmappings import (
+        get_rank_variable_bounds_for_all_einsums,
+    )
+    from fastfusion.mapper.FFM._make_pmappings.make_pmappings_from_templates.run_model import (
+        run_model,
+    )
+    from fastfusion.mapper.FFM._make_pmappings.pmapper_job import Job
+
+
     original_job = Job(
         metrics=spec.model.metrics,
         rank_variable_bounds=get_rank_variable_bounds_for_all_einsums(spec),
