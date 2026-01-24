@@ -231,8 +231,12 @@ def insert_temporal_loops(
         permutable_partially_relevant = set()
 
         # =============================================================================
-        # Determine whether to lower TensorHolder nodes through partially-relevant loops.
+        # Determine whether to lower TensorHolder nodes through partially-relevant
+        # loops.
         # =============================================================================
+
+        # NOTE: If the lowering logic for backing TensorHolders is updated & we can
+        # lower through >1 loops, then also update label_fused_loops
         for s in prev_storages:
             partially_relevant_to_previous = set.union(
                 set(), *(tensor2partially_relevant_rank_vars[t] for t in s.tensors)

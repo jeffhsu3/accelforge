@@ -1,3 +1,6 @@
+from fastfusion.frontend.mapping.mapping import MappingNode
+
+
 import copy
 from collections import defaultdict
 import itertools
@@ -53,8 +56,7 @@ from fastfusion.mapper.FFM._make_pmappings.pmapper_job import (
     Job,
     SameEinsumJobs,
 )
-from fastfusion.util._basetypes import ParsableList
-from fastfusion.util._setexpressions import eval_set_expression
+from fastfusion.model._looptree.reuse.symbolic import label_fused_loops
 
 
 def unpack_loops_to_rank_variables(mapping: List[MappingNode]):
@@ -74,24 +76,6 @@ def unpack_loops_to_rank_variables(mapping: List[MappingNode]):
     return mapping_new
 
 
-def label_fused_loops(mapping: List[MappingNode]):
-    assert_proper_fusion_labeling(mapping, check_loops=False)
-    last_backer = None
-    for i, node in enumerate(mapping):
-        if isinstance(node, TensorHolder) and node._backing:
-            last_backer = i
-    if last_backer is None:
-        raise ValueError(
-            f"No backing TensorHolder found in mapping {", ".join(m.compact_str() for m in mapping)}"
-        )
-
-    for i, node in enumerate(mapping):
-        if isinstance(node, Loop):
-            if node._fused is None:
-                node._fused = i < last_backer
-    return mapping
-
-
 # =================================================================================================
 # Iterate over mappings
 # =================================================================================================
@@ -102,6 +86,7 @@ def place_missing_temporal_loops(mapping: List[MappingNode], einsum: Einsum):
     so we just need to add one somewhere.
     """
     # If any rank variables are missing, add them as high as possible.
+
     rank_variables = einsum.rank_variables
     for m in mapping:
         if isinstance(m, Temporal) and not m._fused:
@@ -224,13 +209,13 @@ def _timeloop_style_even(mapping: list[MappingNode]):
     return mapping
 
 
-def assert_proper_fusion_labeling(mapping: list[MappingNode], check_loops: bool = True):
+def assert_proper_fusion_labeling(mapping: list[MappingNode], fusable_tensors: set[TensorName], check_loops: bool = True):
     tensors = set()
     for i, t in enumerate(mapping):
         if not isinstance(t, TensorHolder):
             continue
 
-        new = set(t.tensors) - tensors
+        new = (set(t.tensors) - tensors) & fusable_tensors
 
         if new and check_loops:
             for j in range(i):
@@ -239,7 +224,7 @@ def assert_proper_fusion_labeling(mapping: list[MappingNode], check_loops: bool 
                         j
                     ]._fused, f"Node {j} is not fused in {' '.join(m.compact_str() for m in mapping)}"
         assert (
-            t._backing == new
+            (t._backing & fusable_tensors) == new
         ), f"Node {i} backing missing {new - t._backing} in {' '.join(m.compact_str() for m in mapping)}"
         tensors.update(new)
         tensors.update(t.tensors)
@@ -313,9 +298,10 @@ def iterate_mappings_no_constraints(
 
     einsum = spec.workload.einsums[einsum_name]
     symbol_table = {r.name: r.source for r in einsum.renames}
+    fusable_tensors = job.fusable_tensors
 
     for mapping, symbol_table, compute in get_tensor_choices(
-        einsum_name, flattened_arch, symbol_table, spec, first_memory
+        einsum_name, flattened_arch, symbol_table, spec, first_memory, fusable_tensors
     ):
         logging.info(
             "\tGenerated tensor choices: " + ", ".join(m.compact_str() for m in mapping)
@@ -338,8 +324,8 @@ def iterate_mappings_no_constraints(
                 mapping = _timeloop_style_even(mapping)
 
             place_missing_temporal_loops(mapping, einsum)
-            label_fused_loops(mapping)
-            assert_proper_fusion_labeling(mapping)
+            label_fused_loops(mapping, fusable_tensors)
+            assert_proper_fusion_labeling(mapping, fusable_tensors)
             yield mapping, symbol_table, compute, n_orders
 
 
@@ -437,7 +423,6 @@ def make_pmapping_templates(job: Job) -> SameEinsumJobs:
 
     jobs = SameEinsumJobs()
     for i, (mapping, constraints, symbol_table) in enumerate(mappings_constraints):
-        # print(mapping.compact_str())
         new_job = copy.copy(job)
         new_job.mapping = mapping
         new_job.constraints = constraints

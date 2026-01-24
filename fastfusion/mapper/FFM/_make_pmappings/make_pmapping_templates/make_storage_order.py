@@ -23,6 +23,7 @@ def get_tensor_choices(
     symbol_table: SymbolTable,
     spec: Spec,
     first_memory: arch.Memory,
+    fusable_tensors: set[TensorName],
 ) -> Generator[tuple[list[TensorHolder], SymbolTable, arch.Compute], None, None]:
     nodes, compute = nodes[:-1], nodes[-1]
     while True:
@@ -85,6 +86,7 @@ def get_tensor_choices(
             spec,
             is_copy_op,
             first_memory,
+            fusable_tensors,
         ):
             yield mapping, symbol_table, cur_compute
 
@@ -120,6 +122,7 @@ def recursive_order_tensor_choices(
     spec: Spec,
     is_copy_op: bool,
     first_memory: arch.Memory,
+    fusable_tensors: set[TensorName],
 ) -> Generator[list[MappingNode], None, None]:
     def check_has_tensors(mapping: list[MappingNode]):
         tensor_holders = [node for node in mapping if isinstance(node, TensorHolder)]
@@ -155,7 +158,12 @@ def recursive_order_tensor_choices(
         mapping.append(choice)
         new_remaining = [c for c in remaining_choices if c != choice]
         valid, reason = valid_tensor_holder_order(
-            mapping, [n.name for n in nodes], required_order, spec, first_memory
+            mapping,
+            [n.name for n in nodes],
+            required_order,
+            spec,
+            first_memory,
+            fusable_tensors,
         )
         if valid:
             yield from recursive_order_tensor_choices(
@@ -168,6 +176,7 @@ def recursive_order_tensor_choices(
                 spec,
                 is_copy_op,
                 first_memory,
+                fusable_tensors,
             )
         else:
             logging.info(
@@ -184,6 +193,7 @@ def valid_tensor_holder_order(
     required_orders: dict[str, list["Order"]],
     spec: Spec,
     first_memory: arch.Memory,
+    fusable_tensors: set[TensorName],
 ):
     memory_to_satisfied_constraints: dict[str, set] = {}
     for i, m0 in enumerate(mapping):
@@ -211,7 +221,7 @@ def valid_tensor_holder_order(
             # constraint, then the fused loops may be different across different backing
             # storages, so we would need to update make_pmappings_from_templates.py to
             # make compatibility from the mapping for each tensor.
-            force_order |= bool(m0._backing)
+            force_order |= bool(m0._backing & fusable_tensors)
 
             if force_order and i < j and s2_idx < s1_idx:
                 return (

@@ -14,7 +14,7 @@ from fastfusion.frontend.mapping import (
     Storage,
     Temporal,
 )
-from typing import Any
+from typing import Any, List
 
 from fastfusion.frontend import arch
 import fastfusion.frontend.mapping as mapping_spec
@@ -423,7 +423,7 @@ def quick_insert_reservation_nodes(job: Job) -> list[MappingNode]:
         is_copy_operation=None,
         job=None,
     )
-    insert_reservation_nodes(mapping, info)
+    insert_reservation_nodes(mapping, info, job.fusable_tensors)
     m = Mapping(nodes=mapping)
     m._n_loop_orders = job.mapping._n_loop_orders
     return m
@@ -632,7 +632,7 @@ class ReservationAnalysisTracker:
         self.should_stop = False
 
 
-def insert_reservation_nodes(mapping, info: AnalysisInfo):
+def insert_reservation_nodes(mapping, info: AnalysisInfo, fusable_tensors: set[TensorName]):
     trackers: list[ReservationAnalysisTracker] = []
     einsum = info.workload.einsums[mapping[-1].einsum]
     non_intermediate_tensors = (
@@ -713,22 +713,31 @@ def insert_reservation_nodes(mapping, info: AnalysisInfo):
         i += 1
         n_nodes = len(mapping)
 
-    label_fused_loops(mapping)
+    label_fused_loops(mapping, fusable_tensors)
 
 
-def label_fused_loops(mapping: list[MappingNode]):
-    last_backer = None
+def label_fused_loops(mapping: List[MappingNode], fusable_tensors: set[TensorName]):
+    last_backer = -1
+    assert isinstance(fusable_tensors, set)
+
     for i, node in enumerate(mapping):
-        if isinstance(node, Reservation) and node._backing:
+        if not isinstance(node, TensorHolder) or isinstance(node, Reservation):
+            continue
+        assert isinstance(node._backing, set)
+        if node._backing & fusable_tensors:
             last_backer = i
-    if last_backer is None:
+            # We may lower this node through at most one additional loop
+            if node._lower:
+                last_backer += 1
+    if last_backer == -1 and fusable_tensors:
         raise ValueError(
             f"No backing TensorHolder found in mapping {", ".join(m.compact_str() for m in mapping)}"
         )
 
-    for i, node in enumerate(mapping):
+    for i, node in enumerate[MappingNode](mapping):
         if isinstance(node, Loop):
             node._fused = i < last_backer
+
     return mapping
 
 

@@ -269,9 +269,6 @@ def get_constraints(
                 )
             )
 
-    # Temporal loop bounds constraints
-    # TODO: Implement
-
     # Spatial constraints
     for m in flattened_arch:
         if not isinstance(m, (arch.Memory, arch.Fanout)):

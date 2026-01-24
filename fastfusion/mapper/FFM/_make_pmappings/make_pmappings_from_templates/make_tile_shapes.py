@@ -315,6 +315,8 @@ class Objective:
         symbols: list[str] = None,
         only_care_if_valid: bool = False,
         min_value: float = None,
+        inclusive: bool = True,
+        try_best_if_none_reaches_min: bool = False,
     ):
         if isinstance(formula, Number):
             formula = sympy.Number(formula)
@@ -322,11 +324,12 @@ class Objective:
         self.formula: Expr = simplify(formula)
         self._symbols: list[str] = symbols
         self.max_value: float = max_value
+        self.min_value: float = min_value
         self.only_care_if_valid: bool = only_care_if_valid
         if only_care_if_valid:
-            assert self.max_value is not None
-        self.min_value: float = min_value
-
+            assert max_value is not None or min_value is not None
+        self.inclusive: bool = inclusive
+        self.try_best_if_none_reaches_min: bool = try_best_if_none_reaches_min
 
 def is_constant(f: Expr) -> bool:
     try:
@@ -556,6 +559,7 @@ def get_padded_choices(
     choices_enumerated: np.ndarray,
     what_tiles_symbol: SymbolRelations,
     minimize_formula: Expr = None,
+    maximize_formula: Expr = None,
 ):
     choices_padded = {}
     ones = np.ones(choices_enumerated.shape[0], choices_enumerated.dtype)
@@ -563,9 +567,17 @@ def get_padded_choices(
         choices_padded[symbol] = choices_enumerated[:, symbols_enumerated.index(symbol)]
     for symbol in symbols_non_enumerated_set:
         choices_padded[symbol] = ones
-        if minimize_formula is not None:
+        if minimize_formula is not None or maximize_formula is not None:
+            if minimize_formula is None:
+                formula = maximize_formula
+                sign = -1
+            elif maximize_formula is None:
+                formula = minimize_formula
+                sign = 1
+            else:
+                raise ValueError("Both minimize_formula and maximize_formula are not None")
             diff_result = diff_geq_leq_zero(
-                minimize_formula, symbol, what_tiles_symbol.bounds
+                sign * formula, symbol, what_tiles_symbol.bounds
             )
             if diff_result == ComparisonResult.ALWAYS_LEQ_THAN_ZERO:
                 choices_padded[symbol] = ones * what_tiles_symbol.get_max_size(symbol)
@@ -849,7 +861,10 @@ def get_tile_shape_choices(
     log_message("init")
 
     def eval_objective(
-        formula: Expr | Objective, choices: np.ndarray, minimize_formula: Expr = None
+        formula: Expr | Objective,
+        choices: np.ndarray,
+        minimize_formula: Expr = None,
+        maximize_formula: Expr = None,
     ):
         if isinstance(formula, Objective):
             formula = formula.formula
@@ -862,6 +877,7 @@ def get_tile_shape_choices(
             choices_enumerated=choices,
             what_tiles_symbol=what_tiles_symbol,
             minimize_formula=minimize_formula,
+            maximize_formula=maximize_formula,
         )
         return util._lambdify_type_check(symbols, formula)(
             **{str(k): v for k, v in padded_choices.items()},
@@ -1128,6 +1144,8 @@ def get_tile_shape_choices(
             # ==========================================================================
             # If there's a max value, then check for validity
             # ==========================================================================
+            complete = objective.formula.free_symbols.issubset(sym_enumerated_set)
+            prev_size = choices_enumerated.shape[0]
             if objective.max_value is not None:
                 try:
                     # minimize_for_objective may raise a TypeError if there's unknown
@@ -1137,51 +1155,60 @@ def get_tile_shape_choices(
                         choices_enumerated_float,
                         minimize_formula=objective.formula,
                     )
-                    complete = objective.formula.free_symbols.issubset(
-                        sym_enumerated_set
-                    )
-                    valid = result <= objective.max_value
-                    if sum(valid) == 0:
-                        # print(f'No valid pmappings. Previous: {prev.sum()}. Best: {result[valid].max()}')
-                        eval_objective(
-                            objective.formula,
-                            choices_enumerated_float,
-                            minimize_formula=objective.formula,
-                        )
+                    if objective.inclusive:
+                        valid = result <= objective.max_value
+                    else:
+                        valid = result < objective.max_value
                     if not isinstance(valid, np.ndarray):
                         valid = (
                             np.zeros(choices_enumerated.shape[0], dtype=bool) + valid
                         )
-                    if objective.min_value is not None and valid.any() and complete:
-                        above_min = valid & (result >= objective.min_value)
-                        if not above_min.any():
-                            best = result[valid].max()
-                            above_min = valid & (result == best)
-                        valid = valid & above_min
-                        if not valid.any():
-                            prev = result <= objective.max_value
-                            print(
-                                f"No valid pmappings. Previous: {prev.sum()}. Best: {result[valid].max()}"
-                            )
-
-                    porp = sum(valid) / max(1, choices_enumerated.shape[0])
-                    job.log_porp_pmappings_kept(
-                        f"{objective.name}",
-                        sum(valid) / max(1, choices_enumerated.shape[0]),
-                    )
                     choices_enumerated = choices_enumerated[valid]
                     choices_enumerated_float = choices_enumerated_float[valid]
-                    log_message(f"Valid check", f"{objective.name}", f"porp={porp:.2%}")
-                    if complete:
-                        objective.max_value = None  # We don't care anymore
-                        if objective.only_care_if_valid:
-                            objectives.remove(objective)
-                            log_message(
-                                f"Removed {objective.name} because it is always valid"
-                            )
-                            goals.clear()
                 except (TypeError, ValueError):
                     pass
+            if objective.min_value is not None:
+                try:
+                    # minimize_for_objective may raise a TypeError if there's unknown
+                    # symbols
+                    result = eval_objective(
+                        objective.formula,
+                        choices_enumerated_float,
+                        maximize_formula=objective.formula,
+                    )
+                    if objective.inclusive:
+                        valid = result >= objective.min_value
+                    else:
+                        valid = result > objective.min_value
+                    if not isinstance(valid, np.ndarray):
+                        valid = (
+                            np.zeros(choices_enumerated.shape[0], dtype=bool) + valid
+                        )
+
+                    if not objective.try_best_if_none_reaches_min:
+                        choices_enumerated = choices_enumerated[valid]
+                        choices_enumerated_float = choices_enumerated_float[valid]
+                    elif not valid.any() and complete:
+                            valid |= result == result.min()
+                            choices_enumerated = choices_enumerated[valid]
+                            choices_enumerated_float = choices_enumerated_float[valid]
+                except (TypeError, ValueError):
+                    pass
+
+            porp = sum(valid) / max(1, choices_enumerated.shape[0])
+            job.log_porp_pmappings_kept(
+                f"{objective.name}",
+                sum(valid) / max(1, prev_size),
+            )
+            log_message(f"Valid check", f"{objective.name}", f"porp={porp:.2%}")
+            if complete:
+                objective.max_value = None  # We don't care anymore
+                if objective.only_care_if_valid:
+                    objectives.remove(objective)
+                    log_message(
+                        f"Removed {objective.name} because it is always valid"
+                    )
+                    goals.clear()
 
             log_message(f"formula", f"{objective.formula}", f"{goals}")
 
@@ -1345,6 +1372,62 @@ def _make_tile_shapes(job: "Job"):
     all_fused_loops = set(sum(rank_var_to_fused_loops.values(), []))
 
     objectives = []
+
+    # ==================================================================================
+    # Loop bounds constraints. Put these before the other objectives so that hopefully
+    # if 100% of the pmappings are pruned, then we're given the actual architecture
+    # component that caused it and not the loop bound constraint.
+    # ==================================================================================
+    loops = [n for n in pmapping.nodes if isinstance(n, Loop)]
+    for c in constraints.loop_bounds_constraints:
+        min_value, max_value, inclusive = None, None, True
+        is_product = "product" in c.constraint.operator
+        operator = c.constraint.operator.replace("product", "")
+        if operator in ["==", "<=", "<"]:
+            max_value = c.constraint.value
+        if operator in [">=", ">", "=="]:
+            min_value = c.constraint.value
+        if operator in ["<", ">"]:
+            inclusive = False
+
+
+        targets = []
+        for i in c._target_loop_indices:
+            n = loops[i]
+            size = what_tiles_symbol.get_outer_tiles(n.tile_shape, none_if_fail=True)
+            if size is None:
+                size = what_tiles_symbol.get_max_size(n.tile_shape)
+            targets.append(size / n.tile_shape)
+
+        # targets = [loops[i]._calculated_n_iterations for i in c._target_loop_indices]
+        if not targets:
+            continue
+
+        if is_product:
+            targets = [sympy.Mul(*targets)]
+
+        if max_value is None and min_value is not None:
+            max_value = -min_value
+            targets = [-target for target in targets]
+            min_value = None
+
+        for target in targets:
+            objectives.append(
+                Objective(
+                    name=f"loop_bounds_{c.constraint}",
+                    formula=target,
+                    symbols=symbols,
+                    only_care_if_valid=True,
+                    max_value=max_value,
+                    min_value=min_value,
+                    inclusive=inclusive,
+                )
+            )
+
+
+    # ==================================================================================
+    # Memory usage and utilization constraints.
+    # ==================================================================================
     for k, v in {**per_memory_usage_df, **utilization_df}.items():
         # If we only track for pmappings, we only care if it's valid. If we track for
         # all, we care about the value too.
@@ -1358,14 +1441,6 @@ def _make_tile_shapes(job: "Job"):
         if k in utilization_df:
             only_care_if_valid = True
 
-        min_value = None
-        if k in utilization_df:
-            component_name, name = k.split("<SEP>")[1:]
-            if (component_name, name) in job.constraints.min_usage_constraints:
-                min_value = job.constraints.min_usage_constraints[
-                    (component_name, name)
-                ].min_usage
-
         objectives.append(
             Objective(
                 name=k,
@@ -1373,9 +1448,25 @@ def _make_tile_shapes(job: "Job"):
                 symbols=symbols,
                 only_care_if_valid=only_care_if_valid,
                 max_value=1,
-                min_value=min_value,
             )
         )
+
+    # ==================================================================================
+    # Min usage constraints. Put this last because it has some try best if none reach
+    # min logic.
+    # ==================================================================================
+    for (component_name, name), constraint in job.constraints.min_usage_constraints.items():
+        objectives.append(
+            Objective(
+                name=f"min_usage_{component_name}_{name}",
+                formula=v,
+                symbols=symbols,
+                only_care_if_valid=True,
+                min_value=constraint.min_usage,
+                try_best_if_none_reaches_min=True,
+            )
+        )
+
 
     for k, v in symbolic_df.items():
         if "Total" not in k:
@@ -1388,6 +1479,7 @@ def _make_tile_shapes(job: "Job"):
                 symbols=symbols,
             )
         )
+
 
     rank2symbols = {}
     for node in pmapping.nodes:
