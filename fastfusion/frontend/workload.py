@@ -12,7 +12,7 @@ import pydot
 
 from fastfusion.util.parallel import _SVGJupyterRender
 
-from fastfusion.util._basetypes import ParsableDict, ParsableList, ParsableModel
+from fastfusion.util._basetypes import ParsableDict, ParsableList, ParsableModel, ParsesTo
 from fastfusion.util._visualization import _pydot_graph
 from fastfusion.frontend.renames import (
     EinsumName,
@@ -609,7 +609,7 @@ class Workload(ParsableModel):
     that include that rank variable.
     """
 
-    rank_sizes: ParsableDict[Rank, int] = ParsableDict()
+    rank_sizes: ParsableDict[Rank, ParsesTo[int]] = ParsableDict()
     """
     Rank sizes. This is a dictionary of rank names to sizes. Sizes are integers, and the
     rank's bounds are 0 <= rank < size. Accesses outside of these bounds are skipped.
