@@ -139,11 +139,11 @@ class Spec(ParsableModel):
 
     def calculate_component_area_energy_latency_leak(
         self,
+        einsum_name: EinsumName | None = None,
         area: bool = True,
         energy: bool = True,
         latency: bool = True,
         leak: bool = True,
-        einsum_name: EinsumName | None = None,
     ) -> "Spec":
         """
         Populates per-component area, energy, latency, and/or leak power. For each
@@ -159,6 +159,9 @@ class Spec(ParsableModel):
 
         Parameters
         ----------
+        einsum_name: EinsumName | None = None
+            Optional Einsum name to populate symbols with the Einsum's symbols from the
+            workload. If None, no symbols are populated from the workload.
         area : bool, optional
             Whether to compute and populate area entries.
         energy : bool, optional
@@ -167,9 +170,6 @@ class Spec(ParsableModel):
             Whether to compute and populate latency entries.
         leak : bool, optional
             Whether to compute and populate leak power entries.
-        einsum_name : EinsumName | None, optional
-            Optional Einsum name to populate symbols with the Einsum's symbols from the
-            workload. If None, no symbols are populated from the workload.
         """
         if not area and not energy and not latency and not leak:
             return self
