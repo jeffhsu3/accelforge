@@ -12,7 +12,12 @@ import pydot
 
 from fastfusion.util.parallel import _SVGJupyterRender
 
-from fastfusion.util._basetypes import ParsableDict, ParsableList, ParsableModel, ParsesTo
+from fastfusion.util._basetypes import (
+    ParsableDict,
+    ParsableList,
+    ParsableModel,
+    ParsesTo,
+)
 from fastfusion.util._visualization import _pydot_graph
 from fastfusion.frontend.renames import (
     EinsumName,
@@ -523,7 +528,9 @@ class Einsum(ParsableModel):
 
         for r in workload.rank_variables:
             if r not in rename_symbol_table:
-                rename_symbol_table[r] = InvertibleSet(instance=(), **kwargs_rank_variables)
+                rename_symbol_table[r] = InvertibleSet(
+                    instance=(), **kwargs_rank_variables
+                )
 
         st = {**rename_symbol_table, **symbol_table}
 
@@ -541,11 +548,7 @@ class Einsum(ParsableModel):
 
         # Parse me!
         kwargs["must_parse_try_parse_to"] = True
-        parsed, _ = super(self.__class__, self)._parse_expressions(
-            st,
-            *args,
-            **kwargs
-        )
+        parsed, _ = super(self.__class__, self)._parse_expressions(st, *args, **kwargs)
 
         # Update the renames with the new values
         for k, v in rename_symbol_table.items():
@@ -567,7 +570,7 @@ class Einsum(ParsableModel):
                     raise ParseError(
                         f"Tensor {t} is specified in multiple entries in the workload "
                         f"global bits_per_value dictionary.",
-                        source_field=f"({k} AND {bpv_to_source[t]})"
+                        source_field=f"({k} AND {bpv_to_source[t]})",
                     )
                 bits_per_value[t] = v
                 bpv_to_source[t] = k
@@ -580,7 +583,7 @@ class Einsum(ParsableModel):
                     f"expressions in the workload.bits_per_value dictionary "
                     f"or bits_per_value is specified for the tensor access."
                     f"",
-                    source_field=f"tensor_accesses[{t.name}].bits_per_value"
+                    source_field=f"tensor_accesses[{t.name}].bits_per_value",
                 )
             if t.bits_per_value is None:
                 t.bits_per_value = bits_per_value[t.name]
@@ -837,11 +840,7 @@ class Workload(ParsableModel):
         return _SVGJupyterRender(graph.create_svg(prog="dot").decode("utf-8"))
 
     def _parse_expressions(
-            self,
-            symbol_table: dict[str, Any],
-            *args,
-            renames: Renames,
-            **kwargs
+        self, symbol_table: dict[str, Any], *args, renames: Renames, **kwargs
     ):
         bpv, _ = self.bits_per_value._parse_expressions(symbol_table, *args, **kwargs)
         new_st = {
@@ -878,7 +877,12 @@ class Workload(ParsableModel):
 
                 for r in einsum.renames:
                     src: InvertibleSet = r.source
-                    if isinstance(src, InvertibleSet) and len(src) == 1 and src.space_type == TensorName and next(iter(src)) in bits_per_value:
+                    if (
+                        isinstance(src, InvertibleSet)
+                        and len(src) == 1
+                        and src.space_type == TensorName
+                        and next(iter(src)) in bits_per_value
+                    ):
                         src.bits_per_value = bits_per_value[next(iter(src))]
 
         parsed._check_consistent_persistent()

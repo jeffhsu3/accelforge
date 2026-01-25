@@ -46,7 +46,7 @@ class SymbolRelations:
         """Get the stride corresponding to the initial tile shape `symbol`."""
         for tile_shape, initial in self.tile_shape_and_initial:
             if initial == symbol:
-                return tile_shape 
+                return tile_shape
         raise ValueError(f"Symbol {symbol} not found as initial in {self}")
 
     def get_initial(self, symbol: Symbol, none_if_fail: bool = False) -> Symbol | int:

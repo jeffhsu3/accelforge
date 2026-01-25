@@ -63,7 +63,7 @@ def col2action(colname: str) -> ActionKey | VerboseActionKey:
             separated_names[2],
             separated_names[4],
             separated_names[3],
-            separated_names[0]
+            separated_names[0],
         )
     else:
         raise ValueError(f"bad column name: {colname}")
@@ -89,7 +89,7 @@ def col2energy(colname: str) -> ActionKey | VerboseActionKey:
             separated_names[2],
             separated_names[4],
             separated_names[3],
-            separated_names[0]
+            separated_names[0],
         )
     else:
         raise ValueError(f"bad column name: {colname}")

@@ -112,7 +112,9 @@ class Spec(ParsableModel):
             parsed_workload = self.workload
             if _parse_non_arch:
                 try:
-                    parsed_workload, st = self.workload._parse_expressions(st, renames=parsed_renames)
+                    parsed_workload, st = self.workload._parse_expressions(
+                        st, renames=parsed_renames
+                    )
                 except ParseError as e:
                     e.add_field("Spec().workload")
                     raise e

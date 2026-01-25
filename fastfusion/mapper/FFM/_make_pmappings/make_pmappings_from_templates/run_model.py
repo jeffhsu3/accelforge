@@ -113,7 +113,9 @@ def run_model(
         detailed_actions = gather_actions(reuse, None, verbose=True, use_name=True)
         for key, count in detailed_actions.items():
             df[action2col(key)] = count.total * n_instances
-        detailed_energy = compute_energy_from_actions(spec, detailed_actions, overall_latency)
+        detailed_energy = compute_energy_from_actions(
+            spec, detailed_actions, overall_latency
+        )
         for key, energy_val in detailed_energy.items():
             df[energy2col(key)] = energy_val * n_instances
 

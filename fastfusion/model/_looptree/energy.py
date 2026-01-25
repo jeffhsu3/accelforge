@@ -6,7 +6,11 @@ from numbers import Real
 from fastfusion.frontend import arch
 from fastfusion.frontend.spec import Spec
 from fastfusion.model._looptree.reuse.symbolic import SymbolicAnalysisOutput
-from fastfusion.util._base_analysis_types import ActionCount, ActionKey, VerboseActionKey
+from fastfusion.util._base_analysis_types import (
+    ActionCount,
+    ActionKey,
+    VerboseActionKey,
+)
 from fastfusion.frontend.workload import Workload
 from fastfusion.frontend.mapping import Mapping
 
@@ -15,7 +19,7 @@ def gather_actions(
     looptree_results: SymbolicAnalysisOutput,
     bindings: dict[str, str],
     verbose: bool = False,
-    use_name=False
+    use_name=False,
 ):
     actions: dict[tuple[str, str], ActionCount] = {}
     compute_levels = set(c.level for c in looptree_results.compute_stats)
@@ -58,6 +62,7 @@ def gather_actions(
 
 def _get_buffet_keyer(verbose, use_name, bindings):
     if not verbose:
+
         def get_buffet_key(buffet, action_name) -> ActionKey:
             level = buffet.level
             if use_name:
@@ -65,7 +70,9 @@ def _get_buffet_keyer(verbose, use_name, bindings):
             else:
                 level = bindings[level]
             return ActionKey(level, action_name)
+
     else:
+
         def get_buffet_key(buffet, action_name) -> VerboseActionKey:
             level = buffet.level
             if use_name:
@@ -73,11 +80,13 @@ def _get_buffet_keyer(verbose, use_name, bindings):
             else:
                 level = bindings[level]
             return VerboseActionKey(level, action_name, buffet.tensor, buffet.einsum)
+
     return get_buffet_key
 
 
 def _get_compute_keyer(verbose, use_name, bindings):
     if not verbose:
+
         def compute_keyer(compute, action_name):
             level = compute.level
             if use_name:
@@ -85,7 +94,9 @@ def _get_compute_keyer(verbose, use_name, bindings):
             else:
                 level = bindings[level]
             return ActionKey(level, action_name)
+
     else:
+
         def compute_keyer(compute, action_name):
             level = compute.level
             if use_name:
@@ -93,6 +104,7 @@ def _get_compute_keyer(verbose, use_name, bindings):
             else:
                 level = bindings[level]
             return VerboseActionKey(level, action_name, None, compute.einsum)
+
     return compute_keyer
 
 

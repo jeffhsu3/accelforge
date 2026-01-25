@@ -632,7 +632,9 @@ class ReservationAnalysisTracker:
         self.should_stop = False
 
 
-def insert_reservation_nodes(mapping, info: AnalysisInfo, fusable_tensors: set[TensorName]):
+def insert_reservation_nodes(
+    mapping, info: AnalysisInfo, fusable_tensors: set[TensorName]
+):
     trackers: list[ReservationAnalysisTracker] = []
     einsum = info.workload.einsums[mapping[-1].einsum]
     non_intermediate_tensors = (
@@ -1035,15 +1037,14 @@ def analyze_storage(
             node.component, info.job.flattened_arch
         )
         bits_per_value_scale = component_object.bits_per_value_scale[tensor]
-        bits_per_value = bits_per_value_scale * info.job.einsum.tensor_accesses[tensor].bits_per_value
-        read_bits_per_action = component_object.actions[
-            "read"
-        ].bits_per_action
+        bits_per_value = (
+            bits_per_value_scale
+            * info.job.einsum.tensor_accesses[tensor].bits_per_value
+        )
+        read_bits_per_action = component_object.actions["read"].bits_per_action
         read_scale = bits_per_value / read_bits_per_action
         if count_writes:
-            write_bits_per_action = component_object.actions[
-                "write"
-            ].bits_per_action
+            write_bits_per_action = component_object.actions["write"].bits_per_action
             write_scale = bits_per_value / write_bits_per_action
         else:
             write_scale = 0
@@ -1142,7 +1143,9 @@ def analyze_reservation(node_idx, current_shape, info: AnalysisInfo):
     projection = info.einsum_tensor_to_projection[(einsum_name, tensor)]
     component_object = find_component_object(node.resource, info.job.flattened_arch)
     bits_per_value_scale = component_object.bits_per_value_scale[tensor]
-    bits_per_value = bits_per_value_scale * info.job.einsum.tensor_accesses[tensor].bits_per_value
+    bits_per_value = (
+        bits_per_value_scale * info.job.einsum.tensor_accesses[tensor].bits_per_value
+    )
     stats.max_occupancy = (
         compute_dense_tile_occupancy(projection, current_shape) * bits_per_value
     )

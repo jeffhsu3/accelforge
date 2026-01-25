@@ -29,11 +29,11 @@ class InvertibleSet(BaseModel, Generic[T]):
     def _serialize_model(self):
         """Custom serializer for InvertibleSet to avoid Pydantic serialization warnings."""
         return {
-            'instance': list(self.instance),
-            'full_space': list(self.full_space),
-            'space_type': self.space_type.__name__,
-            'element_to_child_space': self.element_to_child_space,
-            '_bits_per_value': self._bits_per_value,
+            "instance": list(self.instance),
+            "full_space": list(self.full_space),
+            "space_type": self.space_type.__name__,
+            "element_to_child_space": self.element_to_child_space,
+            "_bits_per_value": self._bits_per_value,
         }
 
     @property
@@ -63,6 +63,7 @@ class InvertibleSet(BaseModel, Generic[T]):
     def __deepcopy__(self, memo):
         """Custom deepcopy implementation to avoid pydantic deepcopy issues."""
         import copy
+
         cls = type(self)
         # Create a new instance without calling __init__
         new_obj = cls.__new__(cls)
@@ -71,12 +72,12 @@ class InvertibleSet(BaseModel, Generic[T]):
         # Deep copy the __dict__ directly to avoid triggering setattr
         new_obj.__dict__.update(copy.deepcopy(self.__dict__, memo))
         # Initialize pydantic's internal attributes if they don't exist
-        if not hasattr(new_obj, '__pydantic_fields_set__'):
-            object.__setattr__(new_obj, '__pydantic_fields_set__', set())
-        if not hasattr(new_obj, '__pydantic_extra__'):
-            object.__setattr__(new_obj, '__pydantic_extra__', {})
-        if not hasattr(new_obj, '__pydantic_private__'):
-            object.__setattr__(new_obj, '__pydantic_private__', {})
+        if not hasattr(new_obj, "__pydantic_fields_set__"):
+            object.__setattr__(new_obj, "__pydantic_fields_set__", set())
+        if not hasattr(new_obj, "__pydantic_extra__"):
+            object.__setattr__(new_obj, "__pydantic_extra__", {})
+        if not hasattr(new_obj, "__pydantic_private__"):
+            object.__setattr__(new_obj, "__pydantic_private__", {})
         return new_obj
 
     def __repr__(self):
@@ -178,6 +179,7 @@ class InvertibleSet(BaseModel, Generic[T]):
     def rank_variables(self) -> set["RankVariable"]:
         from fastfusion.frontend.workload import RankVariable
         from fastfusion.frontend.renames import TensorName
+
         if self.space_type == TensorName:
             return self._cast_to_child_space()
         raise ValueError(
@@ -188,6 +190,7 @@ class InvertibleSet(BaseModel, Generic[T]):
     @property
     def tensors(self) -> set["TensorName"]:
         from fastfusion.frontend.renames import TensorName
+
         if self.space_type == TensorName:
             return self
         raise ValueError(
@@ -205,9 +208,14 @@ def set_expression_type_check(
     if not isinstance(result, InvertibleSet):
         raise TypeError(f"Expected a InvertibleSet, got {type(result)}: {result}")
     if expected_space is not None and result.space_type != expected_space:
-        raise ValueError(f"Expected a set with space type '{expected_space.__name__}', got {result.space_type.__name__}")
+        raise ValueError(
+            f"Expected a set with space type '{expected_space.__name__}', got {result.space_type.__name__}"
+        )
     if expected_count is not None and len(result) != expected_count:
-        raise ValueError(f"Expected {expected_count=} elements, got {len(result)}: {result.instance}")
+        raise ValueError(
+            f"Expected {expected_count=} elements, got {len(result)}: {result.instance}"
+        )
+
 
 def eval_set_expression(
     expression: str | InvertibleSet,
@@ -244,9 +252,11 @@ def eval_set_expression(
         set_expression_type_check(result, expected_space, expected_count, location)
 
     except Exception as e:
+
         def strformat(v):
             v = str(v)
             return v if len(v) <= 100 else v[:100] + "..."
+
         err = ParseError(
             f'{e}. Set expression: "{expression}". Symbol table:\n\t'
             + "\n\t".join(f"{k}: {strformat(v)}" for k, v in symbol_table.items())

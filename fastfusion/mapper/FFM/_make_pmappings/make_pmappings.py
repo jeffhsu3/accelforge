@@ -225,12 +225,16 @@ def get_memories_to_track(
 
     # If the memory is big enough to hold all the tensors then we don't need to consider
     # it
-    max_bits_per_value = max(t.bits_per_value for e in spec.workload.einsums for t in e.tensor_accesses)
+    max_bits_per_value = max(
+        t.bits_per_value for e in spec.workload.einsums for t in e.tensor_accesses
+    )
     for m, size in memory_to_size.items():
         max_bits_per_value_scale = 0
         for job in jobs:
             mem = job.spec.arch.find(m)
-            max_bits_per_value_scale = max(max_bits_per_value_scale, max(mem.bits_per_value_scale.values()))
+            max_bits_per_value_scale = max(
+                max_bits_per_value_scale, max(mem.bits_per_value_scale.values())
+            )
 
         if size >= total_tensor_sizes * max_bits_per_value * max_bits_per_value_scale:
             memories_track_all.remove(m)

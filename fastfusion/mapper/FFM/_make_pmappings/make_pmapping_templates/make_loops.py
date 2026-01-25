@@ -82,6 +82,7 @@ def insert_temporal_loops(
     )
     tensor2irrelevant_rank_vars = einsum.tensor2irrelevant_rank_variables
     tensor2rank_vars = einsum.tensor2rank_variables
+    tensors = einsum.tensor_names
 
     fusable_tensors = (
         einsum.tensor_names & workload.tensor_names_used_in_multiple_einsums
@@ -182,7 +183,7 @@ def insert_temporal_loops(
 
         # No recomputation: If we haven't seen a tensor yet, must only iterate over
         # fully-relevant rank variables.
-        for t in fusable_tensors - seen_tensors:
+        for t in tensors - seen_tensors:
             rank_variables &= tensor2fully_relevant_rank_vars[t]
 
         # Optimality-preserving optimizations: We can trivially lower non-backing
@@ -323,9 +324,7 @@ def insert_spatial_loops(
 
     for node in nodes_with_fanout:
         insertion_point = _idx_of_highest_tensor_holder_with_component_below_fanout(
-            node,
-            mapping,
-            arch_node_names
+            node, mapping, arch_node_names
         )
 
         rv = einsum.rank_variables
@@ -344,9 +343,7 @@ def insert_spatial_loops(
 
 
 def _idx_of_highest_tensor_holder_with_component_below_fanout(
-    fanout_node,
-    mapping,
-    arch_node_names
+    fanout_node, mapping, arch_node_names
 ):
     for i in range(len(mapping)):
         if not isinstance(mapping[i], TensorHolder):

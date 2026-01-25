@@ -331,6 +331,7 @@ class Objective:
         self.inclusive: bool = inclusive
         self.try_best_if_none_reaches_min: bool = try_best_if_none_reaches_min
 
+
 def is_constant(f: Expr) -> bool:
     try:
         return f.is_constant()
@@ -575,7 +576,9 @@ def get_padded_choices(
                 formula = minimize_formula
                 sign = 1
             else:
-                raise ValueError("Both minimize_formula and maximize_formula are not None")
+                raise ValueError(
+                    "Both minimize_formula and maximize_formula are not None"
+                )
             diff_result = diff_geq_leq_zero(
                 sign * formula, symbol, what_tiles_symbol.bounds
             )
@@ -1189,9 +1192,9 @@ def get_tile_shape_choices(
                         choices_enumerated = choices_enumerated[valid]
                         choices_enumerated_float = choices_enumerated_float[valid]
                     elif not valid.any() and complete:
-                            valid |= result == result.min()
-                            choices_enumerated = choices_enumerated[valid]
-                            choices_enumerated_float = choices_enumerated_float[valid]
+                        valid |= result == result.min()
+                        choices_enumerated = choices_enumerated[valid]
+                        choices_enumerated_float = choices_enumerated_float[valid]
                 except (TypeError, ValueError):
                     pass
 
@@ -1205,9 +1208,7 @@ def get_tile_shape_choices(
                 objective.max_value = None  # We don't care anymore
                 if objective.only_care_if_valid:
                     objectives.remove(objective)
-                    log_message(
-                        f"Removed {objective.name} because it is always valid"
-                    )
+                    log_message(f"Removed {objective.name} because it is always valid")
                     goals.clear()
 
             log_message(f"formula", f"{objective.formula}", f"{goals}")
@@ -1325,7 +1326,9 @@ def get_rank_var_to_fused_loops(
 ) -> dict[str, list[Symbol]]:
     rank_var_to_fused_loops: dict[str, list[Symbol]] = {}
     for node in [n for n in pmapping.nodes if isinstance(n, Loop) and n._fused]:
-        rank_var_to_fused_loops.setdefault(node.rank_variable, []).append(node.tile_shape)
+        rank_var_to_fused_loops.setdefault(node.rank_variable, []).append(
+            node.tile_shape
+        )
     return rank_var_to_fused_loops
 
 
@@ -1390,7 +1393,6 @@ def _make_tile_shapes(job: "Job"):
         if operator in ["<", ">"]:
             inclusive = False
 
-
         targets = []
         for i in c._target_loop_indices:
             n = loops[i]
@@ -1424,7 +1426,6 @@ def _make_tile_shapes(job: "Job"):
                 )
             )
 
-
     # ==================================================================================
     # Memory usage and utilization constraints.
     # ==================================================================================
@@ -1455,7 +1456,10 @@ def _make_tile_shapes(job: "Job"):
     # Min usage constraints. Put this last because it has some try best if none reach
     # min logic.
     # ==================================================================================
-    for (component_name, name), constraint in job.constraints.min_usage_constraints.items():
+    for (
+        component_name,
+        name,
+    ), constraint in job.constraints.min_usage_constraints.items():
         objectives.append(
             Objective(
                 name=f"min_usage_{component_name}_{name}",
@@ -1466,7 +1470,6 @@ def _make_tile_shapes(job: "Job"):
                 try_best_if_none_reaches_min=True,
             )
         )
-
 
     for k, v in symbolic_df.items():
         if "Total" not in k:
@@ -1479,7 +1482,6 @@ def _make_tile_shapes(job: "Job"):
                 symbols=symbols,
             )
         )
-
 
     rank2symbols = {}
     for node in pmapping.nodes:

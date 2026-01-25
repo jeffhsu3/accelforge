@@ -36,6 +36,7 @@ class LiteralString(str):
     """
     A string literal that should not be parsed.
     """
+
     pass
 
 

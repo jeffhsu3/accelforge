@@ -228,6 +228,7 @@ class NoParse(Generic[T]):
         # Create a union schema that either validates as raw string or normal validation
         return target_schema
 
+
 class ParsesTo(Generic[T]):
     """A type that parses to the specified type T.
 
@@ -581,14 +582,14 @@ class _FromYAMLAble:
 
 
 def _parse_field(
-        field,
-        value,
-        validator,
-        symbol_table,
-        parent,
-        must_parse_try_parse_to: bool = False,
-        must_copy: bool = True,
-        **kwargs
+    field,
+    value,
+    validator,
+    symbol_table,
+    parent,
+    must_parse_try_parse_to: bool = False,
+    must_copy: bool = True,
+    **kwargs,
 ):
     from fastfusion.util._setexpressions import InvertibleSet, eval_set_expression
 
@@ -602,7 +603,9 @@ def _parse_field(
             try:
                 target_type = get_args(validator)[0]
                 parsed = value
-                if isinstance(target_type, tuple) and any(check_subclass(t, InvertibleSet) for t in target_type):
+                if isinstance(target_type, tuple) and any(
+                    check_subclass(t, InvertibleSet) for t in target_type
+                ):
                     raise NotImplementedError(
                         f"InvertibleSet must be used directly, not as a part of a "
                         f"union, else this function must be updated."
@@ -616,7 +619,7 @@ def _parse_field(
                     if isinstance(value, set):
                         value = " | ".join(str(v) for v in value)
 
-                    type_args = target_type.__pydantic_generic_metadata__['args']
+                    type_args = target_type.__pydantic_generic_metadata__["args"]
                     assert len(type_args) == 1, "Expected exactly one type argument"
                     expected_element_type = type_args[0]
 
@@ -663,7 +666,7 @@ def _parse_field(
                 symbol_table=symbol_table,
                 must_copy=must_copy,
                 must_parse_try_parse_to=must_parse_try_parse_to,
-                **kwargs
+                **kwargs,
             )
             return parsed
         elif isinstance(parsed, str):
@@ -733,6 +736,7 @@ def _get_parsable_field_order(
             to_sort.remove(can_add[0])
     return order
 
+
 class _OurBaseModel(BaseModel, _FromYAMLAble, Mapping):
     # Exclude is supported OK, but makes the docs a lot longer because it's in so many
     # objects and has a very long type.
@@ -782,9 +786,7 @@ class _OurBaseModel(BaseModel, _FromYAMLAble, Mapping):
     def shallow_model_dump_non_none(self, **kwargs):
         keys = self.get_fields()
         if getattr(self, "__pydantic_extra__", None) is not None:
-            keys.extend([
-                k for k in self.__pydantic_extra__.keys() if k not in keys
-            ])
+            keys.extend([k for k in self.__pydantic_extra__.keys() if k not in keys])
 
         return {k: getattr(self, k) for k in keys if getattr(self, k) is not None}
 
@@ -834,8 +836,9 @@ class ParsableModel(_OurBaseModel, Parsable["ParsableModel"]):
                 if k not in supported_fields:
                     raise ValueError(
                         f"Field {k} is not supported for {self.__class__.__name__}. "
-                        f"Supported fields are:\n\t" +
-                        "\n\t".join(sorted(supported_fields)) + "\n",
+                        f"Supported fields are:\n\t"
+                        + "\n\t".join(sorted(supported_fields))
+                        + "\n",
                     )
 
         super().__init__(**kwargs)
@@ -876,6 +879,7 @@ class ParsableModel(_OurBaseModel, Parsable["ParsableModel"]):
             already_parsed=already_parsed,
             **kwargs,
         )
+
 
 class NonParsableModel(_OurBaseModel):
     """A model that will not parse any fields."""
@@ -1048,6 +1052,7 @@ class ParsableDict(
 
     def __copy__(self) -> Self:
         return type(self)({k: v for k, v in self.items()})
+
 
 class ParseExtras(ParsableModel):
     """

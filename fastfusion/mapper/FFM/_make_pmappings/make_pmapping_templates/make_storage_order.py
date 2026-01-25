@@ -71,7 +71,12 @@ def get_tensor_choices(
         required_order = get_tensor_order_constraint(nodes, symbol_table, tensors)
 
         symbol_table["arch_attributes"] = {}
-        cur_compute = compute._parse_expressions(symbol_table, location=f"arch.{compute.name}", must_parse_try_parse_to=True, must_copy=False)[0]
+        cur_compute = compute._parse_expressions(
+            symbol_table,
+            location=f"arch.{compute.name}",
+            must_parse_try_parse_to=True,
+            must_copy=False,
+        )[0]
         assert isinstance(cur_compute.enabled, bool)
         if not cur_compute.enabled:
             continue

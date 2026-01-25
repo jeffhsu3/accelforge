@@ -24,7 +24,9 @@ def evaluate_mapping(spec: Spec):
         The specification of architecture, workload, and mapping.
     """
     from fastfusion.mapper.FFM._join_pmappings.compatibility import Compatibility
-    from fastfusion.mapper.FFM._join_pmappings.pmapping_dataframe import PmappingDataframe
+    from fastfusion.mapper.FFM._join_pmappings.pmapping_dataframe import (
+        PmappingDataframe,
+    )
     from fastfusion.mapper.FFM._join_pmappings.pmapping_group import PmappingGroup
     from fastfusion.mapper.FFM._join_pmappings.join_pmappings import (
         clean_compress_and_join_pmappings,
@@ -38,7 +40,6 @@ def evaluate_mapping(spec: Spec):
     )
     from fastfusion.mapper.FFM._make_pmappings.pmapper_job import Job
 
-
     original_job = Job(
         metrics=spec.model.metrics,
         rank_variable_bounds=get_rank_variable_bounds_for_all_einsums(spec),
@@ -49,7 +50,9 @@ def evaluate_mapping(spec: Spec):
     pmapping_objects = {}
     einsum2jobs = {}
     flattened_arches = []
-    assert not getattr(spec, "_parsed", False), "Spec must not be parsed before evaluating a mapping"
+    assert not getattr(
+        spec, "_parsed", False
+    ), "Spec must not be parsed before evaluating a mapping"
     for pmapping in _split_mapping_to_pmappings(spec.mapping, spec.workload):
         einsum_name = pmapping.nodes[-1].einsum
         cur_spec = spec.calculate_component_area_energy_latency_leak(

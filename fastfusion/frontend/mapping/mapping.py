@@ -225,7 +225,9 @@ class TilePattern:
         s = []
         if self.calculated_n_iterations not in (None, "symbol"):
             s.append(f"in [0..{self.calculated_n_iterations})")
-        if with_initial_tile_shape and (self.initial_tile_shape not in (None, "symbol")):
+        if with_initial_tile_shape and (
+            self.initial_tile_shape not in (None, "symbol")
+        ):
             s.append(f"initial={self.initial_tile_shape}")
         if with_tile_shape and (self.tile_shape not in (None, "symbol")):
             s.append(f"tile_shape={self.tile_shape}")
@@ -1594,8 +1596,9 @@ class Mapping(Nested):
             exclude_types = (Reservation,)
         else:
             exclude_types = tuple()
-        for node in self._render_make_children(exclude_types=exclude_types,
-                                               with_tile_shape=with_tile_shape):
+        for node in self._render_make_children(
+            exclude_types=exclude_types, with_tile_shape=with_tile_shape
+        ):
             graph.add_node(node)
 
         color_keys = set()

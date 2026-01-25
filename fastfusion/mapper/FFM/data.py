@@ -29,10 +29,10 @@ class ResultDataFrame(pd.DataFrame):
         df = self.actions
         if any(isinstance(col2action(col), VerboseActionKey) for col in df.columns):
             columns = [
-                col for col in df.columns
+                col
+                for col in df.columns
                 if isinstance(col2action(col), VerboseActionKey)
             ]
-
 
     @property
     def energy(self) -> "ResultDataFrame":
@@ -45,6 +45,7 @@ class ActionDataFrame(pd.DataFrame):
     """
     A hierarchical column dataframe with action counts.
     """
+
     @property
     def _constructor(self):
         return ResultDataFrame
@@ -58,4 +59,3 @@ class VerboseActionDataFrame(pd.DataFrame):
     """
     A hierarchical column dataframe with verbose action counts.
     """
-

@@ -1,6 +1,12 @@
 import copy
 from typing import Annotated, Any, TypeAlias
-from fastfusion.util._basetypes import ParsableList, ParsableModel, ParsesTo, TryParseTo, _PostCall
+from fastfusion.util._basetypes import (
+    ParsableList,
+    ParsableModel,
+    ParsesTo,
+    TryParseTo,
+    _PostCall,
+)
 from fastfusion._version import assert_version, __version__
 from fastfusion.util._parse_expressions import ParseError
 from fastfusion.util._setexpressions import InvertibleSet
@@ -33,8 +39,14 @@ class Rename(ParsableModel):
     def _parse_expressions(self, symbol_table: dict[str, Any], *args, **kwargs):
         parsed, symbol_table = super()._parse_expressions(symbol_table, *args, **kwargs)
         expected_count = parsed.expected_count
-        if expected_count is not None and isinstance(parsed.source, InvertibleSet) and len(parsed.source) != expected_count:
-            parsed, symbol_table = super()._parse_expressions(symbol_table, *args, **kwargs)
+        if (
+            expected_count is not None
+            and isinstance(parsed.source, InvertibleSet)
+            and len(parsed.source) != expected_count
+        ):
+            parsed, symbol_table = super()._parse_expressions(
+                symbol_table, *args, **kwargs
+            )
             raise ParseError(
                 f"Expected count is {parsed.expected_count}, but got "
                 f"{len(parsed.source)}: {parsed.source}",
@@ -66,12 +78,15 @@ class RenameList(ParsableList[Rename]):
     def _parse_expressions(self, symbol_table: dict[str, Any], *args, **kwargs):
 
         cur_symbol_table = symbol_table.copy()
+
         class PostCallRenameList(_PostCall[Rename]):
             def __call__(self, field, value, parsed, symbol_table):
                 symbol_table[parsed.name] = parsed.source
                 return parsed
 
-        new, _ = super()._parse_expressions(cur_symbol_table, *args, **kwargs, post_calls=(PostCallRenameList(),))
+        new, _ = super()._parse_expressions(
+            cur_symbol_table, *args, **kwargs, post_calls=(PostCallRenameList(),)
+        )
         return new, symbol_table
 
 

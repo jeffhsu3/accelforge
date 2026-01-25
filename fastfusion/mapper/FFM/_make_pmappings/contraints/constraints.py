@@ -278,7 +278,8 @@ def get_constraints(
             loops = [
                 n
                 for n in mapping
-                if isinstance(n, Spatial) and (n.component, n.name) == (m.name, dim.name)
+                if isinstance(n, Spatial)
+                and (n.component, n.name) == (m.name, dim.name)
             ]
             loop_bounds = list(dim.loop_bounds)
             if dim.reuse:
@@ -303,7 +304,9 @@ def get_constraints(
             target_mapping_nodes = [
                 n
                 for n in mapping
-                if isinstance(n, Spatial) and n.component == m.name and n.name == dim.name
+                if isinstance(n, Spatial)
+                and n.component == m.name
+                and n.name == dim.name
             ]
             if dim.min_usage > 0:
                 if not target_mapping_nodes:

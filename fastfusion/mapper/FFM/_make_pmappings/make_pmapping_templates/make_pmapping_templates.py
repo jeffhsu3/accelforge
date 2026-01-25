@@ -131,10 +131,7 @@ def remove_unordered_spatial_temporal_loops(
             continue
 
         last_idx_to_check = _idx_of_lowest_tensor_holder_with_component_above_fanout(
-            mapping,
-            i,
-            fanouts,
-            node
+            mapping, i, fanouts, node
         )
         to_check = mapping[i + 1 : last_idx_to_check]
         to_remove = set()
@@ -159,7 +156,9 @@ def remove_unordered_spatial_temporal_loops(
         yield [n for n in mapping if id(n) not in combo]
 
 
-def _idx_of_lowest_tensor_holder_with_component_above_fanout(mapping, start_idx, fanouts, node):
+def _idx_of_lowest_tensor_holder_with_component_above_fanout(
+    mapping, start_idx, fanouts, node
+):
     """
     Return idx of lowest tensor holder with component above fanout. If none
     found, returns index right under start idx (start_idx + 1).
@@ -209,7 +208,11 @@ def _timeloop_style_even(mapping: list[MappingNode]):
     return mapping
 
 
-def assert_proper_fusion_labeling(mapping: list[MappingNode], fusable_tensors: set[TensorName], check_loops: bool = True):
+def assert_proper_fusion_labeling(
+    mapping: list[MappingNode],
+    fusable_tensors: set[TensorName],
+    check_loops: bool = True,
+):
     tensors = set()
     for i, t in enumerate(mapping):
         if not isinstance(t, TensorHolder):
@@ -224,8 +227,8 @@ def assert_proper_fusion_labeling(mapping: list[MappingNode], fusable_tensors: s
                         j
                     ]._fused, f"Node {j} is not fused in {' '.join(m.compact_str() for m in mapping)}"
         assert (
-            (t._backing & fusable_tensors) == new
-        ), f"Node {i} backing missing {new - t._backing} in {' '.join(m.compact_str() for m in mapping)}"
+            t._backing & fusable_tensors
+        ) == new, f"Node {i} backing missing {new - t._backing} in {' '.join(m.compact_str() for m in mapping)}"
         tensors.update(new)
         tensors.update(t.tensors)
 

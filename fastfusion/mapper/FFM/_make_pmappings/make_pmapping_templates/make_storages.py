@@ -50,7 +50,7 @@ def make_tensor_choices_one_level(
             symbol_table=symbol_table,
             must_parse_try_parse_to=True,
             must_copy=False,
-            location=f"arch.{node.name}.tensors"
+            location=f"arch.{node.name}.tensors",
         )[0]
     except ParseError as e:
         e.add_field(f"Einsum {einsum_name} arch.{node.name}.tensors")
@@ -59,7 +59,6 @@ def make_tensor_choices_one_level(
     must_keep = tensors.to_my_space(node.tensors.keep)
     may_keep = tensors.to_my_space(node.tensors.may_keep)
     may_keep -= must_keep
-
 
     if must_keep - tensors:
         raise KeyError(
