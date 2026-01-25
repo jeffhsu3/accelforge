@@ -154,6 +154,11 @@ def insert_temporal_loops(
         if next_persistent:
             rank_variables &= set()
 
+        # No recomputation: If we haven't seen a tensor yet, must only iterate over
+        # fully-relevant rank variables.
+        for t in tensors - seen_tensors:
+            rank_variables &= tensor2fully_relevant_rank_vars[t]
+
         #  The fanout for a prior node may be placed here, so spatial nodes may be moved
         #  here
         someone_elses_spatials_may_be_placed_below = (
@@ -165,76 +170,62 @@ def insert_temporal_loops(
         # to be placed here, so we won't prohibit any loops.
         if someone_elses_spatials_may_be_placed_below:
             pass
+        else:
 
-        # Loops below processing stages aren't helpful because there is no storage.
-        # Ctrl-F for CONTIGUOUS_ITERATION_SPACE_DISCUSSION: Can't do this if we may put
-        # another node's spatial loops below this one, because lowering would add move
-        # the spatials down, which would constrain the temporals due to spatial-temporal
-        # crossing.
-        if (
-            isinstance(prev_storages[0], ProcessingStage)
-            and not someone_elses_spatials_may_be_placed_below
-        ):
-            rank_variables &= set()
+            # Optimality-preserving optimization: Loops below processing stages aren't
+            # helpful because there is no storage. Ctrl-F for
+            # CONTIGUOUS_ITERATION_SPACE_DISCUSSION: Can't do this if we may put another
+            # node's spatial loops below this one, because lowering would add move the
+            # spatials down, which would constrain the temporals due to spatial-temporal
+            # crossing.
+            if isinstance(prev_storages[0], ProcessingStage):
+                rank_variables &= set()
 
-        # Generally we want to only use rank variables that are irrelevant to the
-        # previous tensors, else we'd just lower those tensors. However, we can't lower
-        # backing TensorHolder nodes because this will add loops to compatibility.
+            # Generally we want to only use rank variables that are irrelevant to the
+            # previous tensors, else we'd just lower those tensors. However, we can't
+            # lower backing TensorHolder nodes because this will add loops to
+            # compatibility.
 
-        # No recomputation: If we haven't seen a tensor yet, must only iterate over
-        # fully-relevant rank variables.
-        for t in tensors - seen_tensors:
-            rank_variables &= tensor2fully_relevant_rank_vars[t]
+            # Optimality-preserving optimization: We can trivially lower non-backing
+            # TensorHolder nodes through fully-relevant loops. Can't do this if the
+            # loops are fused because that'd add loops to the compatibility. Ctrl-F
+            # forCONTIGUOUS_ITERATION_SPACE_DISCUSSION: Can't do this if we may put
+            # another node's spatial loops below this one, because lowering would add
+            # move the spatials down, which would constrain the temporals due to
+            # spatial-temporal crossing.
+            for s in prev_storages:
+                for t in s.tensors:
+                    if t not in s._backing and not s._must_be_here:
+                        rank_variables -= tensor2fully_relevant_rank_vars[t]
 
-        # Optimality-preserving optimizations: We can trivially lower non-backing
-        # TensorHolder nodes through fully-relevant loops. Can't do this if the loops
-        # are fused because that'd add loops to the compatibility. Ctrl-F
-        # forCONTIGUOUS_ITERATION_SPACE_DISCUSSION: Can't do this if we may put another
-        # node's spatial loops below this one, because lowering would add move the
-        # spatials down, which would constrain the temporals due to spatial-temporal
-        # crossing.
-        for s in prev_storages:
-            for t in s.tensors:
-                if (
-                    t not in s._backing
-                    and not s._must_be_here
-                    and not someone_elses_spatials_may_be_placed_below
-                ):
-                    rank_variables -= tensor2fully_relevant_rank_vars[t]
-
-        # Optimality-preserving optimization: We can trivially raise TensorHolder nodes
-        # through irrelevant unfused loops. Can't do this if the loops are fused because
-        # that'd increase the lifetime of the TensorHolder node. Can't do this if the
-        # irrelevant rank variables partially-relevant to the previous tensors, since
-        # that affects the permutation. See CONTIGUOUS_ITERATION_SPACE_DISCUSSION: Can't
-        # do this if we may put another node's spatial loops above this one, because
-        # raising would add move the temporals down, which would constrain them due to
-        # spatial-temporal crossing. TODO: CONTIGUOUS_ITERATION_SPACE_DISCUSSION: This
-        # causes all loops to be added, but really we only need to re-add the ones that
-        # may conflict with a spatial loop.
-        if not is_fused_loops:
-            for s in next_storages:
-                if (
-                    not s._must_be_here
-                    and not someone_elses_spatials_may_be_placed_above
-                ):
-                    for t in s.tensors:
-                        rvs = tensor2irrelevant_rank_vars[t]
-                        for t2 in prev_tensors:
-                            rvs -= tensor2partially_relevant_rank_vars[t2]
-                        rank_variables -= rvs
-
-        partially_relevant_to_previous = set.union(
-            set(), *(tensor2partially_relevant_rank_vars[t] for t in prev_tensors)
-        )
-        partially_relevant_to_previous &= rank_variables
-
-        permutable_partially_relevant = set()
+            # Optimality-preserving optimization: We can trivially raise TensorHolder
+            # nodes through irrelevant unfused loops. Can't do this if the loops are
+            # fused because that'd increase the lifetime of the TensorHolder node. Can't
+            # do this if the irrelevant rank variables partially-relevant to the
+            # previous tensors, since that affects the permutation. See
+            # CONTIGUOUS_ITERATION_SPACE_DISCUSSION: Can't do this if we may put another
+            # node's spatial loops above this one, because raising would add move the
+            # temporals down, which would constrain them due to spatial-temporal
+            # crossing. TODO: CONTIGUOUS_ITERATION_SPACE_DISCUSSION: This causes all
+            # loops to be added, but really we only need to re-add the ones that may
+            # conflict with a spatial loop.
+            if not is_fused_loops:
+                for s in next_storages:
+                    if not s._must_be_here:
+                        for t in s.tensors:
+                            rvs = tensor2irrelevant_rank_vars[t]
+                            for t2 in prev_tensors:
+                                rvs -= tensor2partially_relevant_rank_vars[t2]
+                            rank_variables -= rvs
 
         # =============================================================================
         # Determine whether to lower TensorHolder nodes through partially-relevant
         # loops.
         # =============================================================================
+        partially_relevant_to_previous = rank_variables & set.union(
+            set(), *(tensor2partially_relevant_rank_vars[t] for t in prev_tensors)
+        )
+        permutable_partially_relevant = set()
 
         # NOTE: If the lowering logic for backing TensorHolders is updated & we can
         # lower through >1 loops, then also update label_fused_loops
