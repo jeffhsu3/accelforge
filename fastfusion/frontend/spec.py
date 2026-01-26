@@ -284,6 +284,12 @@ class Spec(ParsableModel):
             if found[-1][-1].name != c:
                 raise ParseError(f"Compute node {c} not found in architecture")
 
+        # These can't be pickled if they use dynamically-loaded code
+        for f in found:
+            for n in f:
+                if hasattr(n, "component_model"):
+                    n.component_model = None
+
         return found if compute_node is None else found[0]
 
 
