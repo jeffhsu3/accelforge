@@ -11,3 +11,11 @@ from fastfusion.util import set_n_parallel_jobs
 from fastfusion.util import LiteralString
 import fastfusion.mapper as mapper
 from fastfusion.examples import examples
+
+from fastfusion.frontend.variables import Variables
+from fastfusion.frontend.arch import Arch
+from fastfusion.frontend.config import Config
+from fastfusion.frontend.mapping import Mapping
+from fastfusion.frontend.renames import Renames
+from fastfusion.frontend.spec import Spec
+from fastfusion.frontend.workload import Workload
