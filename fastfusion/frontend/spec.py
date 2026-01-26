@@ -163,7 +163,9 @@ class Spec(ParsableModel):
         ----------
         einsum_name: EinsumName | None = None
             Optional Einsum name to populate symbols with the Einsum's symbols from the
-            workload. If None, no symbols are populated from the workload.
+            workload. If None, and there are Einsums in the workload, the first Einsum
+            is used. If None and there are no Einsums in the workload, then no symbols
+            are populated from the workload.
         area : bool, optional
             Whether to compute and populate area entries.
         energy : bool, optional
@@ -180,6 +182,9 @@ class Spec(ParsableModel):
             self.config.component_models,
             include_installed=self.config.use_installed_component_models,
         )
+
+        if einsum_name is None and len(self.workload.einsums) > 0:
+            einsum_name = self.workload.einsums[0].name
 
         components = set()
         try:
