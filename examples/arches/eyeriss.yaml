@@ -8,7 +8,6 @@ arch:
     name: MainMemory
     component_class: lpddr4
     size: inf
-    extra_attributes_for_component_model: {width: 64}
 
   - !Memory
     name: GlobalBuffer
@@ -17,7 +16,7 @@ arch:
     # 32 reads and writes per cycle, 200MHz. Note that the bits per read/write is the
     # bits per action set below.
     total_latency: (read_actions + write_actions) / 32 / 200e6
-    extra_attributes_for_component_model: {width: 64, n_banks: 32}
+    extra_attributes_for_component_model: {n_banks: 32}
     actions:
     - {name: read, bits_per_action: 64}
     - {name: write, bits_per_action: 64}
@@ -35,7 +34,6 @@ arch:
     size: 12 * 16 # 12 16b entries
     # One read, one write per cycle, 200MHz. Note bits per action is set below.
     total_latency: max(read_actions / 200e6 + write_actions / 200e6)
-    extra_attributes_for_component_model: {width: 16}
     tensors: {keep: input}
     actions:
     - {name: read, bits_per_action: 16}
@@ -47,7 +45,6 @@ arch:
     size: 192 * 16 # 12 16b entries
     # One read, one write per cycle, 200MHz. Note bits per action is set below.
     total_latency: max(read_actions / 200e6 + write_actions / 200e6)
-    extra_attributes_for_component_model: {width: 16}
     tensors: {keep: weight}
     actions:
     - {name: read, bits_per_action: 16}
@@ -59,7 +56,6 @@ arch:
     size: 16 * 16 # 16 16b entries
     # One read, one write per cycle, 200MHz. Note bits per action is set below.
     total_latency: max(read_actions / 200e6 + write_actions / 200e6)
-    extra_attributes_for_component_model: {width: 16}
     tensors: {keep: output}
     actions:
     - {name: read, bits_per_action: 16}
