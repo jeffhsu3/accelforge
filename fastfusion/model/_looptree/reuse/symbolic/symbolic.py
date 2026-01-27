@@ -56,6 +56,7 @@ import sympy
 SYMBOL = "symbol"
 IMPERFECT = False
 
+PRINT_FORMULAS = False
 
 @dataclass(eq=True, frozen=True)
 class Compute:
@@ -561,6 +562,23 @@ def analyze_reuse_and_add_reservations_to_mapping(
 
     result.symbols = symbols
     result.tensor2mapping = tensor2mapping
+
+    if PRINT_FORMULAS:
+        print(f'Mapping:')
+        for node in mapping:
+            print(f'\t{node.compact_str()}')
+
+        for buffet, stats in result.buffet_stats.items():
+            print(f'Einsum {buffet.einsum} tensor {buffet.tensor} level {buffet.level}')
+            print(f'\tTotal reads to parent: {stats.total_reads_to_parent}')
+            print(f'\tTotal writes to parent: {stats.total_writes_to_parent}')
+            print(f'\tMax per parent reads to parent: {stats.max_per_parent_reads_to_parent}')
+            print(f'\tMax per parent writes to parent: {stats.max_per_parent_writes_to_parent}')
+            print(f'\tTotal reads to peer: {stats.total_reads_to_peer}')
+            print(f'\tTotal writes to peer: {stats.total_writes_to_peer}')
+            print(f'\tMax per unit reads to peer: {stats.max_per_unit_reads_to_peer}')
+            print(f'\tMax per unit writes to peer: {stats.max_per_unit_writes_to_peer}')
+
     return result
 
 

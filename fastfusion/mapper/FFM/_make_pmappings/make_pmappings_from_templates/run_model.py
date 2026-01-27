@@ -2,6 +2,7 @@ from sympy import Symbol
 import fastfusion.frontend.arch as arch
 from fastfusion.frontend.mapping import TensorHolder
 from fastfusion.mapper.FFM._make_pmappings.pmapper_job import Job
+from fastfusion.model._looptree.reuse import symbolic
 from fastfusion.model._looptree.reuse.symbolic import (
     analyze_reuse_and_add_reservations_to_mapping,
 )
@@ -53,43 +54,34 @@ def run_model(
                 [f"{k}: {type(v)} {str(v).strip()}" for k, v in latency.items()]
             )
         )
-
-    component_to_max_fanout = {}
-    component_to_usage_scale = {}
     memory_to_size = {}
     component_to_non_power_gated_porp = {}
+    usage_df = {}
+
     non_power_gated_instances = 1
     for node in job.flattened_arch:
         if isinstance(node, arch.TensorHolder):
             if isinstance(node, arch.Memory):
                 memory_to_size[node.name] = node.size
-        component_to_max_fanout[node.name] = {s.name: s.fanout for s in node.spatial}
-        component_to_usage_scale[node.name] = {
-            s.name: s.usage_scale for s in node.spatial
-        }
 
-    usage_df = {}
-    unscaled_usage = {}
-    for (component, einsum), per_dim_fanout in reuse.fanout.items():
-        for dim, fanout in per_dim_fanout.items():
-            usage = fanout / component_to_max_fanout[component][dim]
-            usage_df[f"usage<SEP>spatial<SEP>{component}<SEP>{dim}"] = (
-                usage * component_to_usage_scale[component][dim]
-            )
-            unscaled_usage.setdefault(component, {})[dim] = usage
-
-    for node in job.flattened_arch:
+        # If there's no loops that use this spatial fanout, then the model won't output
+        # any usage. We still want to reserve at least one spatial instance in this
+        # case.
+        used_fanout = reuse.fanout.get((node.name, job.einsum_name), {})
         for s in node.spatial:
-            if s.power_gateable:
-                non_power_gated_instances *= unscaled_usage.get(node.name, {}).get(
-                    s.name, 1
-                )
+            usage = used_fanout.get(s.name, 1) / s.fanout
+            scaled_usage = usage * s.usage_scale
+            usage_df[f"usage<SEP>spatial<SEP>{node.name}<SEP>{s.name}"] = scaled_usage
+            non_power_gated_instances *= usage
         component_to_non_power_gated_porp[node.name] = non_power_gated_instances
 
     actions = gather_actions(reuse, None, use_name=True)
     energy = compute_energy_from_actions(
         spec, actions, overall_latency, component_to_non_power_gated_porp
     )
+    if symbolic.PRINT_FORMULAS:
+        for k, v in energy.items():
+            print(f'{k}: {v}')
 
     fusable_tensors = workload.tensor_names_used_in_multiple_einsums
     tensor_to_backing = {}
