@@ -425,7 +425,10 @@ def make_pmapping_templates(job: Job) -> SameEinsumJobs:
     )
 
     jobs = SameEinsumJobs()
+    only_output_pmapping_index = job.spec.mapper.ffm._only_output_pmapping_index
     for i, (mapping, constraints, symbol_table) in enumerate(mappings_constraints):
+        if only_output_pmapping_index is not None and i != only_output_pmapping_index:
+            continue
         new_job = copy.copy(job)
         new_job.mapping = mapping
         new_job.constraints = constraints

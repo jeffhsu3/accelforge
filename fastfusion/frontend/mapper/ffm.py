@@ -90,7 +90,11 @@ class FFM(ParsableModel):
     TODO: Also need to explore putting loops above the outermost memory then. This is
     currently private because we may want to have a catch-all term like
     "save_outermost_memory_usage".
+    """
 
+    _only_output_pmapping_index: int | None = None
+    """
+    For debugging. Only output the pmapping with this index.
     """
 
     memory_limit: float | int = float("inf")
