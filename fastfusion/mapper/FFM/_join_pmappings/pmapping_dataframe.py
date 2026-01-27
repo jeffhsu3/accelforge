@@ -84,7 +84,6 @@ class PmappingDataframe:
             ), "ignored_resources must be set if next_shared_loop_index is set"
             self.free_to_loop_index(loop_index=next_shared_loop_index)
             self.limit_capacity(
-                resource2capacity={},
                 next_shared_loop_index=next_shared_loop_index,
                 drop_valid_reservations=limit_capacity_drop_valid_reservations,
                 ignored_resources=ignored_resources,
@@ -377,7 +376,6 @@ class PmappingDataframe:
         compatibility_right: Compatibility,
         compatibility_joined: Compatibility,
         ignored_resources: set[str],
-        resource2capacity: dict[str, int],
         drop_valid_reservations: bool = True,
         _pmapping_row_filter_function: Callable[[pd.Series], bool] | None = None,
     ) -> "PmappingDataframe":
@@ -578,7 +576,6 @@ class PmappingDataframe:
         result.free_to_loop_index(next_shared_loop_index, live_tensors=live_tensors)
         if not CHECK_CORRECTNESS:
             result.limit_capacity(
-                resource2capacity,
                 next_shared_loop_index,
                 drop_valid_reservations,
                 ignored_resources=ignored_resources,
@@ -709,17 +706,14 @@ class PmappingDataframe:
 
     def limit_capacity(
         self,
-        resource2capacity: dict[str, Optional[int]],
         next_shared_loop_index: int = None,
         drop_valid_reservations: bool = True,
         ignored_resources: set[str] = set(),
     ):
-        resource2capacity = resource2capacity or {}
         dropcols = []
         for resource in sorted(
             set(self.right_reservations) | set(self.left_reservations)
         ):
-            capacity = resource2capacity.get(resource, None)
             # Right reservations: Only check the greatest-index level. If a loop
             # is 0 and the next shared loop index is -1, then we can drop the
             # column.
@@ -727,11 +721,7 @@ class PmappingDataframe:
             if right_loops:
                 n = max(right_loops)
                 col = nameloop2col(resource, n)
-                self._data = (
-                    self.data[self.data[col] <= capacity]
-                    if capacity is not None
-                    else self.data
-                )
+                self._data = self.data[self.data[col] <= 1]
             for l in list(right_loops):
                 if (
                     l == 0
@@ -747,11 +737,7 @@ class PmappingDataframe:
             left_loops = self.left_reservations.get(resource, set())
             for l in list(left_loops):
                 col = nameloop2col(resource, l, left=True)
-                self._data = (
-                    self.data[self.data[col] <= capacity]
-                    if capacity is not None
-                    else self.data
-                )
+                self._data = self.data[self.data[col] <= 1]
                 if (
                     l == 0
                     and drop_valid_reservations

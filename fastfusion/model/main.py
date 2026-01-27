@@ -144,16 +144,9 @@ def evaluate_mapping(
         ]
         pmapping_objects[job.einsum_name] = {pmapping_id: job.mapping}
 
-    resource2capacity = {}
-    for flattened_arch in flattened_arch:
-        for l in flattened_arch:
-            if isinstance(l, arch.Memory):
-                resource2capacity[l.name] = l.size
-
     m = MultiEinsumPmappings(
         einsum2pmappings,
         pmapping_objects,
-        resource2capacity,
         einsum2jobs,
         can_combine_multiple_runs=True,
         einsums_with_pmappings_generated=spec.workload.einsum_names,

@@ -40,7 +40,7 @@ class InvertibleSet(BaseModel, Generic[T]):
     def bits_per_value(self) -> int:
         if len(self.instance) != 1:
             raise ValueError(
-                f"Can not access bits_per_value for a set with multiple elements: "
+                f"Can not access bits_per_value for a set !=1 elements: "
                 f"{self.instance}."
             )
         if self._bits_per_value is None:

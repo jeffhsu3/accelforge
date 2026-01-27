@@ -22,8 +22,6 @@ class MultiEinsumPmappings:
     pmapping_objects:
         A dictionary of Einsum names to dictionaries of UUIDs to Mappings. The entries
         in the PmappingGroup objects reference these pmapping objects.
-    resource2capacity:
-        A dictionary of resource names to capacities.
     einsum2jobs:
         A dictionary of Einsum names to lists of Jobs that generated the pmappings.
     can_combine_multiple_runs:
@@ -45,7 +43,6 @@ class MultiEinsumPmappings:
         self,
         einsum2pmappings: dict[EinsumName, list[PmappingGroup]],
         pmapping_objects: dict[EinsumName, dict[UUID, Mapping]],
-        resource2capacity: dict[str, int],
         einsum2jobs: dict[EinsumName, list[Job]],
         can_combine_multiple_runs: bool,
         einsums_with_pmappings_generated: set[EinsumName],
@@ -54,7 +51,6 @@ class MultiEinsumPmappings:
     ):
         self.einsum2pmappings: dict[EinsumName, list[PmappingGroup]] = einsum2pmappings
         self.pmapping_objects: dict[EinsumName, dict[UUID, Mapping]] = pmapping_objects
-        self.resource2capacity: dict[str, int] = resource2capacity
         self.einsum2jobs: dict[EinsumName, list[Job]] = einsum2jobs
         self.can_combine_multiple_runs: bool = can_combine_multiple_runs
         self.einsums_with_pmappings_generated: set[EinsumName] = (
@@ -74,15 +70,6 @@ class MultiEinsumPmappings:
         self = copy.copy(self)
         for einsum_name, pmappings in other.einsum2pmappings.items():
             self.einsum2pmappings.setdefault(einsum_name, []).extend(pmappings)
-        for resource, capacity in other.resource2capacity.items():
-            if resource not in self.resource2capacity:
-                self.resource2capacity[resource] = capacity
-            if self.resource2capacity[resource] != other.resource2capacity[resource]:
-                raise ValueError(
-                    f"Resource {resource} has different capacities in different "
-                    f"specifications: {self.resource2capacity[resource]} and "
-                    f"{other.resource2capacity[resource]}."
-                )
         for einsum_name, jobs in other.einsum2jobs.items():
             self.einsum2jobs.setdefault(einsum_name, []).extend(jobs)
         self.pmapping_objects.update(other.pmapping_objects)
@@ -109,7 +96,6 @@ class MultiEinsumPmappings:
         return MultiEinsumPmappings(
             einsum2pmappings=new_einsum2pmappings,
             pmapping_objects=self.pmapping_objects,
-            resource2capacity=self.resource2capacity,
             einsum2jobs=self.einsum2jobs,
             can_combine_multiple_runs=self.can_combine_multiple_runs,
             einsums_with_pmappings_generated=self.einsums_with_pmappings_generated,

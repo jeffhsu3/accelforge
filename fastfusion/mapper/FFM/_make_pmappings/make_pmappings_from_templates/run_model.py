@@ -110,7 +110,7 @@ def run_model(
 
         for tensor, backing in tensor_to_backing.items():
             if (is_copy_op or buffet.tensor == tensor) and buffet.level == backing:
-                df[tensor2col(tensor)] = occupancy
+                df[tensor2col(tensor)] = occupancy / memory_to_size[buffet.level]
 
         total_occupancy.setdefault(buffet.level, {}).setdefault(stats.n_loops_above, 0)
         total_occupancy[buffet.level][stats.n_loops_above] += occupancy
@@ -123,7 +123,7 @@ def run_model(
         for n_loop in n_loop_options:
             if n_loop in occupancies:
                 running_total += occupancies[n_loop]
-                df[nameloop2col(memory, n_loop)] = running_total
+                df[nameloop2col(memory, n_loop)] = running_total / memory_to_size[memory]
 
     if metrics & Metrics.ACTIONS:
         detailed_actions = gather_actions(reuse, None, verbose=True, use_name=True)
@@ -134,6 +134,8 @@ def run_model(
         )
         for key, energy_val in detailed_energy.items():
             df[energy2col(key)] = energy_val * n_instances
+        for component, cur_latency in latency.items():
+            df[f"latency<SEP>{component}"] = cur_latency * n_instances
 
     if metrics & Metrics.LATENCY:
         df["Total<SEP>latency"] = overall_latency * n_instances
@@ -145,13 +147,9 @@ def run_model(
                 df[firstlatency2col(compute_level.level, idx)] = (
                     max_first_latency * n_instances
                 )
-        for component, cur_latency in latency.items():
-            df[f"latency<SEP>{component}"] = cur_latency * n_instances
 
     if metrics & Metrics.ENERGY:
         df["Total<SEP>energy"] = sum(energy.values()) * n_instances
-        for key, energy in energy.items():
-            df[f"energy<SEP>{key.level}<SEP>{key.action}"] = energy * n_instances
 
     per_memory_usage_df = {}
     for memory, occupancies in total_occupancy.items():

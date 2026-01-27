@@ -185,9 +185,6 @@ def _make_pmappings(
         can_combine_multiple_runs=can_combine_multiple_runs,
     )
 
-    jobs_flattened = [j for jobs in einsum2jobs.values() for j in jobs]
-    resource2capacity = pmapper.get_memory_to_size(jobs_flattened)
-
     flattened_arches = {}
     parsed_specs = {}
     for einsum_name, jobs in einsum2jobs.items():
@@ -199,7 +196,6 @@ def _make_pmappings(
     m = MultiEinsumPmappings(
         pmapping_groups,
         pmapping_objects,
-        resource2capacity,
         einsum2jobs,
         can_combine_multiple_runs=can_combine_multiple_runs,
         einsums_with_pmappings_generated=set(

@@ -160,44 +160,25 @@ def get_jobs(
     return einsum2jobs
 
 
-def get_memory_to_size(
-    jobs: list[Job],
-) -> dict[str, tuple[arch.Memory, int]]:
-    resource2capacity = {}
-    who_set = {}
-    for job in jobs:
-        memories = [m for m in job.flattened_arch if isinstance(m, arch.Memory)]
-        for m in memories:
-            resource2capacity.setdefault(m.name, m.size)
-            who_set.setdefault(m.name, job.einsum_name)
-            if resource2capacity[m.name] != m.size:
-                raise ValueError(
-                    f"Memory {m.name} has different sizes depending on which Einsum "
-                    f"is being mapped. Memory sizes should not depend on which Einsum "
-                    f"is being mapped. Einsum {who_set[m.name]} set the size to "
-                    f"{resource2capacity[m.name]}, but Einsum {job.einsum_name} set "
-                    f"the size to {m.size}."
-                )
-            resource2capacity[m.name] = m.size
-    return resource2capacity
-
-
 def get_memories_to_track(
     spec: Spec,
-    jobs: list[Job],
+    einsum2jobs: dict[EinsumName, list[Job]],
     metrics: Metrics,
     can_combine_multiple_runs: bool,
 ) -> tuple[list[str], list[str]]:
 
-    memory_to_size = get_memory_to_size(jobs)
-    memories_track_all = list(memory_to_size.keys())
+    memories_track_all = set()
+    for einsum, jobs in einsum2jobs.items():
+        for job in jobs:
+            memories_track_all.update(m.name for m in job.flattened_arch if isinstance(m, arch.Memory))
+
     memories_track_pmappings_only = []
     ignored_resources = set()
 
     # If we're combining the pmappings from multiple runs, we can't conclude anything
     # about the metrics to track
     if can_combine_multiple_runs:
-        ignored_resources = set(memory_to_size.keys())
+        ignored_resources = memories_track_all
         return (
             memories_track_all,
             memories_track_pmappings_only,
@@ -205,43 +186,46 @@ def get_memories_to_track(
         )
 
     if metrics.RESOURCE_USAGE in metrics:
-        ignored_resources = set(memory_to_size.keys())
+        ignored_resources = memories_track_all
         return (
             memories_track_all,
             memories_track_pmappings_only,
             ignored_resources,
         )
 
-    def _get_scale(tensor_name: TensorName) -> int:
+    tensor_sizes = {}
+    for tensor, size in get_per_tensor_size(spec).items():
         scale = 1
-        for einsum in spec.workload.einsums_with_tensor(tensor_name):
-            if einsum.tensor_accesses[tensor_name].persistent:
+        for einsum in spec.workload.einsums_with_tensor(tensor):
+            if einsum.tensor_accesses[tensor].persistent:
                 scale = max(scale, spec.workload.n_instances * einsum.n_instances)
-        return scale
-
-    total_tensor_sizes = sum(
-        s * _get_scale(t) for t, s in get_per_tensor_size(spec).items()
-    )
+        tensor_sizes[tensor] = size * scale
 
     # If the memory is big enough to hold all the tensors then we don't need to consider
     # it
-    max_bits_per_value = max(
-        t.bits_per_value for e in spec.workload.einsums for t in e.tensor_accesses
-    )
-    for m, size in memory_to_size.items():
-        max_bits_per_value_scale = 0
-        for job in jobs:
-            mem = job.spec.arch.find(m)
-            max_bits_per_value_scale = max(
-                max_bits_per_value_scale, max(mem.bits_per_value_scale.values())
-            )
+    for memory in list(memories_track_all):
+        usage = 0
+        for einsum in einsum2jobs.keys():
+            job = einsum2jobs[einsum][0]
+            try:
+                mem: arch.Memory = job.spec.arch.find(memory)
+            except ValueError:
+                continue
+            for tensor in spec.workload.einsums[einsum].tensor_names:
+                if mem.size == 0:
+                    usage = 2  # FAIL
+                else:
+                    scale = mem.bits_per_value_scale[tensor] / mem.size
+                    usage += tensor_sizes[tensor] * scale
 
-        if size >= total_tensor_sizes * max_bits_per_value * max_bits_per_value_scale:
-            memories_track_all.remove(m)
-            logging.info(
-                f"Not tracking memory {m}. It is big enough to hold "
-                f"every tensor in the workload."
+        if usage <= 1:
+            ignored_resources.add(memory)
+            print(
+                f"Not tracking memory {memory}. It is big enough to hold "
+                f"every workload tensor that may be stored in it. Max possible "
+                f"usage: {usage * 100:.2f}%"
             )
+            memories_track_all.remove(memory)
 
     # If the memory is below every backing tensor holder node, then we need it for the
     # pmapping exploration but can drop it immediately
@@ -254,13 +238,15 @@ def get_memories_to_track(
                     seen = True
                     if node.persistent:
                         ignored_resources.add(m)
+                    if node._backing:
+                        must_track = True
                 if isinstance(node, Loop) and node._fused and seen:
                     must_track = True
 
         if not must_track:
             memories_track_all.remove(m)
             memories_track_pmappings_only.append(m)
-            logging.info(
+            print(
                 f"Not tracking memory {m} across joining stages. It is never "
                 f"reserved across fused loop iterations."
             )
@@ -399,26 +385,25 @@ def _allocate_jobs(einsum2jobs):
 
 
 def _fill_jobs_with_memories_to_track(
-    einsum2jobs,
+    einsum2jobs: dict[EinsumName, dict[Compatibility, SameCompatibilityJobs]],
     spec,
     metrics,
     can_combine_multiple_runs,
 ):
-    jobs_flattened = [
-        j
-        for compatibility2joblist in einsum2jobs.values()
-        for job_list in compatibility2joblist.values()
-        for j in job_list
-    ]
+    einsum2jobs_flattened = {
+        e: [j for jobs in v.values() for j in jobs] for e, v in einsum2jobs.items()
+    }
+
     memories_track_all, memories_track_pmappings_only, ignored_resources = (
         get_memories_to_track(
             spec,
-            jobs_flattened,
+            einsum2jobs_flattened,
             metrics,
             can_combine_multiple_runs,
         )
     )
-    for j in jobs_flattened:
-        j.memories_track_all = memories_track_all
-        j.memories_track_pmappings_only = memories_track_pmappings_only
-        j.ignored_resources = ignored_resources
+    for jobs in einsum2jobs_flattened.values():
+        for j in jobs:
+            j.memories_track_all = memories_track_all
+            j.memories_track_pmappings_only = memories_track_pmappings_only
+            j.ignored_resources = ignored_resources

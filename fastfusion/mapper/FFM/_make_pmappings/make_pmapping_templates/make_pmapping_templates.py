@@ -79,7 +79,7 @@ def unpack_loops_to_rank_variables(mapping: List[MappingNode]):
 # =================================================================================================
 # Iterate over mappings
 # =================================================================================================
-def place_missing_temporal_loops(mapping: List[MappingNode], einsum: Einsum):
+def place_missing_temporal_loops(mapping: List[MappingNode], einsum: Einsum, flattened_arch: list[arch.Leaf]):
     """
     Adds temporal loops to the mapping to fill in any rank variables that are missing.
     This may occur if there are no points where it'd be helpful to add a non-fused loop,
@@ -92,12 +92,26 @@ def place_missing_temporal_loops(mapping: List[MappingNode], einsum: Einsum):
         if isinstance(m, Temporal) and not m._fused:
             rank_variables.discard(m.rank_variable)
 
-    # Insert point: Right under the last backing
+    # Insert point: Right under the last backing & below any out-of-order fanouts
+    fanouts = {}
+    fanout = 1
+    for node in flattened_arch:
+        fanouts[node.name] = (fanout := fanout * node.get_fanout())
+
     insert_point = 0
-    for i in range(len(mapping) - 1, -1, -1):
-        if isinstance(mapping[i], TensorHolder) and mapping[i]._backing:
+    greatest_previous_fanout = 1
+    for i in range(len(mapping)):
+        if isinstance(mapping[i], TensorHolder):
+            if mapping[i]._backing:
+                insert_point = i + 1
+            cur_fanout = fanouts[mapping[i].component]
+            if cur_fanout < greatest_previous_fanout:
+                insert_point = i + 1
+            greatest_previous_fanout = max(greatest_previous_fanout, cur_fanout)
+
+        # Put it below all the other temporals here in case we're lowering through them
+        if isinstance(mapping[i], Temporal) and insert_point == i:
             insert_point = i + 1
-            break
 
     temporals = [Temporal(rank_variable=r) for r in sorted(rank_variables)]
 
@@ -304,7 +318,7 @@ def iterate_mappings_no_constraints(
     fusable_tensors = job.fusable_tensors
 
     for mapping, symbol_table, compute in get_tensor_choices(
-        einsum_name, flattened_arch, symbol_table, spec, first_memory, fusable_tensors
+        einsum_name, flattened_arch, symbol_table, spec, first_memory, fusable_tensors,
     ):
         logging.info(
             "\tGenerated tensor choices: " + ", ".join(m.compact_str() for m in mapping)
@@ -319,6 +333,7 @@ def iterate_mappings_no_constraints(
             spec.workload,
             spec.mapper.ffm._can_lower_outermost_memory,
             flattened_arch,
+            spec.mapper.ffm.max_fused_loops,
         ):
             mapping = copy.deepcopy(mapping)
             insert_spatial_loops(mapping, einsum, flattened_arch)
@@ -326,7 +341,7 @@ def iterate_mappings_no_constraints(
             if spec.mapper.ffm._timeloop_style_even:
                 mapping = _timeloop_style_even(mapping)
 
-            place_missing_temporal_loops(mapping, einsum)
+            place_missing_temporal_loops(mapping, einsum, flattened_arch)
             label_fused_loops(mapping, fusable_tensors)
             assert_proper_fusion_labeling(mapping, fusable_tensors)
             yield mapping, symbol_table, compute, n_orders

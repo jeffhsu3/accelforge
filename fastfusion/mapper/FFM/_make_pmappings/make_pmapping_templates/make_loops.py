@@ -39,6 +39,7 @@ def insert_temporal_loops(
     workload: Workload,
     _can_lower_outermost_memory: bool,
     flattened_arch: list[arch.Leaf],
+    max_fused_loops: int,
 ):
     # First establish insertion points. Insertion points are:
     # - Below the last instance of the first memory
@@ -158,6 +159,9 @@ def insert_temporal_loops(
         # fully-relevant rank variables.
         for t in tensors - seen_tensors:
             rank_variables &= tensor2fully_relevant_rank_vars[t]
+
+        if max_fused_loops == 0 and (fusable_tensors - seen_tensors):
+            rank_variables &= set()
 
         #  The fanout for a prior node may be placed here, so spatial nodes may be moved
         #  here

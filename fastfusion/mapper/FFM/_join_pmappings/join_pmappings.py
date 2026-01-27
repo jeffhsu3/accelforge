@@ -75,7 +75,6 @@ def clean_compress_and_join_pmappings(
     joined = join_pmappings(
         compressed,
         spec,
-        pmappings.resource2capacity,
         _pmapping_row_filter_function=_pmapping_row_filter_function,
     )
     joined = decompress_pmappings(joined, decompress_data)
@@ -140,10 +139,16 @@ def make_full_equivalent_rank_variables(pairwise_equivalent_rank_variables):
 
 def get_memories_to_track(
     pmapping_groups: dict[str, list[PmappingGroup]],
-    resource2capacity: dict[str, int],
 ) -> tuple[dict[str, list[PmappingGroup]], set[str], set[str]]:
 
-    always_below = set(resource2capacity.keys())
+    always_below = set()
+    for _, einsum_pmapping_groups in pmapping_groups.items():
+        for s in einsum_pmapping_groups:
+            for col in s.mappings.data.columns:
+                name_nloops = col2nameloop(col)
+                if name_nloops is not None:
+                    always_below.add(col2nameloop(col)[0])
+
     total_sizes = {}
     ignored_resources = set()
 
@@ -159,6 +164,10 @@ def get_memories_to_track(
                 name, nloops = name_nloops
                 if name in always_below and nloops < n_fused_loops:
                     always_below.remove(name)
+                # Check each of the compatibility's tensors
+                for tensor in s.compatibility.tensors:
+                    if tensor.resource_name in always_below:
+                        always_below.remove(tensor.resource_name)
                 size = s.mappings.data[col].max()
                 max_sizes[name] = max(max_sizes.get(name, 0), size)
 
@@ -170,7 +179,7 @@ def get_memories_to_track(
             total_sizes[name] = total_sizes.get(name, 0) + size
 
     ignore = (
-        set(t for t, s in total_sizes.items() if resource2capacity[t] >= s)
+        set(t for t, s in total_sizes.items() if s <= 1)
         | always_below
     )
 
@@ -193,10 +202,10 @@ def get_memories_to_track(
     for a in sorted(always_below):
         print(f"Not tracking {a} because it is never reserved for multiple pmappings.")
     for t, s in sorted(total_sizes.items(), key=lambda x: x[1], reverse=True):
-        if resource2capacity[t] >= s:
+        if s <= 1:
             print(
-                f"Not tracking {t} because its size {resource2capacity[t]} is enough "
-                f"for the sum of all reservations ({s})"
+                f"Not tracking {t} because its size is enough for the sum of all "
+                f"reservations ({s * 100:.2f}% of the total)"
             )
             break
 
@@ -215,7 +224,6 @@ def get_memories_to_track(
 def join_pmappings(
     pmapping_groups: dict[str, list[PmappingGroup]],
     spec: Spec,
-    resource2capacity: dict[str, int],
     # Optimality-maintaining optimizations.
     skip_invalid: bool = True,
     combine_reservations: bool = True,
@@ -256,9 +264,7 @@ def join_pmappings(
         print(f"Filtered {n} -> {new_n} ({new_n / n:.2%} kept) pmappings")
 
     if drop_valid_reservations:
-        pmapping_groups, ignored_resources = get_memories_to_track(
-            pmapping_groups, resource2capacity
-        )
+        pmapping_groups, ignored_resources = get_memories_to_track(pmapping_groups)
 
     mixable_ranks = spec.workload._get_ranks_that_share_indexing_rank_variables()
 
@@ -470,7 +476,6 @@ def join_pmappings(
                         live_tensors_with_right,
                         aliased_tensors,
                         compatibility_joined=compatibility_joined,
-                        resource2capacity=resource2capacity,
                         drop_valid_reservations=drop_valid_reservations,
                         delay=DELAY,
                         _pmapping_row_filter_function=_pmapping_row_filter_function,
