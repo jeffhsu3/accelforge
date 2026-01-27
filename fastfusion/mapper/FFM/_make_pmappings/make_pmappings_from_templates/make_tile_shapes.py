@@ -1191,10 +1191,14 @@ def get_tile_shape_choices(
                     if not objective.try_best_if_none_reaches_min:
                         choices_enumerated = choices_enumerated[valid]
                         choices_enumerated_float = choices_enumerated_float[valid]
-                    elif not valid.any() and complete:
-                        valid |= result == result.min()
-                        choices_enumerated = choices_enumerated[valid]
-                        choices_enumerated_float = choices_enumerated_float[valid]
+                    else:
+                        if valid.any():
+                            choices_enumerated = choices_enumerated[valid]
+                            choices_enumerated_float = choices_enumerated_float[valid]
+                        elif complete:
+                            valid |= result == result.min()
+                            choices_enumerated = choices_enumerated[valid]
+                            choices_enumerated_float = choices_enumerated_float[valid]
                 except (TypeError, ValueError):
                     pass
 
