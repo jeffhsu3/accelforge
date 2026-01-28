@@ -23,5 +23,5 @@ TODO
 
 ## Notebooks and Examples
 
-Examples can be found in the [`notebooks/examples`](notebooks/examples) directory.
-Examples of the input files can be found in the [`examples`](examples) directory.
+Examples can be found in the [`notebooks`](notebooks) directory. Examples of the input
+files can be found in the [`examples`](examples) directory.
