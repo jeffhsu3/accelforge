@@ -97,7 +97,7 @@ def display_important_variables(name: str):
     s.calculate_component_area_energy_latency_leak(einsum_name=s.workload.einsums[0].name)
 
     def getvalue(key):
-        return s.variables.get(key, s.arch.arch_globals_dependent_on_workload.get(key, None))
+        return s.variables.get(key, s.arch.variables.get(key, None))
 
     for v in [
         ("array_wordlines", "rows in the array"),

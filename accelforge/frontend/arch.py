@@ -1512,7 +1512,7 @@ class _MinUsageConstraintLambda(_ConstraintLambda):
 class Arch(Hierarchical):
     """Top-level architecture specification."""
 
-    arch_globals_dependent_on_workload: ParseExtras = ParseExtras()
+    variables: ParseExtras = ParseExtras()
     """
     Attributes that are dependent on the workload. This is parsed first in the
     architecture, and symbols here are available to the rest of the architecture.
@@ -1598,10 +1598,10 @@ class Arch(Hierarchical):
 
         class PostCallArch(_PostCall):
             def __call__(self, field, value, parsed, symbol_table):
-                if field == "arch_globals_dependent_on_workload":
+                if field == "variables":
                     parsed_dump = parsed.shallow_model_dump()
                     symbol_table.update(parsed_dump)
-                    symbol_table["arch_globals_dependent_on_workload"] = parsed_dump
+                    symbol_table["variables"] = parsed_dump
                 if field == "extra_attributes_for_all_component_models":
                     parsed_dump = parsed.shallow_model_dump()
                     symbol_table["arch_extra_attributes_for_all_component_models"] = (
@@ -1620,7 +1620,7 @@ class Arch(Hierarchical):
             **kwargs,
             post_calls=(PostCallArch(),),
             order=(
-                "arch_globals_dependent_on_workload",
+                "variables",
                 "extra_attributes_for_all_component_models",
             ),
         )
