@@ -316,15 +316,22 @@ def insert_spatial_loops(
 ):
     nodes_with_fanout = [n for n in flattened_arch if n.get_fanout() > 1]
     arch_node_names = [n.name for n in flattened_arch]
+    tensors = einsum.tensor_names
+    tensor2fully_relevant_rank_vars = einsum.tensor2directly_indexing_rank_variables
 
     for node in nodes_with_fanout:
         insertion_point = _idx_of_highest_tensor_holder_with_component_below_fanout(
             node, mapping, arch_node_names
         )
 
-        rv = einsum.rank_variables
+        # No recomputation: If we haven't seen a tensor yet, must only iterate over
+        # fully-relevant rank variables.
+        rank_variables = einsum.rank_variables
+        for t in tensors - _tensors_seen_above_point(insertion_point, mapping):
+            rank_variables &= tensor2fully_relevant_rank_vars[t]
+
         for fanout_dim in node.spatial:
-            for r in rv:
+            for r in rank_variables:
                 s = Spatial(
                     rank_variable=r,
                     name=fanout_dim.name,
@@ -335,6 +342,17 @@ def insert_spatial_loops(
                     mapping.append(s)
                 else:
                     mapping.insert(insertion_point, s)
+
+
+def _tensors_seen_above_point(idx, mapping):
+    seen_tensors = set()
+    for i in range(idx):
+        node = mapping[i]
+        if not isinstance(node, TensorHolder):
+            continue
+        seen_tensors |= set(node.tensors)
+    return seen_tensors
+
 
 
 def _idx_of_highest_tensor_holder_with_component_below_fanout(
