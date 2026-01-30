@@ -57,7 +57,6 @@ class JoiningTimer:
 
 
 def clean_compress_and_join_pmappings(
-    spec: Spec,
     pmappings: MultiEinsumPmappings,
     require_all_einsums: bool = True,
     _pmapping_row_filter_function: Callable[[pd.Series], bool] | None = None,
@@ -74,7 +73,7 @@ def clean_compress_and_join_pmappings(
     compressed, decompress_data = compress_einsum2pmappings(einsum2pmappings)
     joined = join_pmappings(
         compressed,
-        spec,
+        pmappings.spec,
         _pmapping_row_filter_function=_pmapping_row_filter_function,
     )
     joined = decompress_pmappings(joined, decompress_data)
@@ -86,7 +85,7 @@ def clean_compress_and_join_pmappings(
         )
     joined._data = joined.data.fillna(0).reset_index(drop=True)
 
-    rank_variable_bounds = get_rank_variable_bounds_for_all_einsums(spec)
+    rank_variable_bounds = get_rank_variable_bounds_for_all_einsums(pmappings.spec)
     einsum_names = list(einsum2pmappings.keys())
     joined.data[f"Total<SEP>{MAPPING_COLUMN}"] = [
         MappingFromRow(r, rank_variable_bounds, einsum_names)
@@ -96,7 +95,7 @@ def clean_compress_and_join_pmappings(
     # are energy entries for some pmappings but not others (e.g., one pmapping accesses
     # DRAM while another doesn't.)
     return Mappings(
-        spec,
+        pmappings.spec,
         list(
             x
             for x in list(einsum2pmappings.keys())
@@ -610,7 +609,7 @@ def join_pmappings(
         # Print statements
         # ======================================================================
         logger.info(
-            f"\tCombining {sum(len(s) for s in left)}({len(left)}) x {sum(len(s) for s in right)}({len(right)}) -> {len(combined)}"
+            f"\tCombining {sum(len(s) for s in left.values())}({len(left)}) x {sum(len(s) for s in right.values())}({len(right)}) -> {len(combined)}"
         )
 
         nmappings = sum(len(s.mappings.data) for s in combined)
@@ -668,7 +667,8 @@ def _check_einsum2pmappings_not_empty(einsum2pmappings, pmappings):
                 raise ValueError(
                     f"Einsum {einsum_name} has no pmappings. This likely means that "
                     f"no pmappings satisfied constraints for the Einsum. Please check "
-                    f"the stats outputs from the MultiEinsumPmappings object."
+                    f"the stats outputs from the MultiEinsumPmappings object returned "
+                    f"by `af.mapper.FFM.make_pmappings(spec)`."
                 )
 
             raise ValueError(

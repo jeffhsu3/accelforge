@@ -14,6 +14,9 @@ from accelforge.frontend.workload import EinsumName
 from accelforge.mapper.FFM._join_pmappings.join_pmappings import (
     clean_compress_and_join_pmappings,
 )
+from accelforge.mapper.FFM._join_pmappings.join_pmappings import (
+    _check_einsum2pmappings_not_empty,
+)
 from accelforge._accelerated_imports import pd
 
 
@@ -59,8 +62,8 @@ def map_workload_to_arch(
         cache_dir=cache_dir,
         print_number_of_pmappings=print_number_of_pmappings,
     )
+
     mappings = join_pmappings(
-        spec,
         pmappings,
         require_all_einsums=einsum_names is not None,
         _pmapping_row_filter_function=_pmapping_row_filter_function,
@@ -138,7 +141,6 @@ def make_pmappings(
 
 
 def join_pmappings(
-    spec: Spec,
     pmappings: MultiEinsumPmappings,
     require_all_einsums: bool = True,
     _pmapping_row_filter_function: Callable[[pd.Series], bool] | None = None,
@@ -149,8 +151,6 @@ def join_pmappings(
 
     Parameters
     ----------
-    spec:
-        The complete specifications for the workload and architecture.
     pmappings:
         The pmappings to join.
     require_all_einsums:
@@ -166,7 +166,7 @@ def join_pmappings(
     A Mappings object containing all valid, optimal mappings for the workload.
     """
     return clean_compress_and_join_pmappings(
-        spec, pmappings, require_all_einsums, _pmapping_row_filter_function
+        pmappings, require_all_einsums, _pmapping_row_filter_function
     )
 
 
@@ -194,6 +194,7 @@ def _make_pmappings(
             parsed_specs[einsum_name] = job.spec
 
     m = MultiEinsumPmappings(
+        spec,
         pmapping_groups,
         pmapping_objects,
         einsum2jobs,

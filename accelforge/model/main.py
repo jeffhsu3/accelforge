@@ -144,17 +144,18 @@ def evaluate_mapping(
         ]
         pmapping_objects[job.einsum_name] = {pmapping_id: job.mapping}
 
-    m = MultiEinsumPmappings(
-        einsum2pmappings,
-        pmapping_objects,
-        einsum2jobs,
-        can_combine_multiple_runs=True,
-        einsums_with_pmappings_generated=spec.workload.einsum_names,
-        flattened_arches=flattened_arches,
-        parsed_specs=parsed_specs,
+    return clean_compress_and_join_pmappings(
+        MultiEinsumPmappings(
+            spec,
+            einsum2pmappings,
+            pmapping_objects,
+            einsum2jobs,
+            can_combine_multiple_runs=True,
+            einsums_with_pmappings_generated=spec.workload.einsum_names,
+            flattened_arches=flattened_arches,
+            parsed_specs=parsed_specs,
+        )
     )
-
-    return clean_compress_and_join_pmappings(spec, m)
 
 
 def _add_backing_to_tensor_holders(pmapping: Mapping):

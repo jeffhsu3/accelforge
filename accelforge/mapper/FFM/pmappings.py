@@ -41,6 +41,7 @@ class MultiEinsumPmappings:
 
     def __init__(
         self,
+        spec: Spec,
         einsum2pmappings: dict[EinsumName, list[PmappingGroup]],
         pmapping_objects: dict[EinsumName, dict[UUID, Mapping]],
         einsum2jobs: dict[EinsumName, list[Job]],
@@ -49,6 +50,7 @@ class MultiEinsumPmappings:
         flattened_arches: dict[EinsumName, list[arch.Leaf]],
         parsed_specs: dict[EinsumName, Spec],
     ):
+        self.spec: Spec = spec
         self.einsum2pmappings: dict[EinsumName, list[PmappingGroup]] = einsum2pmappings
         self.pmapping_objects: dict[EinsumName, dict[UUID, Mapping]] = pmapping_objects
         self.einsum2jobs: dict[EinsumName, list[Job]] = einsum2jobs
@@ -94,6 +96,7 @@ class MultiEinsumPmappings:
             ]
 
         return MultiEinsumPmappings(
+            spec=self.spec,
             einsum2pmappings=new_einsum2pmappings,
             pmapping_objects=self.pmapping_objects,
             einsum2jobs=self.einsum2jobs,

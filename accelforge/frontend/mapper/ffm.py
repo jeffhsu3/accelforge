@@ -92,7 +92,7 @@ class FFM(ParsableModel):
     "save_outermost_memory_usage".
     """
 
-    _only_output_pmapping_index: int | None = None
+    _only_output_pmapping_with_index: int | None = None
     """
     For debugging. Only output the pmapping with this index.
     """
