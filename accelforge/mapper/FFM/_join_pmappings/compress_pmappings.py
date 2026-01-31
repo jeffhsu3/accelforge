@@ -8,7 +8,9 @@ from accelforge.mapper.FFM._pareto_df.df_convention import (
     COMPRESSED_INDEX,
     col_used_in_pareto,
     is_fused_loop_col,
+    is_n_iterations_col,
     is_tensor_col,
+    col_used_in_joining,
 )
 from accelforge.mapper.FFM._join_pmappings.pmapping_dataframe import PmappingDataframe
 from accelforge.util.parallel import parallel, delayed
@@ -24,11 +26,7 @@ def _compress(
     data = pmappings.mappings.data
     data.reset_index(drop=True, inplace=True)
     data.index += start_index
-    keep_cols = [
-        c
-        for c in data.columns
-        if col_used_in_pareto(c) or is_fused_loop_col(c) or is_tensor_col(c)
-    ]
+    keep_cols = [c for c in data.columns if col_used_in_joining(c)]
     compress_cols = [c for c in data.columns if c not in keep_cols]
     compressed_data = data[keep_cols].copy()
     decompress_data = data[compress_cols].copy()

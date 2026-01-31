@@ -12,7 +12,8 @@ from accelforge.frontend.mapping import Mapping
 from accelforge.frontend.model import Model
 import hwcomponents
 
-from typing import Any, Dict, Optional, Self, TYPE_CHECKING
+from accelforge._accelerated_imports import pd
+from typing import Any, Callable, Dict, Optional, Self, TYPE_CHECKING
 from accelforge.util._basetypes import ParsableModel
 from pydantic import Field
 
@@ -302,14 +303,34 @@ class Spec(ParsableModel):
 
         return found if compute_node is None else found[0]
 
-    def map_workload_to_arch(self) -> Mappings:
+    def map_workload_to_arch(
+        self,
+        einsum_names: list[EinsumName] | None = None,
+        print_number_of_pmappings: bool = True,
+        _pmapping_row_filter_function: Callable[[pd.Series], bool] | None = None,
+    ) -> Mappings:
         """
-        Maps the workload to the architecture using the Fast and Fusiest Mapper (FFM).
+        Maps the workload to the architecture using the AccelForge Fast and Fusiest
+        Mapper (FFM).
 
         Parameters
         ----------
-        self: Spec
-            The specification to map the workload to the architecture.
+        spec:
+            The Spec to map.
+        einsum_names:
+            The einsum names to map. If None, all einsums will be mapped.
+        can_combine_multiple_runs: Whether we would like to be able to combine multiple
+            make_pmappings runs. Having this as True allows you to do things like
+            `pmappings = make_pmappings(*args_a) | make_pmappings(*args_b)` but slows
+            down execution.
+        cache_dir:
+            The directory to cache pmappings in. If None, no caching will be done.
+        print_number_of_pmappings:
+            Whether to print the number of pmappings for each einsum.
+        _pmapping_row_filter_function:
+            A function that takes in a row of the pmapping dataframe and returns True if
+            the row should be included in the final mappings, and False otherwise. If
+            None, all rows will be included.
 
         Returns
         -------
@@ -317,7 +338,13 @@ class Spec(ParsableModel):
             The mappings of the workload to the architecture.
         """
         from accelforge.mapper.FFM.main import map_workload_to_arch
-        return map_workload_to_arch(self)
+
+        return map_workload_to_arch(
+            self,
+            einsum_names=einsum_names,
+            print_number_of_pmappings=print_number_of_pmappings,
+            _pmapping_row_filter_function=_pmapping_row_filter_function,
+        )
 
 
 Specification = Spec

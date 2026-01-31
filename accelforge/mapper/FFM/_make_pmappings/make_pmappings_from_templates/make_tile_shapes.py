@@ -13,6 +13,7 @@ from accelforge._accelerated_imports import pd
 import accelforge.frontend.arch as arch
 from accelforge.frontend._workload_isl._isl import get_rank_variable_bounds
 from accelforge.frontend._workload_isl._symbolic import get_projection_expr
+from accelforge.frontend.mapping.mapping import MappingNode
 from accelforge.frontend.workload import Einsum
 from accelforge.frontend.mapping import (
     Loop,
@@ -1354,6 +1355,70 @@ def call_compiled_objective(f, *args):
     return f(*args)
 
 
+def _calculate_iterations_and_rank_columns(
+    pmapping: list[MappingNode], job: "Job", df: pd.DataFrame, shape: dict[str, int]
+):
+    loops = [n for n in pmapping if isinstance(n, Loop)]
+    # Some initial tile shapes are invalid
+    for nloops, n in enumerate(loops):
+        if not n._fused:
+            break
+        stride = n.tile_pattern.tile_shape
+        initial = (
+            n.tile_pattern.initial_tile_shape
+            if n.tile_pattern.initial_tile_shape is not None
+            else stride
+        )
+        outer_stride = job.rank_variable_bounds[n.rank_variable]
+        outer_initial = job.rank_variable_bounds[n.rank_variable]
+        for l in loops[:nloops]:
+            if l.rank_variable == n.rank_variable:
+                outer_stride = l.tile_shape
+                outer_initial = l.initial_tile_shape
+                if outer_initial is None:
+                    outer_initial = outer_stride
+
+        outer_initial = (
+            df[outer_initial.name]
+            if isinstance(outer_initial, Symbol)
+            else outer_stride
+        )
+
+        rank_var_stride = df[stride.name] if isinstance(stride, Symbol) else stride
+        rank_var_initial = df[initial.name] if isinstance(initial, Symbol) else initial
+
+        # NOTE: The concept of having one "n_iterations" is precarious when imperfect
+        # factorization in involved
+        df[iterations2col(nloops)] = np.ceil(
+            (outer_initial - rank_var_initial) / rank_var_stride + 1
+        )
+        df[f"lower_iterations<SEP>{nloops}"] = outer_stride - rank_var_initial
+
+        # Generate rank columns
+        einsum: Einsum = job.spec.workload.einsums[job.einsum_name]
+        for tensor_access in einsum.tensor_accesses:
+            tensor = tensor_access.name
+            projections = get_projection_expr(einsum, tensor)
+            for rank, expr in projections.items():
+                free_symbols = tuple(expr.free_symbols)
+                free_symbols_str = tuple(symbol.name for symbol in free_symbols)
+                if n.rank_variable not in free_symbols_str:
+                    continue
+
+                rank_stride = expr.coeff(n.rank_variable) * rank_var_stride
+
+                args = []
+                for free_rank_var in free_symbols:
+                    if free_rank_var.name == n.rank_variable:
+                        args.append(rank_var_initial)
+                    else:
+                        args.append(shape[free_rank_var.name])
+                rank_initial = lambdify(free_symbols, expr)(*args)
+
+                df[stride2col(rank, nloops)] = rank_stride
+                df[initial2col(rank, nloops)] = rank_initial
+
+
 def _make_tile_shapes(job: "Job"):
     # We're going to convert the job into a list of symbols and objectives
     pmapping = job.mapping
@@ -1546,63 +1611,7 @@ def _make_tile_shapes(job: "Job"):
             if any(l < 0 for l in val):
                 raise ValueError(f"Negative energy for {key}: {val}")
 
-    # Some initial tile shapes are invalid
-    for nloops, n in enumerate(loops):
-        if not n._fused:
-            break
-        stride = n.tile_pattern.tile_shape
-        initial = (
-            n.tile_pattern.initial_tile_shape
-            if n.tile_pattern.initial_tile_shape is not None
-            else stride
-        )
-        outer_stride = job.rank_variable_bounds[n.rank_variable]
-        outer_initial = job.rank_variable_bounds[n.rank_variable]
-        for l in loops[:nloops]:
-            if l.rank_variable == n.rank_variable:
-                outer_stride = l.tile_shape
-                outer_initial = l.initial_tile_shape
-                if outer_initial is None:
-                    outer_initial = outer_stride
-
-        outer_initial = (
-            df[outer_initial.name]
-            if isinstance(outer_initial, Symbol)
-            else outer_stride
-        )
-
-        rank_var_stride = df[stride.name] if isinstance(stride, Symbol) else stride
-        rank_var_initial = df[initial.name] if isinstance(initial, Symbol) else initial
-
-        # NOTE: The concept of having one "n_iterations" is precarious when imperfect factorization in involved
-        df[iterations2col(nloops)] = np.ceil(
-            (outer_initial - rank_var_initial) / rank_var_stride + 1
-        )
-        df[f"lower_iterations<SEP>{nloops}"] = outer_stride - rank_var_initial
-
-        # Generate rank columns
-        einsum: Einsum = job.spec.workload.einsums[job.einsum_name]
-        for tensor_access in einsum.tensor_accesses:
-            tensor = tensor_access.name
-            projections = get_projection_expr(einsum, tensor)
-            for rank, expr in projections.items():
-                free_symbols = tuple(expr.free_symbols)
-                free_symbols_str = tuple(symbol.name for symbol in free_symbols)
-                if n.rank_variable not in free_symbols_str:
-                    continue
-
-                rank_stride = expr.coeff(n.rank_variable) * rank_var_stride
-
-                args = []
-                for free_rank_var in free_symbols:
-                    if free_rank_var.name == n.rank_variable:
-                        args.append(rank_var_initial)
-                    else:
-                        args.append(shape[free_rank_var.name])
-                rank_initial = lambdify(free_symbols, expr)(*args)
-
-                df[stride2col(rank, nloops)] = rank_stride
-                df[initial2col(rank, nloops)] = rank_initial
+    _calculate_iterations_and_rank_columns(pmapping.nodes, job, df, shape)
 
     try:
         df = pd.DataFrame(df, columns=df.keys())

@@ -7,13 +7,19 @@ from accelforge.frontend import arch
 from accelforge.frontend.arch import Memory
 from accelforge.frontend.renames import EinsumName
 from accelforge.frontend.spec import Mapping, Spec
-from accelforge.frontend.mapping import Compute, Split, Nested, NodeList, TensorHolder
+from accelforge.frontend.mapping import (
+    Compute,
+    Split,
+    Nested,
+    NodeList,
+    TensorHolder,
+)
 from accelforge.frontend.workload import Workload
 from accelforge.frontend._workload_isl._symbolic import (
     get_stride_and_halo_of_einsum,
     get_rank_variable_relevancy,
 )
-from accelforge.mapper.FFM._pareto_df.df_convention import tensor2col
+from accelforge.mapper.FFM._pareto_df.df_convention import col_used_in_joining
 
 
 def evaluate_mapping(
@@ -52,6 +58,9 @@ def evaluate_mapping(
     )
     from accelforge.mapper.FFM._make_pmappings.make_pmappings_from_templates.run_model import (
         run_model,
+    )
+    from accelforge.mapper.FFM._make_pmappings.make_pmappings_from_templates.make_tile_shapes import (
+        _calculate_iterations_and_rank_columns,
     )
     from accelforge.mapper.FFM._make_pmappings.pmapper_job import Job
 
@@ -118,24 +127,33 @@ def evaluate_mapping(
             cur_spec.workload.tensor_names_used_in_multiple_einsums
             & set(job.tensor_to_relevancy)
         )
-
-        _, df, _, _, tensor2mapping = run_model(job)
-        new_df = {}
-        tensor_cols = set(tensor2col(tensor) for tensor in job.fusable_tensors)
-        for key, value in df.items():
-            if not ("Total" in key or key in tensor_cols):
-                key = f"{job.einsum_name}<SEP>{key}"
-            new_df[key] = value
-        df = new_df
-        df[f"{job.einsum_name}<SEP>mapping"] = pmapping_id
-
         einsum = cur_spec.workload.einsums[job.einsum_name]
         rank_variable_to_ranks = {
             t.name: t.rank_variable2ranks for t in einsum.tensor_accesses
         }
+
+        _, df, _, _, tensor2mapping = run_model(job)
+
+        # Calculate iteration counts and rank columns
+        _calculate_iterations_and_rank_columns(
+            pmapping.nodes, job, df, job.rank_variable_bounds
+        )
         compatibility = Compatibility.from_mapping(
             job.mapping, einsum.tensor_names, rank_variable_to_ranks
         )
+        symbol_renames, compatibility = compatibility.make_fused_loop_symbols(
+            einsum_name
+        )
+        for k, v in symbol_renames.items():
+            df[v] = df.pop(k)
+
+        new_df = {}
+        for key, value in df.items():
+            if not col_used_in_joining(key):
+                key = f"{job.einsum_name}<SEP>{key}"
+            new_df[key] = value
+        df = new_df
+        df[f"{job.einsum_name}<SEP>mapping"] = pmapping_id
 
         einsum2pmappings[job.einsum_name] = [
             PmappingGroup(

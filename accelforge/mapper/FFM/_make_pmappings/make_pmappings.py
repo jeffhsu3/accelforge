@@ -223,8 +223,8 @@ def get_memories_to_track(
         if usage <= 1:
             ignored_resources.add(memory)
             print(
-                f"Not tracking memory {memory}. It is big enough to hold "
-                f"every workload tensor that may be stored in it. Max possible "
+                f"Not tracking memory {memory}. It is big enough to simultaneously "
+                f"hold every workload tensor that may be stored in it. Max possible "
                 f"usage: {usage * 100:.2f}%"
             )
             memories_track_all.remove(memory)

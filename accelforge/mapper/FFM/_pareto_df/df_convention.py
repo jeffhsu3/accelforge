@@ -231,6 +231,16 @@ def col_used_in_pareto(c):
     return col2nameloop(c) is not None or is_objective_col(c)
 
 
+def col_used_in_joining(c):
+    assert not c.startswith("n_iterations"), "Improperly formatted n_iterations column"
+    return (
+        col_used_in_pareto(c)
+        or is_fused_loop_col(c)
+        or is_tensor_col(c)
+        or is_n_iterations_col(c)
+    )
+
+
 # Pipeline:
 # - Need to share temporal loops up to the spatial loop index
 #   Resources:

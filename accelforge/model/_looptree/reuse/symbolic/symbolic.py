@@ -49,6 +49,7 @@ from accelforge.model._looptree.types import Buffet
 
 from accelforge.mapper.FFM._make_pmappings.pmapper_job import Job
 from accelforge.util._sympy.broadcast_max import Min, Max
+from accelforge.mapper.FFM._pareto_df.df_convention import iterations2col
 
 import sympy
 
@@ -1388,7 +1389,7 @@ def insert_sympy_symbols(mapping: list[MappingNode], job: Job):
         #     node.calculated_n_iterations is None
         # ), "Number of iterations is derived from the model. Do not set it!"
         node.calculated_n_iterations = sympy.symbols(
-            f"n_iterations{loop_idx}", positive=True, integer=True
+            iterations2col(loop_idx), positive=True, integer=True
         )
 
         loop_idx += 1

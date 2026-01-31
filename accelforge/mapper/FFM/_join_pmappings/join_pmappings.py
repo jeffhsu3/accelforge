@@ -419,7 +419,6 @@ def join_pmappings(
         left = PmappingGroup.group(left, right_tensors)
         # print_time("Grouping")
 
-
         # ======================================================================
         # Remove dead tensors from left and right. This happens after grouping because
         # we only reserve space for shared tensors after they're dead (alive is handled

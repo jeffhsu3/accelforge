@@ -32,7 +32,8 @@ def map_workload_to_arch(
     _pmapping_row_filter_function: Callable[[pd.Series], bool] | None = None,
 ) -> Mappings:
     """
-    Maps a workload to an architecture using the AccelForge FFM mapper.
+    Maps a workload to an architecture using the AccelForge Fast and Fusiest Mapper
+    (FFM).
 
     Parameters
     ----------
@@ -41,17 +42,16 @@ def map_workload_to_arch(
     einsum_names:
         The einsum names to map. If None, all einsums will be mapped.
     can_combine_multiple_runs: Whether we would like to be able to combine multiple
-        make_pmappings runs. Having this as True allows you to do things like
-        `pmappings = make_pmappings(*args_a) | make_pmappings(*args_b)` but slows
-        down execution.
+        make_pmappings runs. Having this as True allows you to do things like `pmappings
+        = make_pmappings(*args_a) | make_pmappings(*args_b)` but slows down execution.
     cache_dir:
         The directory to cache pmappings in. If None, no caching will be done.
     print_number_of_pmappings:
         Whether to print the number of pmappings for each einsum.
     _pmapping_row_filter_function:
-        A function that takes in a row of the pmapping dataframe and returns
-        True if the row should be included in the final mappings, and False
-        otherwise. If None, all rows will be included.
+        A function that takes in a row of the pmapping dataframe and returns True if the
+        row should be included in the final mappings, and False otherwise. If None, all
+        rows will be included.
     """
     from accelforge.model.main import evaluate_mapping
 
@@ -65,7 +65,7 @@ def map_workload_to_arch(
 
     mappings = join_pmappings(
         pmappings,
-        require_all_einsums=einsum_names is not None,
+        require_all_einsums=False,
         _pmapping_row_filter_function=_pmapping_row_filter_function,
     )
 
