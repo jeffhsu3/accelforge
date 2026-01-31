@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from accelforge.frontend.mapper.mapper import Mapper
 from accelforge.frontend.renames import EinsumName, Renames
 from accelforge.util._parse_expressions import ParseError, ParseExpressionsContext
@@ -10,9 +12,12 @@ from accelforge.frontend.mapping import Mapping
 from accelforge.frontend.model import Model
 import hwcomponents
 
-from typing import Any, Dict, Optional, Self
+from typing import Any, Dict, Optional, Self, TYPE_CHECKING
 from accelforge.util._basetypes import ParsableModel
 from pydantic import Field
+
+if TYPE_CHECKING:
+    from accelforge.mapper.FFM.mappings import Mappings
 
 
 class Spec(ParsableModel):
@@ -297,8 +302,7 @@ class Spec(ParsableModel):
 
         return found if compute_node is None else found[0]
 
-
-    def map_workload_to_arch(self) -> "Mappings":
+    def map_workload_to_arch(self) -> Mappings:
         """
         Maps the workload to the architecture using the Fast and Fusiest Mapper (FFM).
 
