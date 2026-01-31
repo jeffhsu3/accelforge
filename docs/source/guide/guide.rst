@@ -40,7 +40,8 @@ tensor algebra workloads. The basic workflow is:
 2. **Define your workload** - Specify the tensor operations you want to execute
 3. **Map the workload to the architecture** - Use AccelForge's mapper to find efficient
    ways to execute your workload on the architecture
-4. **Analyze results** - Examine the energy, area, and latency of the resulting design
+4. **Analyze results** - Examine the energy, area, and latency of the resulting
+   mapping(s)
 
 Basic Example
 ~~~~~~~~~~~~~
@@ -105,59 +106,42 @@ The examples directory contains:
   convolutions, and transformer models
 - **mappings/** - Example mapping specifications
 
-Key Concepts
-------------
+**Architecture:** An architecture specification defines the hardware structure,
+including hardware components and how they are organized into a system. See
+:doc:`spec/architecture` for information on architecture specifications.
 
-AccelForge is built around the following concepts:
+**Workload:** A workload specification defines what is executed on the architecture.
+Workloads are expressed as a cascade of Einsums. See :doc:`spec/workload` for
+information on workload specifications.
 
-Architecture
-~~~~~~~~~~~~
-
-An architecture specification defines the hardware structure, including hardware
-components and how they are organized into a system. See :doc:`spec/architecture` for
-information on architecture specifications.
-
-Workload
-~~~~~~~~
-
-A workload specification defines what is executed on the architecture. Workloads are
-expressed as a cascade of Einsums. See :doc:`spec/workload` for information on workload
-specifications.
-
-Mapping
-~~~~~~~
-
-A mapping specifies how a workload is executed on an architecture, including where and
-when each operation is performed, and how data is moved and stored in the hardware's
-components. See :doc:`spec/mapping` for information on mapping specifications.
-
-AccelForge's mapper automatically finds optimal mappings. See the `mapper.ipynb`
-notebook for examples.
+**Mapping:** A mapping specifies how a workload is executed on an architecture,
+including where and when each operation is performed, and how data is moved and stored
+in the hardware's components. See :doc:`spec/mapping` for information on mapping
+specifications. AccelForge's mapper automatically finds optimal mappings. See the
+``mapper.ipynb`` notebook for examples.
 
 Core Topics
 -----------
 
-The following sections provide detailed information about using AccelForge:
+The following sections provide detailed information about using AccelForge.
 
-Input Specifications
-~~~~~~~~~~~~~~~~~~~~
-
-Learn how to specify architectures, workloads, and mappings:
+**Input Specifications:**: Learn how to specify architectures, workloads, and mappings:
 
 - :doc:`spec` - Complete specification reference
 - :doc:`spec/architecture` - Architecture specification details
 - :doc:`spec/workload` - Workload specification details
 - :doc:`spec/mapping` - Mapping specification details
 
-Modeling
-~~~~~~~~
-
-Understand how AccelForge models energy, area, and latency:
+**Modeling:** Understand how AccelForge models energy, area, and latency:
 
 - :doc:`modeling` - Overview of the modeling process
 - :doc:`modeling/component_energy_area` - Component-level modeling
-- :doc:`modeling/accelerator_energy_latency` - System-level modeling
+- :doc:`modeling/accelerator_energy_latency` - System-level modeling of the accelerator
 - :doc:`modeling/mapping` - How workloads are mapped to architectures
+
+**Definitions:** Key terms and concepts:
+
+- :doc:`definitions` - Definitions of key terms
 
 Reference
 ---------

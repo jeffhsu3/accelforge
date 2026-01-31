@@ -1,13 +1,8 @@
 AccelForge
 ==========
 
-AccelForge is a framework to design and model tensor algebra accelerators. It includes
-flexible, user-defined specifications for components, architectures, and workloads, and,
-given these specifications, quickly finds optimal fused mappings to program the
-workloads onto the architectures.
-
-AccelForge is based on multiple other projects. If you use AccelForge in your work,
-please refer to :doc:`guide/citation` for how to cite the relevant projects.
+AccelForge is a framework to model and design tensor algebra and deep neural network
+accelerators.
 
 Quick Start
 -----------
@@ -54,8 +49,8 @@ the relevant projects.
 
 **Contributing to AccelForge**
 
-We welcome contributions to AccelForge! This guide outlines the standards and practices
-for contributing to the project.
+We welcome contributions to AccelForge! If you'd like to contribute, please see
+:doc:`guide/contributing` for how to get started.
 
 .. toctree::
    :maxdepth: 1
