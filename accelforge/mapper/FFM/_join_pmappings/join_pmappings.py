@@ -375,6 +375,19 @@ def join_pmappings(
     while pmgroups:
         t0 = time.time()
         # ======================================================================
+        # Check that data dependencies are satisfied.
+        # ======================================================================
+        for s in pmgroups:
+            output_tensors = spec.workload.einsums[s.einsum_name].output_tensor_names
+            shared_fail = left_tensors & output_tensors
+            if shared_fail:
+                raise ValueError(
+                    f"Einsum {left_einsum} uses tensors {sorted(shared_fail)} that "
+                    f"are outputs of Einsum {s.einsum_name}, which is later in the "
+                    f"joining order."
+                )
+
+        # ======================================================================
         # Grab new Einsum from the right. Record logging data and find still
         # tensors that will be live after this Einsum.
         # ======================================================================
@@ -405,6 +418,7 @@ def join_pmappings(
         # Group left and right into buckets
         left = PmappingGroup.group(left, right_tensors)
         # print_time("Grouping")
+
 
         # ======================================================================
         # Remove dead tensors from left and right. This happens after grouping because
