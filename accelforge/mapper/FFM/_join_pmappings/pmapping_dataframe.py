@@ -208,6 +208,15 @@ class PmappingDataframe:
             self.right_reservations == prev_right
         ), f"Right reservations changed: {self.right_reservations} != {prev_right}"
 
+    def clear_fused_loop_symbols(self):
+        dropcols = [c for c in self.data.columns if is_fused_loop_col(c)]
+        if not dropcols:
+            return
+        self.data.drop(columns=dropcols, inplace=True)
+        self._make_reservations()
+        self._check_reservations()
+        self.make_pareto()
+
     @error_check_wrapper
     def free_to_loop_index(
         self,
