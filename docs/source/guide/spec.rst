@@ -18,13 +18,13 @@ Some of the Spec's inputs are described in the following sections:
 Input Parsing
 -------------
 
-Input specifications can include arithmetic expressions and set expressions. The parsing
+Input specifications can include expressions that are evaluated. The evaluation
 is described in the following:
 
 .. toctree::
    :maxdepth: 1
 
-   parsing/arithmetic_parsing
+   parsing/evaluation
 
 Additionally, inputs can be specified with YAML files using an extend YAML syntax, which
 is described in the following:

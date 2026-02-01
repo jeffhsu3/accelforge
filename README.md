@@ -12,12 +12,10 @@ include:
 To learn more, see the [AccelForge
 documentation](https://accelergy-project.github.io/accelforge/).
 
-AccelForge uses [HardwareComponents](https://github.com/accelergy-project/hwcomponents)
+AccelForge uses [HWComponents](https://github.com/accelergy-project/hwcomponents)
 as a backend to model the area, energy, latency, and leak power of hardware components.
 
 ## Installation
-
-### Native
 
 AccelForge is available on PyPI:
 
@@ -25,17 +23,7 @@ AccelForge is available on PyPI:
 pip install accelforge
 ```
 
-### Docker
-
-TODO
-
 ## Notebooks and Examples
 
 Examples can be found in the [`notebooks`](notebooks) directory. Examples of the input
 files can be found in the [`examples`](examples) directory.
-
-TODO:
-- Update doc with:
-  - New mapper interface
-  - Bits per value & other symbols available from the Einsum
-  - Per-Einsum parsing

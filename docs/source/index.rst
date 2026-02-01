@@ -10,9 +10,14 @@ Quick Start
 New to AccelForge? Start with the :doc:`guide/guide` for installation instructions,
 examples, and an introduction to key concepts.
 
+The ``accelforge`` repo includes tutorials and examples to help you get started.
+
 .. code-block:: bash
 
-   pip install accelforge
+   pip install accelforge jupyterlab ipywidgets
+   git clone https://github.com/accelergy-project/accelforge.git
+   cd accelforge/notebooks/tutorials
+   jupyter notebook
 
 Documentation
 -------------

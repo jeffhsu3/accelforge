@@ -1,18 +1,18 @@
-Arithmetic and Parsing
-======================
+Expression Evaluation
+=====================
 
 Objects can include expressions that are evaluated when the
-:py:class:`~accelforge.frontend.spec.Spec` is evaluated. Parsing occurs when the
+:py:class:`~accelforge.frontend.spec.Spec` is evaluated. Evaluation occurs when the
 :py:func:`~accelforge.frontend.spec.Spec` is going to be used to model the energy, area,
 or latency of an accelerator, such as when the
-:py:func:`~accelforge.frontend.spec.Spec.calculate_component_area_energy_latency_leak` method is
-called.
+:py:func:`~accelforge.frontend.spec.Spec.calculate_component_area_energy_latency_leak`
+method is called.
 
 To-be-evaluated expressions can include Python code, and supported
 operations include many standard library functions (*e.g.,* ``range``, ``min``) and
 functions from the ``math`` standard library (*e.g.,* ``log2``, ``ceil``).
 
-The scope available for parsing includes the following in order of increasing
+The scope available for evaluation includes the following in order of increasing
 precedence:
 
 - Variables defined in a top-level :py:class:`~accelforge.frontend.variables.Variables`
@@ -56,10 +56,10 @@ Additionally, values can be set directly in Python code. For example:
   )
 
 
-Supported Arithmetic Operations
--------------------------------
+Included Functions
+------------------
 
-The following are available expressions. In addition to the below, Python keywords that
+The following are available functions. In addition to the below, Python keywords that
 are available witout import (*e.g.,* ``min``) are also available
 
 - ``ceil``: :py:func:`math.ceil`
@@ -135,6 +135,10 @@ are available witout import (*e.g.,* ``min``) are also available
 - ``getcwd``: :py:func:`os.getcwd`
 - ``map``: :py:func:`map`
 
+Additional funcitons can be added to the scope by definining the
+:py:attr:`~accelforge.frontend.spec.Spec.expression_custom_functions` attribute and
+listing either functionss or paths to Python files that contain functions.
+
 .. _set-expressions:
 
 Set Expressions
@@ -199,6 +203,10 @@ tensor. If multiple tensors are referenced, then the union of all indexing rank
 variables is returned. For example, ``MemoryObject.tensors.rank_variables`` will return
 the set of all rank variables that index into any of the tensors stored in
 ``MemoryObject``.
+
+Every tensor expression also has a ``bits_per_value`` attribute that returns the number
+of bits per value for the tensor. This can only be called on size-one sets of tensors,
+or else an error will be raised.
 
 Additional keys can be defined following the renaming section of the :ref:`Workload and
 Renames Specification <renaming-tensors-rank-variables>`.
