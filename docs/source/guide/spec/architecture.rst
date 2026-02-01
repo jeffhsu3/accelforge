@@ -6,7 +6,7 @@ describes the hardware that is running the workload. An architecture is represen
 tree, where branches in the tree represent different compute paths that may be taken.
 For the rest of this section, we will assume that the architecture has been *flattened*,
 meaning that there are no branches in the tree. The flattening procedure is described in
-:ref:`flattening`.
+the :ref:`flattening` section.
 
 A flattened architecture is a hierarchy of components with a
 :py:class:`~accelforge.frontend.arch.Compute` at the bottom. The following components
@@ -18,12 +18,14 @@ are supported:
 - :py:class:`~accelforge.frontend.arch.Compute` components performs the Einsum's
   computation.
 
-In the architecture file, each component is represented by a YAML dictionary. Component
+In architecture YAML files, each component is represented by a YAML dictionary. Component
 types are preceded by the ``!`` character. An example architecture is shown below:
 
-.. include:: ../../../../examples/arches/tpu_v4i.arch.yaml
+.. include:: ../../../../examples/arches/tpu_v4i.yaml
    :code: yaml
 
+
+.. _flattening:
 
 Flattening
 ----------
@@ -32,12 +34,12 @@ A given Einsum may be executed only on a single
 :py:class:`~accelforge.frontend.arch.Compute`, and it may use hardware objects between
 the root of the tree and the leaf for that
 :py:class:`~accelforge.frontend.arch.Compute`. Flattening an architecture converts a
-tree architecture into multiple parallel *Flattened-Architectures*, each one
+tree architecture into multiple parallel *Flattened Architectures*, each one
 representing one possible path from the root of the tree to the leaf for that
 :py:class:`~accelforge.frontend.arch.Compute`.
 
 For example, in the architecture above, there are two compute units, the ``scalar_unit``
-and the ``mac``. Flattening this architecture will produce two Flattened-Architectures;
+and the ``mac``. Flattening this architecture will produce two Flattened Architectures;
 one with a ``scalar_unit`` and one with a ``mac``. The partial mappings for each of
 these architectures can be combined, and can share hardware that exists above both
 compute units.
@@ -48,10 +50,10 @@ to the compute. More complex topologies (*e.g.,* give an upper-level compute a p
 cache) can be created by creating sub-branches following :ref:`sub-branches`.
 
 
+.. _sub-branches:
+
 Sub-Branches
 ------------
-
-.. _sub-branches:
 
 Sub-branches in the architecture can represent different execution paths. The primary
 `~accelforge.frontend.arch.Arch` class is a `~accelforge.frontend.arch.Hierarchical`
@@ -97,18 +99,21 @@ class.
 
 When a fanout is instantiated, the given component, alongside all of its children, are
 duplicated in the given dimension(s). For example, in the TPU v4i architecture above,
-the `LocalBuffer` component has a size-4 spatial fanout in the `Z` dimension, meaning
+the ``LocalBuffer`` component has a size-4 spatial fanout in the ``Z`` dimension,
+meaning
 that there are 4 instances of the component. The register component has both the size-4
-`Z` fanout spatial fanout, as well as two size-128 spatial fanouts in the `reuse_input`
-and `reuse_output` dimensions, respectively.
+``Z`` fanout spatial fanout, as well as two size-128 spatial fanouts in the ``reuse_input``
+and ``reuse_output`` dimensions, respectively.
 
-Reuse in spatial dimensions may be controlled with the ``may_reuse`` keyword, which
-takes in a set expression that is parsed according to :ref:`set-expressions`. In the
-example, nothing is reused spatially betweeen ``LocalBuffer`` instances, while inputs
-and outputs are reused across registers in the ``reuse_input`` and ``reuse_output``
-dimensions, respectively. Additionally, the ``reuse`` keyword can be used to force
-reuse; for example, ``reuse: input`` means that all spatial instances must use the
-same input values, otherwise the mapping will be invalid.
+Reuse in spatial dimensions may be controlled with the
+:py:attr:`~accelforge.frontend.arch.Spatial.may_reuse` keyword, which takes in a set
+expression that is parsed according to the set expression section of the :ref:`Set
+Expressions <set-expressions>` guide. In the example, nothing is reused spatially
+betweeen ``LocalBuffer`` instances, while inputs and outputs are reused across registers
+in the ``reuse_input`` and ``reuse_output`` dimensions, respectively. Additionally, the
+``reuse`` keyword can be used to force reuse; for example, ``reuse: input`` means that
+all spatial instances must use the same input values, otherwise the mapping will be
+invalid.
 
 Spatial fanouts support the following keywords:
 

@@ -141,8 +141,13 @@ class IncludeAttrs(Directive):
                     if doc:
                         attrs[field_name]['doc'] = doc
 
-        # --- Look up inheritance chain for missing docstrings ---
+        # --- Look up inheritance chain for missing docstrings and track defining class ---
+        attr_defining_class = {}  # Maps attr_name to the class that defines it
         for attr_name in list(attrs.keys()):
+            # Find which class in the MRO actually defines this attribute
+            defining_class = self._find_defining_class(obj, attr_name)
+            attr_defining_class[attr_name] = defining_class
+
             if attrs[attr_name]['doc'] is None:
                 doc = self._find_docstring_in_mro(obj, attr_name)
                 if doc:
@@ -160,11 +165,20 @@ class IncludeAttrs(Directive):
 
             # Attribute name as :py:attr: role for clickable links
             from sphinx.addnodes import pending_xref
+
+            # Use the defining class for the link target
+            defining_class = attr_defining_class.get(attr_name)
+            if defining_class:
+                defining_class_name = f"{defining_class.__module__}.{defining_class.__qualname__}"
+                link_target = f"{defining_class_name}.{attr_name}"
+            else:
+                link_target = f"{fqname}.{attr_name}"
+            
             refnode = pending_xref(
                 '',
                 refdomain='py',
-                reftype='attr',
-                reftarget=fqname + '.' + attr_name,
+                reftype='obj',
+                reftarget=link_target,
                 refwarn=True
             )
             refnode += nodes.literal('', attr_name, classes=['xref', 'py', 'py-attr'])
@@ -187,6 +201,19 @@ class IncludeAttrs(Directive):
             bullet_list += list_item
 
         return [bullet_list]
+
+    def _find_defining_class(self, obj, attr_name):
+        """Find where attribute is first defined by checking __annotations__ in __dict__."""
+        mro_list = list(inspect.getmro(obj))
+        
+        # Walk MRO backwards to find first class that defines this in its own __annotations__
+        for i in range(len(mro_list) - 1, -1, -1):
+            base_class = mro_list[i]
+            if '__annotations__' in base_class.__dict__:
+                if attr_name in base_class.__dict__['__annotations__']:
+                    return base_class
+        
+        return None
 
     def _find_docstring_in_mro(self, obj, attr_name):
         """Find docstring for an attribute by walking the MRO."""
@@ -306,11 +333,20 @@ class IncludeAttrsExcept(Directive):
 
             # Attribute name as :py:attr: role for clickable links
             from sphinx.addnodes import pending_xref
+
+            # Find which class actually defines this attribute
+            defining_class = self._find_defining_class(main_class, attr_name)
+            if defining_class:
+                defining_class_name = f"{defining_class.__module__}.{defining_class.__qualname__}"
+                link_target = f"{defining_class_name}.{attr_name}"
+            else:
+                link_target = f"{main_class_name}.{attr_name}"
+
             refnode = pending_xref(
                 '',
                 refdomain='py',
                 reftype='attr',
-                reftarget=main_class_name + '.' + attr_name,
+                reftarget=link_target,
                 refwarn=True
             )
             refnode += nodes.literal('', attr_name, classes=['xref', 'py', 'py-attr'])
@@ -448,6 +484,19 @@ class IncludeAttrsExcept(Directive):
                     attrs[attr_name]['doc'] = doc
 
         return attrs
+
+    def _find_defining_class(self, obj, attr_name):
+        """Find where attribute is first defined by checking __annotations__ in __dict__."""
+        mro_list = list(inspect.getmro(obj))
+        
+        # Walk MRO backwards to find first class that defines this in its own __annotations__
+        for i in range(len(mro_list) - 1, -1, -1):
+            base_class = mro_list[i]
+            if '__annotations__' in base_class.__dict__:
+                if attr_name in base_class.__dict__['__annotations__']:
+                    return base_class
+        
+        return None
 
     def _find_docstring_in_mro(self, obj, attr_name):
         """Find docstring for an attribute by walking the MRO."""

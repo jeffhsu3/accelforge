@@ -102,7 +102,7 @@ def get_jobs(
     def make_jobs_for_einsum(einsum_name: EinsumName, spec: Spec):
         jobs = {}
         workload_einsum = spec.workload.einsums[einsum_name]
-        for flattened_arch in spec._get_flattened_architecture():
+        for flattened_arch in spec._get_flattened_architecture(einsum_name=einsum_name):
             # Create jobs for each Einsum
             job = Job(
                 spec=spec,

@@ -460,6 +460,26 @@ class Einsum(ParsableModel):
                 result.add(projection)
         return result
 
+    @staticmethod
+    def empty_renames() -> dict[str, InvertibleSet[TensorName | RankVariable]]:
+        kwargs_tensors = dict(
+            full_space=set(),
+            space_type=TensorName,
+            child_access_name="rank_variables",
+            element_to_child_space=dict(),
+        )
+        kwargs_rank_variables = dict(
+            full_space=set(),
+            space_type=RankVariable,
+        )
+        return {
+            "All": InvertibleSet(instance=(), **kwargs_tensors),
+            "Tensors": InvertibleSet(instance=(), **kwargs_tensors),
+            "Nothing": InvertibleSet(instance=(), **kwargs_tensors),
+            "Inputs": InvertibleSet(instance=(), **kwargs_tensors),
+            "Outputs": InvertibleSet(instance=(), **kwargs_tensors),
+        }
+
     def _parse_expressions(self, symbol_table: dict[str, Any], *args, **kwargs):
         workload: Workload = symbol_table["spec_workload"]
         renames: Renames = symbol_table["spec_renames"]
@@ -950,3 +970,6 @@ class Workload(ParsableModel):
                 tensor_copies.setdefault(input_tensor, set()).add(output_tensor)
                 tensor_copies.setdefault(output_tensor, set()).add(input_tensor)
         return tensor_copies
+
+    def empty_renames(self) -> dict[str, InvertibleSet[TensorName | RankVariable]]:
+        return Einsum.empty_renames()

@@ -10,11 +10,11 @@ workload. This is done in three steps:
    power of each :py:class:`~accelforge.frontend.arch.Component` in the architecture. It
    then generates *per-action energy*, which is used by later steps in the model to find
    the energy of performing hardware
-   :py:class:`~accelforge.frontend.arch.ComponentAction`\ s.
+   :py:class:`~accelforge.frontend.arch.Action`\ s.
 
-2. **Mapping the Workload onto the Accelerator**: This step generates mappings
-   :py:class:`~accelforge.frontend.mapping.Mapping`\ s that map the workload onto the
-   hardware.
+2. **Mapping the Workload onto the Accelerator**: This step generates
+   :py:class:`~accelforge.frontend.mapping.mapping.Mapping` objects that map the workload onto
+   the hardware.
 
 3. **Modeling the Energy, Area, and Latency of the Mapping**: This step looks at the
    full mapping and calculates the number of hardware actions that occur, using it to

@@ -3,8 +3,8 @@ Component Energy and Area
 
 .. _component-modeling:
 
-The energy and area of components in the architecture:ref:`architecture` can either be
-specified directly, or by calls to the `HWComponents
+The energy and area of components in the architecture can either be
+specified directly or by calls to the `HWComponents
 <https://github.com/Accelergy-Project/hwcomponents>`_ library.
 
 Calculating Energy and Area
@@ -24,7 +24,6 @@ energy and area calculations.
 
 Additionally, the following fields will affect the energy and area calculations:
 
-- ``energy``: :docstring:`accelforge.frontend.arch.Component.energy`
 - ``energy_scale``: :docstring:`accelforge.frontend.arch.Component.energy_scale`
 - ``leak_power_scale``: :docstring:`accelforge.frontend.arch.Component.leak_power_scale`
 - ``area_scale``: :docstring:`accelforge.frontend.arch.Component.area_scale`
@@ -32,7 +31,10 @@ Additionally, the following fields will affect the energy and area calculations:
 - ``actions[<action name>].energy_scale``: :docstring:`accelforge.frontend.arch.Action.energy_scale`
 
 The energy and area of a all components in the architecture can be calculated by calling
-:py:meth:`~accelforge.spec.Spec.calculate_component_area_energy_latency_leak`.
+:py:meth:`~accelforge.spec.Spec.calculate_component_area_energy_latency_leak`. Note that
+an Einsum name can be provided to populate symbols with the Einsum's symbols from the
+workload; otherwise, if the architecture depends on something in the workload, an error
+will be raised.
 
 .. include-notebook:: notebooks/tutorials/component_energy_area.ipynb
    :name: spec_energy_area
@@ -45,27 +47,29 @@ We can also calculate the energy and area of individual components by calling
    :name: single_component_energy_area
    :language: python
 
-There are additional `Spec.config` fields that affect the energy and area
-calculations:
+There are additional :py:class:`~accelforge.frontend.config.Config` fields that affect
+the energy and area calculations, which can be set in the
+:py:class:`~accelforge.frontend.spec.Spec` object's ``config`` field:
 
 .. include-attrs:: accelforge.frontend.config.Config
 
-Specifying Energy and Area
----------------------------
+Specifying Area, Energy, Latency, and Leak Power
+------------------------------------------------
 
-One way to specify the area and energy of each component is to directly set the
-``area``, ``leak_power``, or ``actions[<action name>].energy`` fields. The following
-example from the TPU v4i example architecture shows uses this approach:
+One way to specify the area, energy, latency, and leak power of each component is to
+directly set the ``area``, ``leak_power``, ``actions[<action name>].energy``, and
+``actions[<action name>].latency`` fields. The following example from the TPU v4i
+example architecture shows uses this approach:
 
-.. include-yaml:: examples/arches/tpu_v4i.arch.yaml
+.. include-yaml:: examples/arches/tpu_v4i.yaml
    :startfrom: GlobalBuffer
    :same-indent:
 
 If any value is omitted, it will raise an appropriate error when
-:py:meth:`~accelforge.spec.Spec.calculate_component_area_energy_latency_leak` is called, so you may call this
-function to check whether you've missed anything. ``hwcomponents`` is invoked
-automatically if any of the fields are missing. If you don't want it to be called, then
-you can do one of the following:
+:py:meth:`~accelforge.spec.Spec.calculate_component_area_energy_latency_leak` is called,
+so you may call this function to check whether you've missed anything. ``hwcomponents``
+is invoked automatically if any of the fields are missing. If you don't want it to be
+called, then you can do one of the following:
 
 - If calling :py:meth:`~accelforge.spec.Spec.calculate_component_area_energy_latency_leak`, then you
   can set ``spec.config.component_models`` and
@@ -85,7 +89,7 @@ following shows the fields used by ``hwcomponents``:
    :code: yaml
 
 When ``hwcomponents`` has been used to calculate the energy and area of a component,
-then the ``component_model`` field will be set to the `hwcomponents` model used to
+then the ``component_model`` field will be set to the ``hwcomponents`` model used to
 calculate the energy and area.
 
 In addition to looking at the ``component_modeling_log`` field, we can further inspect the

@@ -103,30 +103,35 @@ class Mappings:
     def __iter__(self):
         return iter(self.data)
 
-    def _get_cols(self, key: str) -> list[str]:
-        found_index = None
+    def _get_cols(self, key: str, col_idx: int | None = None) -> list[str]:
+        found_index = col_idx
         found = []
         for col in self.data.columns:
             col = col.split("<SEP>")
             if key not in col:
                 continue
 
-            if sum(c == key for c in col) > 1:
+            if col_idx is not None and col.index(key) != col_idx:
+                continue
+
+            if col_idx is None and sum(c == key for c in col) > 1:
                 raise ValueError(
                     f"Key {key} found multiple times in the column names. "
                     f'Columns: "{col}"'
                 )
 
-            if found_index is not None and col.index(key) != found_index:
+            cur_idx = col.index(key) if col_idx is None else col_idx
+
+            if found_index is not None and cur_idx != found_index:
                 raise ValueError(
                     f"Key {key} found at varying indexes in the column names. "
                     f'Columns: "{col}" and "{found}"'
                 )
-            found_index = col.index(key)
+            found_index = cur_idx
             found.append("<SEP>".join(col))
         return found
 
-    def access(self, *keys: str) -> "Mappings":
+    def access(self, *keys: str, col_idx: int | None = None) -> "Mappings":
         """
         Returns a new Mappings object with only the columns that contain the given keys.
         Column names are strings separated by "<SEP>", and this method will return
@@ -139,6 +144,10 @@ class Mappings:
         with columns "Compute" and "Latency".
 
         If multiple keys are given, then the procedure is repeated for each key.
+
+        col_idx:
+            The index of the key in the column name. This can be used if the given key
+            is found at multiple indexes in different columns.
 
         Parameters
         ----------
@@ -155,12 +164,12 @@ class Mappings:
 
         if len(keys) != 1:
             for k in keys:
-                self = self.access(k)
+                self = self.access(k, col_idx=col_idx)
             return self
 
         key = keys[0]
         col_renames = {}
-        for col in self._get_cols(key):
+        for col in self._get_cols(key, col_idx=col_idx):
             col_renames[col] = "<SEP>".join(c for c in col.split("<SEP>") if c != key)
 
         return self._update(
@@ -396,9 +405,9 @@ class Mappings:
 
         result = {}
         for einsum in self.einsum_names:
-            einsum_accessed = energy.access(einsum)
+            einsum_accessed = energy.access(einsum, col_idx=0)
             for tensor in self.spec.workload.einsums[einsum].tensor_names:
-                tensor_accessed = einsum_accessed.access(tensor)
+                tensor_accessed = einsum_accessed.access(tensor, col_idx=1)
                 for col in tensor_accessed._get_keys_of_length(2):
                     component, action = col.split("<SEP>")
                     result[(einsum, component, tensor, action)] = tensor_accessed[col]
@@ -473,7 +482,7 @@ class Mappings:
 
         result = {}
         for einsum in self.einsum_names:
-            einsum_accessed = energy.access(einsum)
+            einsum_accessed = energy.access(einsum, col_idx=0)
             for component in einsum_accessed._get_keys_of_length(1):
                 result[(einsum, component)] = einsum_accessed[component]
 

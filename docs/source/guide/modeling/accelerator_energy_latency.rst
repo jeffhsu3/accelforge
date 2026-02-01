@@ -6,10 +6,10 @@ Accelerator Energy, Area, and Latency
 To calculate energy and latency, we first need to look at the number of actions incurred
 by each :py:class:`~accelforge.frontend.arch.Component` in the architecture.
 
+.. _calculating-num-actions:
+
 Calculating Number of Actions from A Mapping
 --------------------------------------------
-
-.. _calculating-num-actions:
 
 Except for :py:class:`~accelforge.frontend.arch.Compute`\ components (whose number of
 compute actions, barring recomputation, depends only on workload), the number of actions
@@ -27,17 +27,18 @@ depends on the number of accesses to the component. They may be accessed in two 
 
 The number of actions incurred by accesses for each tensor are equal to the number of
 values accessed times the bits per value of the tensor (determined by the workload),
-divided by the :py:class:`~accelforge.frontend.arch.ActionArguments` ``bits_per_action``
-attribute. For example, if 1024 values are accessed with a bits per value of 16 bits and
-``bits_per_action`` is 32, then 1024 * 16 / 32 = 512 actions are incurred.
+divided by the :py:attr:`~accelforge.frontend.arch.TensorHolderAction.bits_per_action`
+attribute. attribute. For example, if 1024 values are accessed with a bits per value of
+16 bits and :py:attr:`~accelforge.frontend.arch.TensorHolderAction.bits_per_action` is
+32, then 1024 * 16 / 32 = 512 actions are incurred.
 
 Read+Modify+Writes (RMWs) to a component are counted as a read and a write. The first
 read of output data is skipped because the value has not been written yet.
 
-By default, the ``bits_per_action`` attributes is set to 1, meaning that memory accesses
-are counted in terms of bits accessed unless ``bits_per_action`` is set to a different
-value.
-
+By default, the :py:attr:`~accelforge.frontend.arch.TensorHolderAction.bits_per_action`
+attributes is set to 1, meaning that memory accesses are counted in terms of bits
+accessed unless :py:attr:`~accelforge.frontend.arch.TensorHolderAction.bits_per_action`
+is set to a different value.
 
 Calculating Latency from a Pmapping
 -----------------------------------
@@ -54,8 +55,8 @@ Calculating Area and Leak Power
 -------------------------------
 
 After :ref:`component-modeling` is completed, we can get area with the
-:py:meth:`~accelforge.frontend.arch.Arch.per_component_total_area` and
-:py:meth:`~accelforge.frontend.arch.Arch.total_area` methods. Similarly, we can get
+:py:attr:`~accelforge.frontend.arch.Arch.per_component_total_area` and
+:py:attr:`~accelforge.frontend.arch.Arch.total_area` attributes. Similarly, we can get
 leak power with the
-:py:meth:`~accelforge.frontend.arch.Arch.per_component_total_leak_power` and
-:py:meth:`~accelforge.frontend.arch.Arch.total_leak_power` methods.
+:py:attr:`~accelforge.frontend.arch.Arch.per_component_total_leak_power` and
+:py:attr:`~accelforge.frontend.arch.Arch.total_leak_power` attributes.

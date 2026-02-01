@@ -9,7 +9,7 @@ and a cascade of Einsums is a list of Einsums with data dependencies.
 
 The following is an example workload for three back-to-back matrix multiplications:
 
-.. include:: ../../../../examples/workloads/three_matmuls.workload.yaml
+.. include:: ../../../../examples/workloads/three_matmuls.yaml
    :code: yaml
 
 The top-level Workload spec has the following attributes:
@@ -46,9 +46,10 @@ use a projection dictionary instead of a list.
     - {name: W1, projection: {N1: n1, N2: n2}}
     - {name: T2, projection: {M: m, N2: n2}, output: True}
 
+.. _renaming-tensors-rank-variables:
+
 Renaming Tensors and Rank Variables
 -----------------------------------
-:label:`renaming-tensors-rank-variables`
 
 Renames allow us to write simple, generic names (*e.g.,* ``input``,
 ``reduced_rank_variable``) in our set expresssions and have them resolve to tensors or
@@ -72,12 +73,14 @@ Additionally, you may define a separate top-level
 :py:class:`~accelforge.frontend.renames.Renames` object with structure mirroring the
 workload. For example, one is in the bottom of the following workload:
 
-.. include:: ../../../../examples/workloads/gpt3_6.7B.workload.yaml
+.. include:: ../../../../examples/workloads/gpt3_6.7B.yaml
    :code: yaml
 
-This renames format includes, for every Einsum, a ``tensor_accesses`` key and a
-``rank_variables`` key. Both support the above dictionary or list-of-dictionary rename
-formats.
+This renames format includes, for every Einsum, a
+:py:attr:`~accelforge.frontend.renames.EinsumRename.tensor_accesses` key and a
+:py:attr:`~accelforge.frontend.renames.EinsumRename.rank_variables` key. Both support
+the above dictionary or list-of-dictionary rename formats.
 
 If an Einsum in the renames is named ``default``, then its renames are applied to every
-Einsum unless overridden.
+Einsum unless overridden. Overriding is specific to a single name, so every rename in
+the default must be overridden independently.

@@ -62,7 +62,7 @@ Here's a minimal example of using AccelForge:
    results = spec.map_workload_to_arch()
 
    # Analyze the results
-   print(f"Energy: {results.energy()} pJ")
+   print(f"Energy: {results.energy()} J")
    print(f"Latency: {results.latency()} seconds")
 
 
@@ -73,7 +73,7 @@ Example Notebooks
 ~~~~~~~~~~~~~~~~~
 
 Example Jupyter notebooks can be found by cloning the repository and navigating to the
-``notebooks/`` directory:
+``notebooks`` directory:
 
 .. code-block:: bash
 

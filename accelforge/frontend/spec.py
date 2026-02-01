@@ -71,7 +71,7 @@ class Spec(ParsableModel):
         ----------
         einsum_name: EinsumName | None = None
             Optional Einsum name to populate symbols with the Einsum's symbols from the
-            workload. If None, no symbols are populated from the workload.
+            workload. If None, only some symbols may be populated from the workload.
 
         _parse_arch: bool = True
             Whether to parse the architecture.
@@ -130,6 +130,8 @@ class Spec(ParsableModel):
             if einsum_name is not None:
                 renames = parsed_workload.einsums[einsum_name].renames
                 st.update(**{k.name: k.source for k in renames})
+            else:
+                st.update(parsed_workload.empty_renames())
 
             if _parse_arch:
                 parsed_arch, st = self.arch._parse_expressions(st)
@@ -244,6 +246,7 @@ class Spec(ParsableModel):
     def _get_flattened_architecture(
         self,
         compute_node: str | Compute | None = None,
+        einsum_name: EinsumName | None = None,
     ) -> list[list[Leaf]] | list[Leaf]:
         """
         Return the architecture as paths of ``Leaf`` instances from the highest-level
@@ -256,6 +259,10 @@ class Spec(ParsableModel):
         compute_node : str or Compute, optional
             Optional compute node (name or ``Compute``) to restrict results to a single
             compute node.
+
+        einsum_name: EinsumName | None = None
+            Optional Einsum name to populate symbols with the Einsum's symbols from the
+            workload. If None, no symbols are populated from the workload.
 
         Returns
         -------
@@ -275,6 +282,9 @@ class Spec(ParsableModel):
         assert getattr(
             self, "_parsed", False
         ), "Spec must be parsed before getting flattened architecture"
+        if einsum_name is not None:
+            self = self._spec_parse_expressions(einsum_name=einsum_name)
+
         all_leaves = self.arch.get_nodes_of_type(Leaf)
         found_names = set()
         for leaf in all_leaves:
