@@ -79,9 +79,9 @@ RUN pip install jupyterlab ipywidgets
 
 EXPOSE 8888
 
-CMD bash -c "if ! pip list | grep -q 'accelforge'; then cd /home/workspace && pip install -e .; fi && \
+CMD ["bash", "-lc", "if ! pip list | grep -q 'accelforge'; then cd /home/workspace && pip install -e .; fi && \
     jupyter lab --ip=0.0.0.0 --port=8888 --no-browser --allow-root \
-    --NotebookApp.token='' --NotebookApp.notebook_dir=/home/workspace/notebooks"
+    --NotebookApp.token='' --NotebookApp.notebook_dir=/home/workspace/notebooks"]
 
 # One-liner to docker container rm -f the container that has 8888 port
 # docker ps | grep 8888 | awk '{print $1}' | xargs docker rm -f
