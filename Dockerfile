@@ -74,6 +74,8 @@ RUN make install-hwcomponents CC=gcc CXX=g++
 RUN pip install jupyterlab ipywidgets
 
 # Install accelforge
+ENV ACCELFORGE_CONFIG_PATH=/home/workspace/.accelforge/config.yaml
+RUN mkdir -p /home/workspace/.accelforge/
 RUN pip install accelforge
 # WORKDIR /home/workspace
 
