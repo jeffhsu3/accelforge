@@ -1,19 +1,37 @@
-"""Minimal setup.py to ensure accelforge._version_scheme is importable during build."""
+"""Setup.py to ensure accelforge._version_scheme is importable during build."""
+
 import sys
 import os
 from pathlib import Path
 
-# Add current directory to Python path so accelforge._version_scheme can be imported
-# This must happen before setuptools-scm tries to import the version scheme
 current_dir = Path(__file__).parent.absolute()
-if str(current_dir) not in sys.path:
-    sys.path.insert(0, str(current_dir))
+parent_dir = current_dir.parent
 
-# Also ensure we can import accelforge as a module
-accelforge_dir = current_dir / "accelforge"
-if str(accelforge_dir.parent) not in sys.path:
-    sys.path.insert(0, str(accelforge_dir.parent))
+for path in [str(current_dir), str(parent_dir)]:
+    if path not in sys.path:
+        sys.path.insert(0, path)
+
+pythonpath = os.environ.get("PYTHONPATH", "")
+if pythonpath:
+    for path in pythonpath.split(os.pathsep):
+        if path and path not in sys.path:
+            sys.path.insert(0, path)
+
+import importlib.util
+_version_scheme_path = current_dir / "accelforge" / "_version_scheme.py"
+spec = importlib.util.spec_from_file_location("_version_scheme", _version_scheme_path)
+_version_scheme = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(_version_scheme)
+post_version = _version_scheme.post_version
+no_local = _version_scheme.no_local
 
 from setuptools import setup
 
-setup()
+setup(
+    use_scm_version={
+        "version_scheme": post_version,
+        "local_scheme": no_local,
+        "write_to": "accelforge/_version.py",
+        "fallback_version": "1.0",
+    }
+)

@@ -65,5 +65,4 @@ where = ["."]
 [tool.setuptools_scm]
 write_to = "accelforge/_version.py"
 fallback_version = "1.0"
-version_scheme = "accelforge._version_scheme:post_version"
-local_scheme = "accelforge._version_scheme:no_local"
+# version_scheme and local_scheme defined in setup.py
