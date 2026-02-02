@@ -124,6 +124,4 @@ class Binding(EvalableModel):
     A collection of binding nodes that fully specifies a relation between the
     logical and physical space.
     """
-
-    # version: StrictFloat
     nodes: EvalableList[BindingNode]

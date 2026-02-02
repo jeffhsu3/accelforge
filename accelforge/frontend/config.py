@@ -3,7 +3,6 @@ from typing import Annotated, Callable, Optional
 from pydantic import ConfigDict
 from hwcomponents import ComponentModel
 from accelforge.util._basetypes import EvalableDict, EvalableList, EvalableModel
-from accelforge._version import assert_version, __version__
 from platformdirs import user_config_dir
 import logging
 import os
@@ -33,8 +32,6 @@ def get_config() -> "Config":
 
 
 class Config(EvalableModel):
-    # version: Annotated[str, assert_version] = __version__
-
     expression_custom_functions: EvalableList[str | Callable] = EvalableList()
     """
     A list of functions to use while parsing expressions. These can either be functions

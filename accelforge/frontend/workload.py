@@ -32,7 +32,6 @@ from accelforge.frontend.renames import (
 from accelforge.util.exceptions import EvaluationError
 from accelforge.util._eval_expressions import eval_expression
 from accelforge.util._setexpressions import InvertibleSet, eval_set_expression
-from accelforge._version import __version__
 
 from accelforge.frontend.renames import (
     EinsumName,
@@ -619,9 +618,6 @@ class Workload(EvalableModel):
     The workload specification as a cascade of Einsums, with each Einsum being a
     computation step in the workload.
     """
-
-    # version: Annotated[str, assert_version] = __version__
-    # """ The version of the workload specification. """
 
     einsums: EvalableList[Einsum] = EvalableList()
     """ The Einsums in the workload. """

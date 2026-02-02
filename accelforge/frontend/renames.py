@@ -7,7 +7,6 @@ from accelforge.util._basetypes import (
     TryEvalTo,
     _PostCall,
 )
-from accelforge._version import assert_version, __version__
 from accelforge.util.exceptions import EvaluationError
 from accelforge.util._setexpressions import InvertibleSet
 
@@ -125,7 +124,6 @@ class EinsumRename(EvalableModel):
 
 
 class Renames(EvalableModel):
-    # version: Annotated[str, assert_version] = __version__
     einsums: list[EinsumRename] = list()
     """
     Renames for a workload. The Einsum list is a list of EinsumRename objects, and

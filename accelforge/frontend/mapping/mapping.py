@@ -44,7 +44,6 @@ from accelforge.util._basetypes import (
 from accelforge.frontend.workload import RankVariable, TensorName
 from accelforge.util._visualization import ColorMap, _pydot_graph
 from accelforge.util.parallel import _SVGJupyterRender
-from accelforge._version import __version__
 from accelforge.frontend import arch
 
 T = TypeVar("T", bound="MappingNode")
@@ -1513,8 +1512,6 @@ MappingNodeTypes: TypeAlias = Union[
 
 class Mapping(Nested):
     """A Mapping of a workload onto a hardware architecture."""
-
-    # version: Annotated[str, assert_version] = __version__
 
     _n_loop_orders: int | None = None
     """ Used for counting number of unique mappings. Do not touch. """

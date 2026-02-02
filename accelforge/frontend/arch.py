@@ -42,7 +42,6 @@ from accelforge.util._eval_expressions import eval_expression
 from accelforge.util._setexpressions import InvertibleSet, eval_set_expression
 from accelforge.frontend.renames import RankVariable, TensorName
 
-from accelforge._version import assert_version, __version__
 from pydantic import Discriminator
 from accelforge.util._basetypes import _uninstantiable
 from accelforge.util.parallel import _SVGJupyterRender

@@ -2,14 +2,10 @@ from typing import Any, Annotated, Literal
 
 from accelforge.frontend.mapper.metrics import Metrics
 from accelforge.util._basetypes import EvalableModel
-from accelforge._version import assert_version, __version__
 
 
 class FFM(EvalableModel):
     """Configuration for the Fast and Fusiest Mapper."""
-
-    # version: Annotated[str, assert_version] = __version__
-    # """ Version """
 
     metrics: Metrics = Metrics.ENERGY
     """ Metrics used to optimize mappings. """
