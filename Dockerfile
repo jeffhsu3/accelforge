@@ -73,6 +73,8 @@ RUN make install-hwcomponents CC=gcc CXX=g++
 # Install jupyterlab and ipywidgets
 RUN pip install jupyterlab ipywidgets
 
+# Install accelforge
+RUN pip install accelforge
 # WORKDIR /home/workspace
 
 # ENTRYPOINT ["/bin/bash"]
