@@ -161,7 +161,8 @@ Support
 If you encounter issues or have questions:
 
 - Check the :doc:`faqs` page
-- Review example files in the ``examples/`` directory
+- Review `the AccelForge tutorials <https://github.com/Accelergy-Project/accelforge/tree/main/notebooks/tutorials>`_
+- Review `the AccelForge examples <https://github.com/Accelergy-Project/accelforge/tree/main/examples>`_
 - Browse the `source code on GitHub <https://github.com/Accelergy-Project/accelforge>`_
 - Open an issue on `GitHub <https://github.com/Accelergy-Project/accelforge>`_
 
