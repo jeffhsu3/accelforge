@@ -100,9 +100,10 @@ def _plot_breakdown(mappings, labels, separate_by, stack_by, col_keyword: str, k
     if n_axes == 1:
         axes = [axes]
 
-    labels = (
-        labels + "-" if labels is not None else [f"{i}-" for i in range(len(mappings))]
-    )
+    if labels is not None:
+        labels = [l + "-" for l in labels]
+    else:
+        labels = [f"{i}-" for i in range(len(mappings))]
     assert len(labels) == len(mappings)
 
     if len(separate_by) == 0:
@@ -121,7 +122,10 @@ def _plot_breakdown(mappings, labels, separate_by, stack_by, col_keyword: str, k
 
             ax.set_title(f"{label}mapping{j}")
 
+            # Collect names of bars and initialize label2hieghts
             bars = []
+            # label2heights maps labels (values of stack_by) to a list of equal
+            # length with bars. Each element is a bar height.
             label2heights = {}
             for name, constituents in bar_components:
                 bars.append(name)
@@ -131,6 +135,7 @@ def _plot_breakdown(mappings, labels, separate_by, stack_by, col_keyword: str, k
             for label in label2heights:
                 label2heights[label] = [0] * len(bars)
 
+            # Collect the bar heights from constituents
             for name, constituents in bar_components:
                 bar_i = bars.index(name)
                 for stack_name, subconstituents in constituents:
@@ -143,9 +148,17 @@ def _plot_breakdown(mappings, labels, separate_by, stack_by, col_keyword: str, k
                     heights[bar_i] = height
                     assert len(heights) == len(bars)
 
+            # Stack the bar heights in reverse order
+            cur_heights = [0]*len(bars)
+            for label, heights in reversed(list(label2heights.items())):
+                for i in range(len(bars)):
+                    cur_heights[i] += heights[i]
+                    heights[i] = cur_heights[i]
+
             for label, heights in label2heights.items():
                 ax.bar(bars, height=heights, label=label)
-                ax.set_xticklabels(bars, rotation=90)
+                ax.set_xticks(bars, labels=bars, rotation=90)
+                # ax.set_xticklabels(bars, rotation=90)
 
     for ax in axes:
         ax.legend()
