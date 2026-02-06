@@ -313,6 +313,14 @@ class Spec(EvalableModel):
 
         return found if compute_node is None else found[0]
 
+    def evaluate_mapping(self) -> Mappings:
+        """
+        Evaluate the mapping in the spec.
+        """
+        from accelforge.model import evaluate_mapping
+        return evaluate_mapping(self) 
+
+
     def map_workload_to_arch(
         self,
         einsum_names: list[EinsumName] | None = None,
