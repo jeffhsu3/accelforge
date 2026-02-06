@@ -1,10 +1,11 @@
 import unittest
 
+import accelforge as af
 from accelforge.frontend.spec import Spec
 from accelforge.mapper import Metrics
 from accelforge.mapper.FFM.main import map_workload_to_arch
 
-from paths import EXAMPLES_DIR
+from .paths import EXAMPLES_DIR
 
 M_SHAPE = 64
 KN_SHAPE = 64
@@ -27,20 +28,22 @@ class ActionChecker(unittest.TestCase):
 class TestMapper(ActionChecker, unittest.TestCase):
     def test_one_matmul(self):
         spec = Spec.from_yaml(
-            EXAMPLES_DIR / "arches" / "simple.yaml",
-            EXAMPLES_DIR / "workloads" / "matmuls.yaml",
+            af.examples.arches.simple,
+            af.examples.workloads.matmuls,
             jinja_parse_data={"N_EINSUMS": 1, "M": 64, "KN": 64},
         )
+        spec = spec.calculate_component_area_energy_latency_leak()
 
         result = map_workload_to_arch(spec)
         self._check_memory_actions_exist(spec, ["MainMemory", "GlobalBuffer"], result)
 
     def test_two_matmuls(self):
         spec = Spec.from_yaml(
-            EXAMPLES_DIR / "arches" / "simple.yaml",
-            EXAMPLES_DIR / "workloads" / "matmuls.yaml",
+            af.examples.arches.simple,
+            af.examples.workloads.matmuls,
             jinja_parse_data={"N_EINSUMS": 2, "M": 64, "KN": 64},
         )
+        spec = spec.calculate_component_area_energy_latency_leak()
 
         result = map_workload_to_arch(spec)
         self._check_memory_actions_exist(spec, ["MainMemory", "GlobalBuffer"], result)
