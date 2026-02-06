@@ -1,3 +1,5 @@
+{% set MainMemoryEnergy=MainMemoryEnergy | default(1) %}
+
 arch:
   nodes:
   - !Memory
@@ -7,8 +9,8 @@ arch:
     area: 0
     tensors: {keep: ~Intermediates, may_keep: All}
     actions:
-    - {name: read, energy: 1, latency: 0}
-    - {name: write, energy: 1, latency: 0}
+    - {name: read, energy: {{MainMemoryEnergy}}, latency: 0}
+    - {name: write, energy: {{MainMemoryEnergy}}, latency: 0}
 
   - !Memory
     name: GlobalBuffer
