@@ -34,12 +34,17 @@ def plot_roofline(
 
     ax.plot(
         [min_computational_intensity, roofline_transition],
-        [min_computational_intensity * bandwidth, computational_throughput],
+        [min_computational_intensity*bandwidth, computational_throughput],
+        color="black",
     )
     ax.plot(
         [roofline_transition, max_computational_intensity],
         [computational_throughput, computational_throughput],
+        color="black",
     )
+
+    ax.spines.right.set_visible(False)
+    ax.spines.top.set_visible(False)
 
     return fig, ax
 
