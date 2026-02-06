@@ -122,8 +122,6 @@ def parallel(
     list[Any] | Generator[Any, None, None] | dict[Any, Any]
         The result of the parallelized jobs.
     """
-    jobs = list(jobs)
-
     args = {}
     if return_as is not None:
         args["return_as"] = return_as
@@ -141,6 +139,8 @@ def parallel(
             ),
         )
         return {k: v for k, v in r}
+
+    jobs = list(jobs)
 
     if n_jobs == 1 or len(jobs) == 1:
         if pbar:
