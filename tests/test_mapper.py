@@ -32,8 +32,6 @@ class TestMapper(ActionChecker, unittest.TestCase):
             af.examples.workloads.matmuls,
             jinja_parse_data={"N_EINSUMS": 1, "M": 64, "KN": 64},
         )
-        spec = spec.calculate_component_area_energy_latency_leak()
-
         result = map_workload_to_arch(spec)
         self._check_memory_actions_exist(spec, ["MainMemory", "GlobalBuffer"], result)
 
@@ -43,8 +41,6 @@ class TestMapper(ActionChecker, unittest.TestCase):
             af.examples.workloads.matmuls,
             jinja_parse_data={"N_EINSUMS": 2, "M": 64, "KN": 64},
         )
-        spec = spec.calculate_component_area_energy_latency_leak()
-
         result = map_workload_to_arch(spec)
         self._check_memory_actions_exist(spec, ["MainMemory", "GlobalBuffer"], result)
 

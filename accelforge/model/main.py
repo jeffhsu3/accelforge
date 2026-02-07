@@ -78,9 +78,11 @@ def evaluate_mapping(
     einsum2pmappings = {}
     pmapping_objects = {}
     einsum2jobs = {}
-    assert not getattr(
-        spec, "_evaluated", False
-    ), "Spec must not be evaluated before evaluating a mapping"
+    s = (
+        "Spec must not be evaluated before evaluating a mapping. Was "
+        "this spec returned by spec.calculate_component_area_energy_latency_leak()?"
+    )
+    assert not getattr(spec, "_evaluated", False), s
     for pmapping in _split_mapping_to_pmappings(spec.mapping, spec.workload):
         seen_temporal = False
         from accelforge.frontend.mapping import Temporal, Storage
