@@ -23,12 +23,15 @@ class TestModel(unittest.TestCase):
 
         result = evaluate_mapping(spec)
         energy_breakdown = result.energy(per_component=True, per_tensor=True)
-        self.assertAlmostEqual(energy_breakdown[("MainMemory", "T0")],
-                               M*KN*BITS_PER_VALUE)
-        self.assertAlmostEqual(energy_breakdown[("MainMemory", "T1")],
-                               M*KN*BITS_PER_VALUE)
-        self.assertAlmostEqual(energy_breakdown[("MainMemory", "W0")],
-                               M*KN**2*BITS_PER_VALUE)
+        self.assertAlmostEqual(
+            energy_breakdown[("MainMemory", "T0")], M * KN * BITS_PER_VALUE
+        )
+        self.assertAlmostEqual(
+            energy_breakdown[("MainMemory", "T1")], M * KN * BITS_PER_VALUE
+        )
+        self.assertAlmostEqual(
+            energy_breakdown[("MainMemory", "W0")], M * KN**2 * BITS_PER_VALUE
+        )
 
     def test_two_matmuls(self):
         spec = Spec.from_yaml(

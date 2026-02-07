@@ -149,7 +149,7 @@ def _plot_breakdown(mappings, labels, separate_by, stack_by, col_keyword: str, k
                     assert len(heights) == len(bars)
 
             # Stack the bar heights in reverse order
-            cur_heights = [0]*len(bars)
+            cur_heights = [0] * len(bars)
             for label, heights in reversed(list(label2heights.items())):
                 for i in range(len(bars)):
                     cur_heights[i] += heights[i]

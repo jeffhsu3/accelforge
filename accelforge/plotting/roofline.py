@@ -34,7 +34,7 @@ def plot_roofline(
 
     ax.plot(
         [min_computational_intensity, roofline_transition],
-        [min_computational_intensity*bandwidth, computational_throughput],
+        [min_computational_intensity * bandwidth, computational_throughput],
         color="black",
     )
     ax.plot(

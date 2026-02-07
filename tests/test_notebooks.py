@@ -7,13 +7,16 @@ from nbconvert.preprocessors.execute import CellExecutionError
 from paths import NOTEBOOKS_DIR
 
 
+TUTORIALS_DIR = NOTEBOOKS_DIR / "tutorials"
+
+
 class TestNotebooks(unittest.TestCase):
     """Test that all tutorial notebooks execute without errors."""
 
     @classmethod
     def setUpClass(cls):
         """Discover all notebooks in the tutorials directory."""
-        all_notebooks = NOTEBOOKS_DIR.rglob("*.ipynb")
+        all_notebooks = TUTORIALS_DIR.rglob("*.ipynb")
         # Filter out .ipynb_checkpoints directories
         cls.notebooks = sorted(
             [nb for nb in all_notebooks if ".ipynb_checkpoints" not in nb.parts]

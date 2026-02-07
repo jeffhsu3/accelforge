@@ -318,8 +318,8 @@ class Spec(EvalableModel):
         Evaluate the mapping in the spec.
         """
         from accelforge.model import evaluate_mapping
-        return evaluate_mapping(self) 
 
+        return evaluate_mapping(self)
 
     def map_workload_to_arch(
         self,
