@@ -5,7 +5,7 @@ from accelforge.frontend.spec import Spec
 from accelforge.mapper import Metrics
 from accelforge.mapper.FFM.main import map_workload_to_arch
 
-from .paths import EXAMPLES_DIR
+from paths import EXAMPLES_DIR
 
 M_SHAPE = 64
 KN_SHAPE = 64
@@ -22,8 +22,8 @@ class ActionChecker(unittest.TestCase):
                     self.assertTrue(
                         memory_action in matched,
                         f"{einsum_name} {memory_name} {memory_action} not found in {result.data.columns}",
-                    )
 
+                    )
 
 class TestMapper(ActionChecker, unittest.TestCase):
     def test_one_matmul(self):
