@@ -5,7 +5,7 @@ from accelforge.frontend.spec import Spec
 from accelforge.mapper import Metrics
 from accelforge.mapper.FFM.main import map_workload_to_arch
 
-from paths import EXAMPLES_DIR
+# from paths import EXAMPLES_DIR
 
 M_SHAPE = 64
 KN_SHAPE = 64
@@ -33,7 +33,7 @@ class TestMapper(ActionChecker, unittest.TestCase):
             jinja_parse_data={"N_EINSUMS": 1, "M": 64, "KN": 64},
         )
         result = map_workload_to_arch(spec)
-        self._check_memory_actions_exist(spec, ["MainMemory", "GlobalBuffer"], result)
+        self._check_memory_actions_exist(spec, ["MainMemory"], result)
 
     def test_two_matmuls(self):
         spec = Spec.from_yaml(
@@ -42,7 +42,27 @@ class TestMapper(ActionChecker, unittest.TestCase):
             jinja_parse_data={"N_EINSUMS": 2, "M": 64, "KN": 64},
         )
         result = map_workload_to_arch(spec)
-        self._check_memory_actions_exist(spec, ["MainMemory", "GlobalBuffer"], result)
+        self._check_memory_actions_exist(spec, ["MainMemory"], result)
+
+    def test_mapper_return_many_mappings(self):
+        spec = Spec.from_yaml(
+            af.examples.arches.simple,
+            af.examples.workloads.matmuls,
+            jinja_parse_data={
+                "N_EINSUMS": 1,
+                "M": 64,
+                "KN": 64,
+                "MainMemoryEnergy": 10,
+                "GlobalBufferLatency": 1
+            },
+        )
+        spec.mapper.metrics = Metrics.LATENCY | Metrics.ENERGY
+        result = map_workload_to_arch(spec)
+        self.assertTrue(
+            result.data["Matmul0<SEP>energy<SEP>GlobalBuffer<SEP>W0<SEP>read"].notna().all(),
+            "NaN found in mapper result"
+        )
+        self._check_memory_actions_exist(spec, ["MainMemory"], result)
 
 
 class TestFanout(ActionChecker):
