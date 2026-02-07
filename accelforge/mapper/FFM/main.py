@@ -98,7 +98,7 @@ def map_workload_to_arch(
         )
         new_mapping_data.append(this_mapping.data)
 
-    mappings.data = pd.concat(new_mapping_data)
+    mappings.data = pd.concat(new_mapping_data).fillna(0)
 
     return mappings
 
