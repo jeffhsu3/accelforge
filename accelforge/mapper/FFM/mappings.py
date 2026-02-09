@@ -1,3 +1,4 @@
+from accelforge.frontend.renames import TensorName
 from collections import defaultdict
 from accelforge.frontend import arch
 from accelforge.frontend.spec import Spec
@@ -430,7 +431,10 @@ class Mappings:
         result = {}
         for einsum in self.einsum_names:
             einsum_accessed = energy.access(einsum, col_idx=0)
-            for tensor in self.spec.workload.einsums[einsum].tensor_names:
+            # None for computes
+            for tensor in list[TensorName](
+                self.spec.workload.einsums[einsum].tensor_names
+            ) + ["None"]:
                 tensor_accessed = einsum_accessed.access(tensor, col_idx=1)
                 for col in tensor_accessed._get_keys_of_length(2):
                     component, action = col.split("<SEP>")
@@ -448,7 +452,7 @@ class Mappings:
         if not keep_indices:
             v = sum(result.values())
             if value_if_one_mapping and len(self.data) == 1:
-                return v.iloc[0]
+                return v.iloc[0] if isinstance(v, pd.Series) else v
             return v
 
         new_result = defaultdict(float)
