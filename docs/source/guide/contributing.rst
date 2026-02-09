@@ -42,7 +42,7 @@ existing functionality:
 
 .. code-block:: bash
 
-   python3 -m unittest discover -s tests -v
+   python3 -m unittest discover -s tests -p "*.py" -v
 
 Add tests for any new functionality you introduce. Tests should cover both valid inputs
 and error cases with appropriate error messages.
