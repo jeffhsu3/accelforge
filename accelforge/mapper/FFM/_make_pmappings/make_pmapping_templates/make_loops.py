@@ -331,7 +331,7 @@ def insert_spatial_loops(
             rank_variables &= tensor2fully_relevant_rank_vars[t]
 
         for fanout_dim in node.spatial:
-            for r in rank_variables:
+            for r in sorted(rank_variables):
                 s = Spatial(
                     rank_variable=r,
                     name=fanout_dim.name,
