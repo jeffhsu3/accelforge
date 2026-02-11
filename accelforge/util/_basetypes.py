@@ -471,10 +471,16 @@ class _FromYAMLAble:
             rval = rval[top_key]
 
         c = None
+        exc = None
         try:
             c = cls(**rval, **kwargs)
         except Exception as e:
-            pass
+            exc = e
+
+        rval_dict = isinstance(rval, dict)
+        rval_one_key = rval_dict and len(rval.keys()) == 1
+        key = next(iter(rval.keys())) if rval_one_key else None
+        key_matches_my_name = key == cls.__name__.lower()
 
         if c is None and rval is None:
             if top_key is not None:
@@ -486,24 +492,21 @@ class _FromYAMLAble:
                 f"No data to parse from {files}. Is there content  in the file(s)?"
             )
 
-        if c is None and len(rval) == 1:
-            logging.warning(
-                f"Trying to parse a single element dictionary as a {cls.__name__}. "
-            )
+        elif c is None and key_matches_my_name:
+            logging.warning(f"Parsing contents under {key} into {cls.__name__}. ")
             try:
-                rval_first = list(rval.values())[0]
-                if not isinstance(rval_first, dict):
+                if not isinstance(rval[key], dict):
                     raise TypeError(
                         f"Expected a dictionary as the top-level element in {files}, "
-                        f"got {type(rval_first)}."
+                        f"got {type(rval[key])}."
                     )
-                c = cls(**rval_first, **kwargs)
+                c = cls(**rval[key], **kwargs)
             except Exception as e:
                 logging.warning(
                     f"Error parsing {files} with top key {top_key}. " f"Error: {e}"
                 )
-        if c is None:
-            c = cls(**rval, **kwargs)
+        elif c is None:
+            raise exc
 
         if extra_elems:
             logging.info(
