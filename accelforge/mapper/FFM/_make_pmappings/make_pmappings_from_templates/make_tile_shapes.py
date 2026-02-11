@@ -29,7 +29,7 @@ from accelforge.mapper.FFM._pareto_df.df_convention import (
     iterations2col,
 )
 from accelforge.mapper.FFM._pareto_df.pareto import makepareto_numpy
-from accelforge.model._looptree.reuse.symbolic import IMPERFECT
+from accelforge.model._looptree.reuse.symbolic import IMPERFECT, PRINT_FORMULAS
 from accelforge.mapper.FFM._join_pmappings.pmapping_dataframe import (
     nameloop2col,
     tensor2col,
@@ -542,13 +542,22 @@ def get_possible_factor_sizes(n: int, imperfect: bool = False) -> list[int]:
 def append_vector(matrix: np.ndarray, vector: np.ndarray):
     if matrix is None:
         return vector.reshape(-1, 1)
-    return np.concatenate(
-        (
-            np.repeat(matrix, vector.shape[0], axis=0),
-            np.tile(vector.reshape(-1, 1), (matrix.shape[0], 1)),
-        ),
-        axis=1,
-    )
+    a = np.repeat(matrix, vector.shape[0], axis=0)
+    b = np.tile(vector.reshape(-1, 1), (matrix.shape[0], 1))
+    max_val = max(np.max(a), np.max(b))
+    min_val = min(np.min(a), np.min(b))
+    assert min_val >= 0, f"min_val is {min_val}"
+
+    if max_val >= 2**32:
+        dtype = np.uint64
+    elif max_val >= 2**16:
+        dtype = np.uint32
+    elif max_val >= 2**8:
+        dtype = np.uint16
+    else:
+        dtype = np.uint8
+
+    return np.concatenate((a.astype(dtype), b.astype(dtype)), axis=1)
 
 
 @lru_cache(maxsize=10000)
@@ -642,27 +651,20 @@ def check_loops(
             return x
 
     def has_fanout(x: Symbol | int):
-        outer = get_size(what_tiles_symbol.get_inner_tiles(x))
+        try:
+            outer = get_size(what_tiles_symbol.get_outer_tiles(x))
+        except ValueError:
+            return False
         inner = get_size(x)
         return outer != inner
 
-    def can_check(x: Symbol | int):
-        if isinstance(x, Symbol) and x not in symbols_enumerated:
-            return False
-        # tiles = what_tiles_symbol.get_outer_tiles(x, none_if_fail=True)
-        # if tiles is not None and isinstance(tiles, Symbol) and tiles not in symbols_enumerated:
-        #     return False
-        return True
-
     for limit, group in max_loop_check_groups:
-        prev_len = choices_enumerated.shape[0]
         if len(group) <= limit:
             continue
 
         n = 0
         for g in group:
-            if can_check(g):
-                n += has_fanout(g)
+            n += has_fanout(g)
 
         if isinstance(n, np.ndarray):
             choices_enumerated = choices_enumerated[n <= limit]
@@ -862,17 +864,15 @@ def get_tile_shape_choices(
     # the outer loops, so it does those symbols (which end up multiplying our choices)
     # last. Outer to inner is faster if there's no symbols to keep because that's what
     # happened on exactly one workload that Tanner tested.
-    # TILE_SHAPE_ORDER = "inner_to_outer_one_rv_at_a_time" if keep_symbols else "outer_to_inner_one_rv_at_a_time"
-    TILE_SHAPE_ORDER = "inner_to_outer_one_rv_at_a_time"
-    # TILE_SHAPE_ORDER = "inner_to_outer"
+    TILE_SHAPE_ORDER = "inner_to_outer_prod_others"
 
     # For imperfect, we make inner tile shapes, then create outer tile shapes that are
-    # multiples of the non-residual part of the inner tile shape. This way, the very last
-    # iteration of the outer tile shape fully contains the reisudal part of the inner tile
-    # shape, and we don't have any cases where there are residuals stacking across multiple
-    # loop levels.
+    # multiples of the non-residual part of the inner tile shape. This way, the very
+    # last iteration of the outer tile shape fully contains the reisudal part of the
+    # inner tile shape, and we don't have any cases where there are residuals stacking
+    # across multiple loop levels.
     if IMPERFECT:
-        assert TILE_SHAPE_ORDER == "inner_to_outer_one_rv_at_a_time"
+        assert "inner_to_outer" in TILE_SHAPE_ORDER
 
     paretoed_by = []
 
@@ -890,7 +890,8 @@ def get_tile_shape_choices(
         t = time.time() - prev_time
         s = "**" if t > 1 else ""
         job.log_message(f"{s}{t:.2f}s: {message} {' '.join(args)}")
-        # print(f"{time.time() - prev_time:.2f}s: {message} {' '.join(args)}")
+        if PRINT_FORMULAS:
+            print(f"{time.time() - prev_time:.2f}s: {message} {' '.join(args)}")
         time_end(message)
 
     log_message("init")
@@ -919,57 +920,106 @@ def get_tile_shape_choices(
         )
 
     def grab_symbol(prev_symbol: Symbol = None):
-        # TODO: Maybe start with a symbol that would result in more pruning up front?
-        # Maximize the # of choices that can be resolved easily
-        if TILE_SHAPE_ORDER == "inner_to_outer":
-            return symbols_remaining.pop(-1)
-        if TILE_SHAPE_ORDER == "outer_to_inner":
+        strides = [s for s in symbols_remaining if what_tiles_symbol.is_stride(s)]
+        if not strides:
             return symbols_remaining.pop(0)
 
-        if TILE_SHAPE_ORDER == "inner_to_outer_one_rv_at_a_time":
-            # Continue with a symbol representing the parent tile of the last symbol
-            # if possible. Otherwise (see return), just grab any symbol.
-            choice = what_tiles_symbol.get_outer_tiles(prev_symbol, none_if_fail=True)
-            if choice is not None and choice in symbols_remaining:
-                symbols_remaining.remove(choice)
-                return choice
-            # Pick a symbol that has:
-            # - Nobody tiling it
-            # - The smallest maximum size
-            strides = [s for s in symbols_remaining if what_tiles_symbol.is_stride(s)]
-            choice = -1
-            if strides:
-                max_size = what_tiles_symbol.get_max_size(strides[choice])
-                for i, s in enumerate(strides):
-                    if what_tiles_symbol.get_inner_tiles(s, none_if_fail=True) is None:
-                        if what_tiles_symbol.get_max_size(s) < max_size:
-                            choice = i
-                            max_size = what_tiles_symbol.get_max_size(s)
-                choice = symbols_remaining.index(strides[choice])
-            return symbols_remaining.pop(choice)
-        elif TILE_SHAPE_ORDER == "outer_to_inner_one_rv_at_a_time":
-            # Continue with a symbol representing the child tile of the last symbol
-            # if possible. Otherwise (see return), just grab any symbol.
-            choice = what_tiles_symbol.get_inner_tiles(prev_symbol, none_if_fail=True)
-            if choice is not None and choice in symbols_remaining:
-                symbols_remaining.remove(choice)
-                return choice
-            # Pick a symbol that has:
-            # - Tiles nobody
-            # - The smallest maximum size
-            strides = [s for s in symbols_remaining if what_tiles_symbol.is_stride(s)]
-            choice = 0
-            if strides:
-                max_size = what_tiles_symbol.get_max_size(strides[choice])
-                for i, s in enumerate(strides):
-                    if what_tiles_symbol.get_outer_tiles(s, none_if_fail=True) is None:
-                        if what_tiles_symbol.get_max_size(s) < max_size:
-                            choice = i
-                            max_size = what_tiles_symbol.get_max_size(s)
-                choice = symbols_remaining.index(strides[choice])
-            return symbols_remaining.pop(choice)
+        tile_shape_order = TILE_SHAPE_ORDER
+
+        if "inner_to_outer" in tile_shape_order:
+            strides = strides[::-1]
+            prev_tile = what_tiles_symbol.get_inner_tiles
+            next_tile = what_tiles_symbol.get_outer_tiles
+        elif "outer_to_inner" in tile_shape_order:
+            prev_tile = what_tiles_symbol.get_outer_tiles
+            next_tile = what_tiles_symbol.get_inner_tiles
         else:
             raise RuntimeError(f"BUG: invalid TILE_SHAPE_ORDER: {TILE_SHAPE_ORDER}")
+
+        if "one_rv_at_a_time" in tile_shape_order:
+            n = next_tile(prev_symbol, none_if_fail=True)
+            if n is not None and n in symbols_remaining:
+                symbols_remaining.remove(n)
+                return n
+            tile_shape_order = tile_shape_order.replace(
+                "one_rv_at_a_time", "smallest_first"
+            )
+
+        def max_formulas(s):
+            prev = prev_tile(s, none_if_fail=True)
+            constrains_prev = isinstance(prev, Symbol) and prev not in keep_symbols
+            return (
+                # Sum number of times it appears in all objectives
+                sum(o.formula.count(s) for o in objectives) + 4**constrains_prev,
+                # Number of objectives that have this symbol
+                len([o for o in objectives if s in o.formula.free_symbols])
+                + 4**constrains_prev,
+                # Minimize size
+                min_size(s),
+            )
+
+        def _porp_of_formula(s):
+            prev = prev_tile(s, none_if_fail=True)
+            n = 0
+            for o in objectives:
+                f = o.formula
+                if s in f.free_symbols:
+                    # n += f.count(s) / sum(1 for _ in f.atoms(Symbol))
+                    n += 1 / len(f.free_symbols)
+            constrains_prev = isinstance(prev, Symbol) and prev not in keep_symbols
+            if constrains_prev:
+                n += 1
+            return n
+
+        def porp_of_formulas(s):
+            n = 0
+            scale = 1
+            cur = s
+            while cur is not None and isinstance(cur, Symbol):
+                n += _porp_of_formula(cur)
+                break
+                cur = next_tile(cur, none_if_fail=True)
+                scale /= 2
+
+            return n / what_tiles_symbol.get_max_size(s)  # (
+            #     n,
+            #     *max_formulas(s)
+            # )
+
+        def prod_others(s):
+            return prod(max_formulas(s))
+
+        def min_size(s):
+            return 1 / what_tiles_symbol.get_max_size(s)
+
+        if "smallest_first" in tile_shape_order:
+            objective = min_size
+        elif "most_formulas_first" in tile_shape_order:
+            objective = max_formulas
+        elif "prod_others" in tile_shape_order:
+            objective = prod_others
+        elif tile_shape_order in ["inner_to_outer", "outer_to_inner"]:
+            objective = lambda s: 1
+        elif "porp_of_formulas" in tile_shape_order:
+            objective = porp_of_formulas
+        else:
+            raise RuntimeError(f"BUG: invalid tile_shape_order: {tile_shape_order}")
+
+        choice, best = 0, objective(strides[0])
+        for i, s in enumerate(strides):
+            prev = prev_tile(s, none_if_fail=True)
+            if prev is not None and prev in symbols_remaining:
+                # Haven't made the prerequisite tile shape yet, so skip this symbol
+                continue
+            value = objective(s)
+            if value > best:
+                best = value
+                choice = i
+        choice = symbols_remaining.index(strides[choice])
+        log_message("Selected symbol", f"{symbols_remaining[choice]} with value {best}")
+        return symbols_remaining.pop(choice)
+
+        raise RuntimeError(f"BUG: invalid TILE_SHAPE_ORDER: {TILE_SHAPE_ORDER}")
 
     last_stride_symbol = None  # track the last stride symbol to select next symbol
     symbol = None
@@ -1085,6 +1135,7 @@ def get_tile_shape_choices(
 
         prev_size = choices_enumerated.shape[0] if choices_enumerated is not None else 1
         choices_enumerated = np.concatenate(choices, axis=0)
+        choices = None  # Let it be freed by the garbage collector
         job.n_total_pmappings *= choices_enumerated.shape[0] / max(1, prev_size)
         symbols_enumerated.append(symbol)
         log_message("enumerate", f"{symbol}", f"size={choices_enumerated.shape[0]}")
@@ -1101,11 +1152,12 @@ def get_tile_shape_choices(
             what_tiles_symbol,
         )
         job.log_porp_pmappings_kept(
-            f"max_fused_loops_per_rank_variable",
+            f"max_fused_loops_or_max_per_rank_variable",
             choices_enumerated.shape[0] / max(1, prev_size),
         )
         log_message(
-            "max_fused_loops_per_rank_variable", f"size={choices_enumerated.shape[0]}"
+            "max_fused_loops_or_max_per_rank_variable",
+            f"size {prev_size} -> {choices_enumerated.shape[0]}",
         )
 
         # ==============================================================================
@@ -1367,6 +1419,7 @@ def get_tile_shape_choices(
     # Rearrange in tile shape order
     if choices_enumerated is None:
         return np.array([])
+    choices_enumerated = choices_enumerated.astype(np.int64)
     return choices_enumerated[:, [symbols_enumerated.index(s) for s in symbols]]
 
 

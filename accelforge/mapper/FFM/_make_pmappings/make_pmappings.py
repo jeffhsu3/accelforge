@@ -159,10 +159,12 @@ def get_jobs(
         total_jobs = sum(len(j) for j in compatibility_jobs.values())
         if print_progress:
             print(f"Einsum {einsum_name} has {total_jobs} pmapping templates:")
+        i = 0
         for job_list in compatibility_jobs.values():
             for job in job_list:
                 if print_progress:
-                    print(f"\t{job.mapping.compact_str()}")
+                    print(f"\t{i}\t{job.mapping.compact_str()}")
+                    i += 1
                 job.memory_limit = memory_limit
                 job.time_limit = time_limit
 
