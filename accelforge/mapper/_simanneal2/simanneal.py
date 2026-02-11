@@ -25,6 +25,7 @@ from accelforge._accelerated_imports import pd
 import joblib
 from accelforge.mapper.FFM._join_pmappings.compatibility import Compatibility
 from accelforge.mapper._simanneal2.tracking import EvaluationsScoreTracker
+from accelforge.util.parallel import get_n_parallel_jobs
 
 # Simulated annealing algorithm
 # -----------------------------
@@ -50,16 +51,16 @@ class MapspaceGlobals:
     def __init__(
         self,
         einsum2sims: dict[EinsumName, list[PmappingGroup]],
-        resource2capacity: dict[str, int],
+        mixable_ranks: dict[str, set[str]],
         aliased_tensors: dict[str, set[str]],
         objective_function: Callable[[pd.Series], float],
         tracker: EvaluationsScoreTracker,
     ) -> None:
         self.einsum2sims: dict[EinsumName, list[PmappingGroup]] = einsum2sims
-        self.resource2capacity: dict[str, int] = resource2capacity
         self.aliased_tensors: dict[str, set[str]] = aliased_tensors
         self.objective_function: Callable[[pd.Series], float] = objective_function
         self.tracker: EvaluationsScoreTracker = tracker
+        self.mixable_ranks: dict[str, set[str]] = mixable_ranks
 
 
 class SimAnnealMapping:
@@ -200,7 +201,11 @@ class SimAnnealMapping:
         i %= len(data)
         return PmappingGroup(
             compatibility=s.compatibility,
-            mappings=PmappingDataframe(data.iloc[i : i + 1]),
+            mappings=PmappingDataframe(
+                data.iloc[i : i + 1],
+                n_total_pmappings=s.mappings.n_total_pmappings,
+                n_valid_pmappings=s.mappings.n_valid_pmappings,
+            ),
         )
 
     def get_score(self) -> float:
@@ -220,7 +225,6 @@ class SimAnnealMapping:
             def _merge_next(
                 left: PmappingGroup,
                 right: PmappingGroup,
-                apply_resource_limit: bool = True,
             ) -> PmappingGroup:
                 try:
                     return left.merge_next(
@@ -229,15 +233,12 @@ class SimAnnealMapping:
                         live_tensors_with_right=live_tensors | right_tensors,
                         aliased_tensors=self.mapspace_globals.aliased_tensors,
                         compatibility_joined=joined.compatibility.merge_next(
-                            s.compatibility, live_tensors
-                        ),
-                        resource2capacity=(
-                            self.mapspace_globals.resource2capacity
-                            if apply_resource_limit
-                            else None
+                            s.compatibility, live_tensors,
+                            mixable_ranks=self.mapspace_globals.mixable_ranks
                         ),
                         drop_valid_reservations=True,
                         delay=False,
+                        ignored_resources=set(),
                     )
                 except ValueError as err:
                     # print(err)
@@ -261,7 +262,6 @@ class SimAnnealMapping:
             joined_new = _merge_next(
                 joined,
                 s,
-                apply_resource_limit=False,
             )
             s.mappings._data = s.mappings.data.drop(columns=["_INDEX"])
             try:
@@ -314,14 +314,13 @@ def get_random_mapping(mapspace_globals: MapspaceGlobals) -> SimAnnealMapping:
             continue
 
 
-def join_pmappings(
+def _join_pmappings(
     pmapping_groups: dict[EinsumName, list[PmappingGroup]],
     spec: Spec,
-    resource2capacity: dict[str, int],
     tracker: EvaluationsScoreTracker,
     pop_size_per_thread: int,
 ) -> PmappingGroup:
-    objective = spec.mapper.ffm.metrics
+    objective = spec.mapper.metrics
     if objective == Metrics.ENERGY:
         objective_function = lambda x: x["Total<SEP>energy"]
     elif objective == Metrics.LATENCY:
@@ -330,13 +329,12 @@ def join_pmappings(
         objective_function = lambda x: x["Total<SEP>energy"] * x["Total<SEP>latency"]
     else:
         raise ValueError(f"Unknown objective {objective}")
-    # print(f'Resource2capacity: {resource2capacity}')
     mapspace_globals = MapspaceGlobals(
         einsum2sims=pmapping_groups,
-        resource2capacity=resource2capacity,
         aliased_tensors=spec.workload.get_tensor_copies(),
         objective_function=objective_function,
         tracker=tracker,
+        mixable_ranks=spec.workload._get_ranks_that_share_indexing_rank_variables()
     )
 
     mappings = []
@@ -347,9 +345,7 @@ def join_pmappings(
     print(f"Completed making initial population of {len(mappings)} mappings")
 
     i = 0
-    while True:
-        if i > 1e6:
-            break
+    while not tracker.finished():
         i += 1
         for i, m in enumerate(list(mappings)):
             try:
@@ -388,34 +384,34 @@ def get_n_tile_shapes(sim: PmappingGroup) -> int:
 
 
 def join_pmappings(
-    spec: Spec,
     pmappings: MultiEinsumPmappings,
     max_evaluations: int = 1,
     population_size=100,
     score_target: float | None = None,
 ) -> EvaluationsScoreTracker:
+    spec = pmappings.spec
     tracker = EvaluationsScoreTracker(
-        max_evaluations=max_evaluations / util.N_PARALLEL_PROCESSES,
+        max_evaluations=max_evaluations / get_n_parallel_jobs(),
         stop_at_score=None,
         print_period=1,
     )
 
-    if score_target is not None:
-        tracker.multiply_score_by(1 / score_target)
+    compressed, decompress_data = compress_einsum2pmappings(pmappings.einsum2pmappings)
 
-    pop_size_per_thread = population_size // util.N_PARALLEL_PROCESSES
+    if score_target is not None:
+        tracker._scale_score_by *= 1 / score_target
+
+    pop_size_per_thread = population_size // get_n_parallel_jobs()
 
     # Multiply by the number of einsums
-    tracker.multiply_scale_by(len(pmappings.einsum2pmappings))
+    print(f'Multiplying scale by {len(pmappings.einsum2pmappings)} for number of einsums')
+    tracker._scale_by *= len(pmappings.einsum2pmappings)
 
-    # Expected #pmappings before a Pareto-optimal one is found
-    # tracker.multiply_scale_by(pmappings._evaluated_pmappings_for_simanneal_baseline_compare() / pmappings.n_pareto_optimal_pmappings())
-    tracker.multiply_scale_by(
-        pmappings.n_evaluated_pmappings() / pmappings.n_pareto_optimal_pmappings()
-    )
-
-    # Normalize to the speed of the intra-Einsum pmapper
-    tracker.multiply_scale_by(1 / pmappings.n_evaluated_pmappings())
+    # We allow FFM to query n_pareto_optimal_pmappings mappings from the mapspace, so we
+    # scale by 1 / n_pareto_optimal_pmappings to get simanneal 1 evaluation = same
+    # number of mappings as FFM
+    print(f'Multiplying scale by {1 / pmappings.n_pareto_optimal_pmappings()} for Pareto-optimal mapspace size')
+    tracker._scale_by *= 1 / pmappings.n_pareto_optimal_pmappings()
 
     for einsum_name, einsum_pmappings in pmappings.einsum2pmappings.items():
         total = sum(len(p.mappings.data) for p in einsum_pmappings)
@@ -426,13 +422,16 @@ def join_pmappings(
         if total == 0:
             raise ValueError(f"Einsum {einsum_name} has no pmappings")
 
-    print(f"TODO: Populate PmappingGroups with all permutations")
-
-    compressed, decompress_data = compress_einsum2pmappings(pmappings.einsum2pmappings)
-
     permuted = {}
+    n_total = 1
+    n_evaluated = 1
     for einsum_name, einsum_sims in compressed.items():
         for s in einsum_sims:
+            n_pmappings = s.mappings.n_total_pmappings
+            n_evaluated += n_pmappings
+            subsets = set()
+
+            # Count all permutations as separate choices
             for c_perm, _ in s.compatibility.make_equivalent_permutations():
                 permuted.setdefault(einsum_name, []).append(
                     PmappingGroup(
@@ -440,36 +439,39 @@ def join_pmappings(
                         mappings=s.mappings,
                     )
                 )
+                subsets.add(tuple(c_perm.loops))
 
-    tile_shapes = [
-        get_n_tile_shapes(s)
-        for pmapping_groups in compressed.values()
-        for s in pmapping_groups
-    ]
+            # Count mappings with fewer loops as separate choices
+            for subset in list(subsets):
+                for i in range(2 ** len(subset)):
+                    subsets.add(tuple(subset[j] for j in range(len(subset)) if i & (1 << j)))
 
-    # average_tile_shapes = sum(tile_shapes) / len(tile_shapes)
-    # print(f"Average tile shapes: {average_tile_shapes}")
-    # tracker.multiply_scale_by(average_tile_shapes)
+            n_total += len(subsets) * n_pmappings * get_n_tile_shapes(s)
+
+    # The pmapper does mappings with varied permutations, subsets of loops, and tile
+    # shapes in one shot, which won't be the case if a simulated annealing mapper is
+    # used to select the top part of the mapping. So scale to account for the number
+    # that we get for free.
+    print(f'Multiplying scale by {n_total / n_evaluated} for number of total pmappings')
+    tracker._scale_by *= n_total / n_evaluated
 
     def parallel_join(
         permuted: dict[EinsumName, list[PmappingGroup]],
         spec: Spec,
-        resource2capacity: dict[str, int],
         tracker: EvaluationsScoreTracker,
         pop_size_per_thread: int,
     ) -> EvaluationsScoreTracker:
-        join_pmappings(permuted, spec, resource2capacity, tracker, pop_size_per_thread)
+        _join_pmappings(permuted, spec, tracker, pop_size_per_thread)
         return tracker
 
     trackers = util.parallel(
         joblib.delayed(parallel_join)(
             permuted,
             spec,
-            pmappings.resource2capacity,
             tracker,
             pop_size_per_thread,
         )
-        for _ in range(util.N_PARALLEL_PROCESSES)
+        for _ in range(get_n_parallel_jobs())
     )
 
     t0 = trackers[0]

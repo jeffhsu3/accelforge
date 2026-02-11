@@ -14,7 +14,7 @@ from accelforge.mapper.FFM._join_pmappings.pmapping_group import (
 from accelforge.mapper.simanneal.simanneal import MapspaceGlobals, _fuse_sims
 from accelforge.mapper.simanneal.tracking import EvaluationsScoreTracker
 from accelforge.util._frozenset import fzs
-from accelforge.util.parallel import parallel, util
+from accelforge.util.parallel import parallel, get_n_parallel_jobs
 
 
 def mapping2sims(einsum_to_result: Compatibility):
@@ -188,7 +188,7 @@ def join_pmappings(
         flattened_architecture,
     )
 
-    n_threads = util.N_PARALLEL_PROCESSES
+    n_threads = get_n_parallel_jobs()
     while n_threads >= 1:
         try:
             results_and_trackers = parallel(
@@ -201,7 +201,7 @@ def join_pmappings(
                     )
                     for _ in range(n_threads)
                 ],
-                n_jobs=n_threads if util.PARALLELIZE else 1,
+                n_jobs=get_n_parallel_jobs()
             )
             results = pd.concat([r[0] for r in results_and_trackers])
             break

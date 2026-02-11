@@ -785,7 +785,7 @@ class Workload(EvalableModel):
     bits_per_value: EvalableDict[str, int | str] = EvalableDict()
     """
     Bits per value for each tensor. The workload-level bits_per_value is overridden if
-    bits_per_action is specified for any given tensor access. This is a dictionary of
+    bits_per_value is specified for any given tensor access. This is a dictionary of
     set expressions to bits per value for the tensors given by those expressions. For
     example, we may write "Inputs: 8" to set the bits per value to 8 for all input
     tensors, unless overridden.

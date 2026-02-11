@@ -20,6 +20,9 @@ class EvaluationsScoreTracker:
 
     def add_evaluation(self, n_evaluations: int, best_score: float):
         self.evaluations += n_evaluations * self._scale_by
+        new_score = best_score * self._scale_score_by
+        if new_score < self.score:
+            print(f'New score {new_score} after evaluation {self.evaluations}')
         self.score = min(self.score, best_score * self._scale_score_by)
         # Same score as before, remove the last entry
         if len(self.history) > 2 and self.history[-2][1] == self.score:
@@ -32,7 +35,6 @@ class EvaluationsScoreTracker:
             or cur_time - self.prev_print_time > self.print_period
         ):
             self.prev_print_time = cur_time
-            print(f"Evaluations: {self.evaluations}, Score: {self.score}")
 
         if self.max_evaluations is not None and self.evaluations > self.max_evaluations:
             self.clean_history()
@@ -58,9 +60,6 @@ class EvaluationsScoreTracker:
             self.stop_at_score is not None and self.score < self.stop_at_score
         )
         return enough_evaluations or enough_score
-
-    def multiply_scale_by(self, scale_by: float):
-        self._scale_by *= scale_by
 
     def multiply_score_by(self, scale_by: float):
         self._scale_score_by *= scale_by
