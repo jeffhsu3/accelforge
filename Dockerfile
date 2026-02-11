@@ -70,6 +70,10 @@ ENV CC=gcc
 ENV CXX=g++
 RUN make install-hwcomponents CC=gcc CXX=g++
 
+# Recompile CACTI from source for native architecture (fixes arm64 compatibility)
+RUN cd /usr/local/lib/python3.12/dist-packages/hwcomponents_cacti/cacti && \
+    make clean && make -f makefile CC=gcc CXX=g++
+
 # Install jupyterlab and ipywidgets
 RUN pip install jupyterlab ipywidgets
 

@@ -2,7 +2,7 @@ DOCKER_EXE ?= docker
 DOCKER_NAME ?= accelforge
 DOCKER_BUILD ?= ${DOCKER_EXE} buildx build --load
 
-VERSION := 0.1.2
+VERSION := 0.1.3
 
 USER    := timeloopaccelergy
 REPO    := accelforge
