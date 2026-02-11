@@ -22,7 +22,7 @@ def plot_latency_comparison(
     labels:
         Labels to use for each Mapping class in `mappings`.
     """
-    fig, ax = _plot_column_comparison(mappings, labels, "Total<SEP>energy")
+    fig, ax = _plot_column_comparison(mappings, labels, "Total<SEP>latency")
     ax.set_ylabel("Latency (s)")
     return fig, ax
 
