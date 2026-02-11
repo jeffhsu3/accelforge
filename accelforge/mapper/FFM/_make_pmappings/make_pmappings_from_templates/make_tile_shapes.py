@@ -1236,6 +1236,22 @@ def get_tile_shape_choices(
                     choices_enumerated_float = choices_enumerated_float[valid]
                 except (TypeError, ValueError):
                     pass
+
+                porp = sum(valid) / max(1, choices_enumerated.shape[0])
+                job.log_porp_pmappings_kept(
+                    f"{objective.name}",
+                    sum(valid) / max(1, prev_size),
+                )
+                log_message(f"Valid check", f"{objective.name}", f"porp={porp:.2%}")
+                if complete:
+                    objective.max_value = None  # We don't care anymore
+                    objective.min_value = None
+                    if objective.only_care_if_valid:
+                        objectives.remove(objective)
+                        log_message(
+                            f"Removed {objective.name} because it is always valid"
+                        )
+
             if objective.min_value is not None:
                 try:
                     # minimize_for_objective may raise a TypeError if there's unknown
@@ -1272,18 +1288,20 @@ def get_tile_shape_choices(
                 except (TypeError, ValueError):
                     pass
 
-            porp = sum(valid) / max(1, choices_enumerated.shape[0])
-            job.log_porp_pmappings_kept(
-                f"{objective.name}",
-                sum(valid) / max(1, prev_size),
-            )
-            log_message(f"Valid check", f"{objective.name}", f"porp={porp:.2%}")
-            if complete:
-                objective.max_value = None  # We don't care anymore
-                objective.min_value = None
-                if objective.only_care_if_valid:
-                    objectives.remove(objective)
-                    log_message(f"Removed {objective.name} because it is always valid")
+                porp = sum(valid) / max(1, choices_enumerated.shape[0])
+                job.log_porp_pmappings_kept(
+                    f"{objective.name}",
+                    sum(valid) / max(1, prev_size),
+                )
+                log_message(f"Valid check", f"{objective.name}", f"porp={porp:.2%}")
+                if complete:
+                    objective.max_value = None  # We don't care anymore
+                    objective.min_value = None
+                    if objective.only_care_if_valid:
+                        objectives.remove(objective)
+                        log_message(
+                            f"Removed {objective.name} because it is always valid"
+                        )
 
         if not choices_enumerated.shape[0]:
             return np.array([]).reshape(-1, len(symbols))
