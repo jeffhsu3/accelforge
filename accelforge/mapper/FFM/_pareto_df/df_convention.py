@@ -1,6 +1,7 @@
 import functools
 import re
 
+from accelforge.util import NUMPY_FLOAT_TYPE
 from accelforge.util._frozenset import fzs
 from accelforge.frontend.workload import Rank
 from accelforge.util._base_analysis_types import ActionKey, VerboseActionKey
@@ -208,18 +209,22 @@ def is_fused_loop_col(c: str) -> bool:
 def is_n_iterations_col(c: str) -> bool:
     return c.startswith("fused_loop<SEP>n_iterations")
 
-
-def add_to_col(df, target, source):
+def ensure_float_type(df, target, source):
     if target in df:
         target_type = df[target].dtype
         source_type = df[source].dtype
         if target_type != source_type:
-            df[target] = df[target].astype("float64")
-            df[source] = df[source].astype("float64")
+            df[target] = df[target].astype(NUMPY_FLOAT_TYPE)
+            df[source] = df[source].astype(NUMPY_FLOAT_TYPE)
+
+
+def add_to_col(df, target, source):
+    ensure_float_type(df, target, source)
     df.loc[:, target] = df[target] + df[source] if target in df else df[source]
 
 
 def max_to_col(df, target, source):
+    ensure_float_type(df, target, source)
     df.loc[:, target] = df[[target, source]].max(axis=1) if target in df else df[source]
 
 
