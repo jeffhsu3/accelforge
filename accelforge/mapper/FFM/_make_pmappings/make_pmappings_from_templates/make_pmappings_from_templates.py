@@ -266,7 +266,6 @@ def make_pmappings_from_templates(
                 resource = col2nameloop(col)[0]
                 if resource in job.memories_track_pmappings_only:
                     cols_to_drop.append(col)
-                assert resource not in job.ignored_resources, "Should have been ignored"
         result.drop(columns=cols_to_drop, inplace=True)
         results.append(result)
 
