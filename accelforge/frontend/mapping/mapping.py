@@ -31,6 +31,7 @@ from collections.abc import Set
 from pydantic import ConfigDict, Discriminator, Tag, computed_field
 import sympy
 
+from accelforge.frontend.renames import EinsumName
 from accelforge.util._basetypes import (
     # Parsing helpers for the input files.
     EvalableModel,
@@ -318,7 +319,13 @@ class Loop(MappingNode):
     rank_variable: set[RankVariable] | RankVariable
     """ The rank variable(s) iterated over in this loop. This may be a
     single rank variable, or a set of rank variables if the loop is shared between
-    multiple Einsums. """
+    multiple Einsums.
+
+    NOTE FOR DEVELOPERS: If the rank variable is a set DURING PMAPPIN GENERATION, then
+    it means that the loop is a placeholder for multiple loops in the given Einsum. They
+    will be split into multiple loops later. If the rank variable
+
+    """
 
     tile_shape: EvalsTo[sympy.Symbol | sympy.Expr | int | str] = "symbol"
     """
@@ -351,6 +358,12 @@ class Loop(MappingNode):
 
     For those developing the mapper, this attribute can be a string. See
     tile_shape for details.
+    """
+
+    _einsum_to_rank_variables: dict[EinsumName, set[RankVariable]] = {}
+    """
+    If there are multiple rank variables in this loop, this dictionary says which rank
+    variables belong to which Einsum.
     """
 
     _calculated_n_iterations: (
@@ -1073,6 +1086,14 @@ class Nested(MappingNodeWithChildren):
                 # variables and assume that rank variable translation would fix it.
                 assert len(my_loop_group) == 1 or len(other_loop_group) == 1
                 has_one, may_not_have_one = my_loop_group, other_loop_group
+
+                my_rv = set()
+                other_rv = set()
+                for m in my_loop_group:
+                    my_rv |= m.rank_variable if isinstance(m.rank_variable, set) else set([m.rank_variable])
+                for o in other_loop_group:
+                    other_rv |= o.rank_variable if isinstance(o.rank_variable, set) else set([o.rank_variable])
+
                 if len(has_one) != 1:
                     has_one, may_not_have_one = other_loop_group, my_loop_group
 
@@ -1095,8 +1116,14 @@ class Nested(MappingNodeWithChildren):
 
                 may_not_have_one.remove(l2)
                 rv = l2.rank_variable
+                for compute in self.get_nodes_of_type(Compute):
+                    for r in my_rv:
+                        l._einsum_to_rank_variables[compute.einsum] = r
                 rv = rv if isinstance(rv, set) else set([rv])
                 l.rank_variable = l.rank_variable | rv
+                for compute in other.get_nodes_of_type(Compute):
+                    for r in other_rv:
+                        l._einsum_to_rank_variables[compute.einsum] = r
                 to_add = [l]
 
             zipped_groups.append(to_add)
@@ -1542,15 +1569,17 @@ class Mapping(Nested):
                 new_nodes.append(node)
         self.nodes = new_nodes
 
-    def split_loop_with_multiple_rank_variables(self, stride_and_halo: dict[str, tuple[int, int]]):
+    def split_loop_with_multiple_rank_variables(self, einsum_name: EinsumName):
         new_nodes = []
-        my_rank_variables = set(x[1] for x in stride_and_halo)
         for node in self.nodes:
             if isinstance(node, Loop) and isinstance(node.rank_variable, set):
-                ranks_in_stride_and_halo = node.rank_variable & my_rank_variables
-                assert len(ranks_in_stride_and_halo) == 1, f"Expected 1 rank in stride and halo, got {len(ranks_in_stride_and_halo)}"
+                if einsum_name not in node._einsum_to_rank_variables:
+                    raise ValueError(
+                        f"Loop {node.compact_str()} has multiple rank variables. Make "
+                        f"sure to populate _einsum_to_rank_variables for this loop."
+                    )
                 new_node = copy.copy(node)
-                new_node.rank_variable = ranks_in_stride_and_halo.pop()
+                new_node.rank_variable = node._einsum_to_rank_variables[einsum_name]
                 new_nodes.append(new_node)
             else:
                 new_nodes.append(node)
