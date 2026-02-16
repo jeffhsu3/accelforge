@@ -452,9 +452,9 @@ class Mappings:
         for einsum in self.einsum_names:
             einsum_accessed = energy.access(einsum, col_idx=0)
             # None for computes
-            for tensor in list(
-                self.spec.workload.einsums[einsum].tensor_names
-            ) + ["None"]:
+            for tensor in list(self.spec.workload.einsums[einsum].tensor_names) + [
+                "None"
+            ]:
                 tensor_accessed = einsum_accessed.access(tensor, col_idx=1)
                 for col in tensor_accessed._get_keys_of_length(2):
                     component, action = col.split("<SEP>")
@@ -644,9 +644,9 @@ class Mappings:
         for einsum in self.einsum_names:
             einsum_accessed = actions.access(einsum, col_idx=0)
             # None for computes
-            for tensor in list(
-                self.spec.workload.einsums[einsum].tensor_names
-            ) + ["None"]:
+            for tensor in list(self.spec.workload.einsums[einsum].tensor_names) + [
+                "None"
+            ]:
                 tensor_accessed = einsum_accessed.access(tensor, col_idx=1)
                 for col in tensor_accessed._get_keys_of_length(2):
                     component, action = col.split("<SEP>")
