@@ -24,7 +24,7 @@ arch:
   - !Memory
     name: GlobalBuffer
     component_class: Dummy
-    size: 1e12
+    size: 1e15
     tensors: {keep: All}
 
   - !Compute
