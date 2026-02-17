@@ -438,7 +438,7 @@ class _ExtraAttrs(EvalExtras):
 
 
 @_uninstantiable
-class Component(Leaf):
+class Component(EvalableModel):
     """A component object in the architecture. This is overridden by different
     component types, such as `Memory` and `Compute`."""
 
@@ -1181,7 +1181,7 @@ class Tensors(EvalableModel):
 
 
 @_uninstantiable
-class TensorHolder(Component):
+class TensorHolder(Component, Leaf):
     """A TensorHolder is a component that holds tensors. These are usually Memories,
     but can also be Tolls."""
 
@@ -1301,7 +1301,7 @@ class Toll(TensorHolder):
         return "#FFCC99"
 
 
-class Compute(Component):
+class Compute(Component, Leaf):
     actions: EvalableList[Action] = COMPUTE_ACTIONS
     """ The actions that this `Compute` can perform. """
 
