@@ -12,6 +12,8 @@ from .constraints import (
 # because of how Annotated works in pydantic
 Branch.model_rebuild()
 Arch.model_rebuild()
+Fork.model_rebuild()
+Hierarchical.model_rebuild()
 
 __all__ = [
     "Action",
