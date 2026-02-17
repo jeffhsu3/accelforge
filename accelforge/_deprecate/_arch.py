@@ -1780,3 +1780,4 @@ class Arch(Hierarchical):
 
 # We had to reference some of the branch subclasses before they were defined
 Branch.model_rebuild()
+Fork.model_rebuild()
