@@ -1,4 +1,5 @@
 from .arch import Arch
+from .spatialable import *
 from .structure import *
 from .components import *
 from .constraints import (
