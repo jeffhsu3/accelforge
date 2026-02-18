@@ -191,7 +191,7 @@ def get_initial_delta_choices(einsum_name: str, workload: Workload):
             for cons_rank_var in consumer.rank_variables:
                 for prod_rank_var in producer.rank_variables:
                     prod_rank = prod_rank_var.upper()
-                    for cons_choice in choices[cons_rank_var]:
+                    for cons_choice in list(choices[cons_rank_var]):
                         key = (prod_rank, cons_rank_var)
                         if key not in rank_stride_and_halo:
                             continue

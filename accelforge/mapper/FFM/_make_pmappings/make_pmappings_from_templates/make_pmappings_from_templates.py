@@ -108,9 +108,18 @@ def get_fused_loop_indices(
         col = loop.tile_pattern.calculated_n_iterations
         assert col is not None, f"Loop {loop} has no calculated n_iterations"
         if isinstance(col, str):
-            col = df[f"{einsum_name}<SEP>{col}"]
+            col_name = f"{einsum_name}<SEP>{col}"
+            if col_name not in df.columns:
+                # No template in this group fused this loop; n_iterations == 1 for all rows.
+                result.append(pd.Series(False, index=df.index))
+                continue
+            col = df[col_name]
         elif isinstance(col, sympy.Symbol):
-            col = df[f"{einsum_name}<SEP>{col.name}"]
+            col_name = f"{einsum_name}<SEP>{col.name}"
+            if col_name not in df.columns:
+                result.append(pd.Series(False, index=df.index))
+                continue
+            col = df[col_name]
         result.append(col != 1)
 
     if return_as_int:
