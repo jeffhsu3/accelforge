@@ -1719,8 +1719,8 @@ class Mapping(Nested):
                 graph.add_edge(pydot.Edge(parent_name, child_name))
         return graph
 
-    def render(self) -> _SVGJupyterRender:
-        graph = self.render_pydot()
+    def render(self, with_reservations=True, with_tile_shape=True) -> _SVGJupyterRender:
+        graph = self.render_pydot(with_reservations, with_tile_shape)
         return _SVGJupyterRender(graph.create_svg(prog="dot").decode("utf-8"))
 
     @classmethod

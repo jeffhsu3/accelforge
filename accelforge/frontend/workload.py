@@ -1132,3 +1132,7 @@ class Workload(EvalableModel):
 
     def empty_renames(self) -> dict[str, InvertibleSet[TensorName | RankVariable]]:
         return Einsum.empty_renames()
+
+    def get_tensor_shape(self, tensor: TensorName) -> dict[Rank, int]:
+        from accelforge.frontend._workload_isl._isl import get_tensor_shape
+        return get_tensor_shape(self, tensor)
