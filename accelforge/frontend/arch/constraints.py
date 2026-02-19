@@ -46,6 +46,7 @@ class Comparison(EvalableModel):
     - product>= (product of all loop bounds is greater than or equal to)
     - product< (product of all loop bounds is less than)
     - product> (product of all loop bounds is greater than)
+    - divisible_by (tile size must be an exact multiple of the given value)
     """
 
     value: EvalsTo[int]
@@ -100,16 +101,18 @@ class Comparison(EvalableModel):
 
         # fmt: off
         operator_to_wrapper = {
-            "==":        lambda final, sizes: _all(eq_op(final)(sizes, self.value)),
-            "product==": lambda final, sizes: eq_op(final)(_prod(sizes), self.value),
-            "<=":        le_wrapper(lambda sizes: _all(sizes)  <= self.value),
-            ">=":        ge_wrapper(lambda sizes: _all(sizes)  >= self.value),
-            "<":         le_wrapper(lambda sizes: _all(sizes)  <  self.value),
-            ">":         ge_wrapper(lambda sizes: _all(sizes)  >  self.value),
-            "product<=": le_wrapper(lambda sizes: _prod(sizes) <= self.value),
-            "product>=": ge_wrapper(lambda sizes: _prod(sizes) >= self.value),
-            "product<":  le_wrapper(lambda sizes: _prod(sizes) <  self.value),
-            "product>":  ge_wrapper(lambda sizes: _prod(sizes) >  self.value),
+            "==":          lambda final, sizes: _all(eq_op(final)(sizes, self.value)),
+            "product==":   lambda final, sizes: eq_op(final)(_prod(sizes), self.value),
+            "<=":          le_wrapper(lambda sizes: _all(sizes)  <= self.value),
+            ">=":          ge_wrapper(lambda sizes: _all(sizes)  >= self.value),
+            "<":           le_wrapper(lambda sizes: _all(sizes)  <  self.value),
+            ">":           ge_wrapper(lambda sizes: _all(sizes)  >  self.value),
+            "product<=":   le_wrapper(lambda sizes: _prod(sizes) <= self.value),
+            "product>=":   ge_wrapper(lambda sizes: _prod(sizes) >= self.value),
+            "product<":    le_wrapper(lambda sizes: _prod(sizes) <  self.value),
+            "product>":    ge_wrapper(lambda sizes: _prod(sizes) >  self.value),
+            # Tile-size alignment: always checked regardless of final/increasing_sizes.
+            "divisible_by": lambda final, sizes: _all(sizes % self.value == 0),
         }
         # fmt: on
 

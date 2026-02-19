@@ -34,6 +34,10 @@ class MappingConstraints:
         self.min_usage_constraints: dict[tuple[str, str], _MinUsageConstraintLambda] = (
             {}
         )
+        self.granularity_constraints: dict[str, int] = {}
+        """ Maps rank-variable name → minimum tile-size multiple.
+        Populated from ``Compute.tile_granularity``; applied in make_tile_shapes.py
+        to filter out tile choices that are not multiples of the granularity. """
 
     def get_all_constraints(self) -> list[_ConstraintLambda]:
         return (
@@ -354,6 +358,16 @@ def get_constraints(
                     m.rank_variable,
                 )
             )
+
+    # Granularity constraints from Compute nodes
+    for m in flattened_arch:
+        if isinstance(m, arch.Compute):
+            for rank_name, gran in m.tile_granularity.items():
+                if gran > 1:
+                    # Take the most restrictive (largest) granularity if multiple
+                    # Compute nodes constrain the same rank variable.
+                    existing = constraints.granularity_constraints.get(rank_name, 1)
+                    constraints.granularity_constraints[rank_name] = max(existing, gran)
 
     mapping = constraints.clear_constrained_to_one(mapping, einsum_name)
 

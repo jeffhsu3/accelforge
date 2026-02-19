@@ -1780,6 +1780,23 @@ def _make_tile_shapes(job: "Job"):
         max_loop_check_groups=max_loop_check_groups,
     )
 
+    # Granularity filtering: remove tile shapes where a dimension is not a
+    # multiple of the required granularity (e.g. input_size=128 for L-units).
+    if constraints.granularity_constraints and choices_enumerated.shape[0] > 0:
+        symbol_name_to_col = {sym.name: i for i, sym in enumerate(symbols)}
+        for rank_var_name, gran in constraints.granularity_constraints.items():
+            if gran <= 1:
+                continue
+            # Each rank variable may map to multiple tile-shape symbols (one per
+            # temporal loop that tiles over it). Apply the filter to all of them.
+            for sym in rank2symbols.get(rank_var_name, []):
+                col = symbol_name_to_col.get(sym.name)
+                if col is None:
+                    continue
+                valid = choices_enumerated[:, col] % gran == 0
+                if valid.any():
+                    choices_enumerated = choices_enumerated[valid]
+
     try:
         compiled_df = compile_dict(symbols, symbolic_df)
         compiled_per_memory_usage_df = compile_dict(symbols, per_memory_usage_df)

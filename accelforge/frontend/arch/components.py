@@ -990,6 +990,18 @@ class Compute(Component, Leaf):
     actions: EvalableList[Action] = COMPUTE_ACTIONS
     """ The actions that this `Compute` can perform. """
 
+    tile_granularity: dict[str, int] = {}
+    """ Minimum tile-size granularity per rank variable.
+
+    Maps rank-variable name → N. Any temporal loop tiling over that rank
+    variable must use tile sizes that are exact multiples of N.
+
+    Use this to model hardware where one compute invocation always consumes
+    exactly N elements along a dimension — e.g. a fixed-width dot-product unit
+    with ``input_size=128`` means ``{"K": 128}``.  The mapper will only
+    consider tile shapes where K is a multiple of 128.
+    """
+
     def model_post_init(self, __context__=None) -> None:
         self._update_actions(COMPUTE_ACTIONS)
 
