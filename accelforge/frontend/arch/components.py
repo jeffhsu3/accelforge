@@ -29,8 +29,8 @@ from accelforge.util._eval_expressions import eval_expression
 from accelforge.util._setexpressions import InvertibleSet, eval_set_expression
 from accelforge.frontend.renames import TensorName
 from accelforge.frontend.arch.constraints import Comparison
-from accelforge.frontend.arch.structure import ArchNode, Leaf
-from accelforge.frontend.arch.spatialable import Spatialable
+from accelforge.frontend.arch.structure import ArchNode, Branch, Leaf
+from accelforge.frontend.arch.spatialable import Spatial, Spatialable
 
 from accelforge.util._basetypes import _uninstantiable
 
@@ -998,3 +998,11 @@ class Compute(Component, Leaf):
 
     def _render_node_color(self) -> str:
         return "#E0EEFF"
+
+
+class Network(Component, Leaf):
+    def _render_node_shape(self) -> str:
+        return "Msquare"
+
+    def _render_node_color(self) -> str:
+        return "#FAF8C8"
