@@ -84,10 +84,7 @@ class ArchNode(EvalableModel):
             return any(p.name == node_a for p in parents)
 
     def find_first_of_type_above(
-        self,
-        node_type: T,
-        name: str,
-        default: D = _FIND_SENTINEL
+        self, node_type: T, name: str, default: D = _FIND_SENTINEL
     ) -> T | D:
         """
         Returns the first node with type `node_type` above `name`.
@@ -310,6 +307,7 @@ class Array(Branch, Spatialable):
         return_fanout: bool = False,
     ):
         from accelforge.frontend.arch.components import Compute
+
         nodes = []
 
         for node in self.nodes:
@@ -351,10 +349,14 @@ class Array(Branch, Spatialable):
             elif isinstance(node, Compute):
                 # Compute nodes branch off to the side like a Fork
                 if current_parent_name is not None:
-                    edges.append((current_parent_name, node._render_node_name(), "dashed"))
+                    edges.append(
+                        (current_parent_name, node._render_node_name(), "dashed")
+                    )
             else:
                 if current_parent_name is not None:
-                    edges.append((current_parent_name, node._render_node_name(), "dashed"))
+                    edges.append(
+                        (current_parent_name, node._render_node_name(), "dashed")
+                    )
         return edges, self._render_node_name()
 
     def _render_make_children(self) -> list[pydot.Node]:
@@ -416,9 +418,7 @@ class Hierarchical(Branch):
                         break
                     assert not isinstance(node, Fork)
                 elif isinstance(node, Array):
-                    new_nodes = node._flatten(
-                        compute_node, fanout, return_fanout=False
-                    )
+                    new_nodes = node._flatten(compute_node, fanout, return_fanout=False)
                     nodes.extend(new_nodes)
                     nodes.append(node)
                     fanout *= node.get_fanout()
@@ -472,10 +472,14 @@ class Hierarchical(Branch):
             elif isinstance(node, Compute):
                 # Compute nodes branch off to the side like a Fork
                 if current_parent_name is not None:
-                    edges.append((current_parent_name, node._render_node_name(), "solid"))
+                    edges.append(
+                        (current_parent_name, node._render_node_name(), "solid")
+                    )
             else:
                 if current_parent_name is not None:
-                    edges.append((current_parent_name, node._render_node_name(), "solid"))
+                    edges.append(
+                        (current_parent_name, node._render_node_name(), "solid")
+                    )
 
                 # Update parent for next iteration
                 current_parent_name = node._render_node_name()

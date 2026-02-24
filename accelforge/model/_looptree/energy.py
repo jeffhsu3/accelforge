@@ -117,17 +117,23 @@ def _get_compute_keyer(verbose, use_name, bindings):
 
 def _get_network_keyer(verbose, use_name, bindings):
     if not verbose:
+
         def network_keyer(network: Network, action_name: str):
             component = network.component
             if not use_name:
                 component = bindings[component]
             return ActionKey(component, action_name)
+
     else:
+
         def network_keyer(network: Network, action_name: str):
             component = network.component
             if not use_name:
                 component = bindings[component]
-            return VerboseActionKey(component, action_name, network.tensor, network.einsum)
+            return VerboseActionKey(
+                component, action_name, network.tensor, network.einsum
+            )
+
     return network_keyer
 
 

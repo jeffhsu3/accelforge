@@ -1007,6 +1007,7 @@ class Network(Component, Leaf):
     The routing is currently defined using the mapping, the routing follows the order
     of the spatial nodes from top to bottom.
     """
+
     bits_per_value_scale: EvalsTo[dict] = {"All": 1}
     """
     A scaling factor for the bits per value of the tensors in this `TensorHolder`. If

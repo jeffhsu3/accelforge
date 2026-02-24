@@ -2,11 +2,7 @@ from accelforge.frontend.mapping import (
     Mapping,
 )
 
-from accelforge.frontend.mapping import (
-    Mapping,
-    TensorHolder,
-    Compute as ComputeSpec
-)
+from accelforge.frontend.mapping import Mapping, TensorHolder, Compute as ComputeSpec
 from accelforge.frontend.workload import (
     TensorName,
 )
@@ -18,6 +14,7 @@ class DataMovementConnections:
     For querying connection between Buffet or Compute
     (e.g., which Buffet supplies this Compute).
     """
+
     def __init__(self):
         self.src_to_dst = {}
         self.dst_to_src = {}
@@ -77,4 +74,3 @@ def get_tensor_to_backer_id(mapping: Mapping):
                     continue
                 tensor_to_ids[tensor] = id(node)
     return tensor_to_ids
-

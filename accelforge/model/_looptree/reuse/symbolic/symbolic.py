@@ -41,7 +41,7 @@ from accelforge.frontend._workload_isl._symbolic import (
 from accelforge.model._looptree.types import Buffet, Compute, Network
 from accelforge.model._looptree.reuse.symbolic.mapping_utils import (
     DataMovementConnections,
-    get_tensor_to_backer_id
+    get_tensor_to_backer_id,
 )
 
 from accelforge.mapper.FFM._make_pmappings.pmapper_job import Job
@@ -251,7 +251,7 @@ class BuffetStats:
     @classmethod
     def blank(cls):
         stats = cls()
-        stats.n_loops_above = None # Inherit from whoever is added to this
+        stats.n_loops_above = None  # Inherit from whoever is added to this
         return stats
 
 
@@ -573,7 +573,9 @@ def analyze_reuse_and_add_reservations_to_mapping(
             tensor_to_backer_id=tensor_to_backer_id,
             is_copy_operation=is_copy_operation,
             job=job,
-            data_movement_connections=DataMovementConnections.from_pmapping(cur_mapping.nodes),
+            data_movement_connections=DataMovementConnections.from_pmapping(
+                cur_mapping.nodes
+            ),
         )
         cur_result = analyze_node(0, job.rank_variable_bounds, info)
         if result is None:
@@ -826,7 +828,9 @@ def analyze_temporal(
             accumulated_stats.n_loops_above = stats.n_loops_above + 1
 
         for network, network_stats in child_result.network_stats.items():
-            result_accumulator.network_stats[network] = network_stats.repeat(shape_repeats)
+            result_accumulator.network_stats[network] = network_stats.repeat(
+                shape_repeats
+            )
 
         for einsum, child_steps in child_result.temporal_steps.items():
             if einsum not in result_accumulator.temporal_steps:
@@ -925,29 +929,31 @@ def analyze_spatial(node_idx, current_shape, info: AnalysisInfo):
                 result_accumulator.network_stats[network] = NetworkStats()
             accumulated_network_stats = result_accumulator.network_stats[network]
 
-            accumulated_network_stats.total_hops += \
-                child_network_stats.total_hops*shape_repeats
+            accumulated_network_stats.total_hops += (
+                child_network_stats.total_hops * shape_repeats
+            )
             accumulated_network_stats.max_hops = max(
                 accumulated_network_stats.max_hops,
                 child_network_stats.max_hops,
             )
             projection = info.einsum_tensor_to_projection[(einsum_name, network.tensor)]
             component_object = find_component_object(
-                network.component,
-                info.job.flattened_arch
+                network.component, info.job.flattened_arch
             )
             bits_per_value_scale = component_object.bits_per_value_scale[network.tensor]
             bits_per_value = (
                 bits_per_value_scale
-                *
-                info.job.einsum.tensor_accesses[network.tensor].bits_per_value
+                * info.job.einsum.tensor_accesses[network.tensor].bits_per_value
             )
             bits_per_action = component_object.bits_per_action
             if bits_per_action is not None:
-                actions_per_value = bits_per_value/bits_per_action
+                actions_per_value = bits_per_value / bits_per_action
             else:
                 actions_per_value = bits_per_value
-            volume = compute_dense_tile_occupancy(projection, child_shape) * actions_per_value
+            volume = (
+                compute_dense_tile_occupancy(projection, child_shape)
+                * actions_per_value
+            )
 
             if info.job.spec.arch.is_above(node.component, network.component):
                 continue
@@ -956,27 +962,29 @@ def analyze_spatial(node_idx, current_shape, info: AnalysisInfo):
             last_fanout = last_fanout.get(node.name, 1)
             if isinstance(relevancy, Irrelevant):
                 # Cost of multicasting is the cost of delivering along the dimension
-                multicast_hops = (shape_repeats-1)*last_fanout
+                multicast_hops = (shape_repeats - 1) * last_fanout
                 multicast_cost = multicast_hops * volume
                 overall_max_hops += multicast_hops
 
                 accumulated_network_stats.total_hops += multicast_cost
                 accumulated_network_stats.max_hops = max(
                     accumulated_network_stats.max_hops,
-                    overall_max_hops + child_network_stats.max_hops
+                    overall_max_hops + child_network_stats.max_hops,
                 )
             elif isinstance(relevancy, Relevant):
                 # Cost of unicast is the cost of delivering to each point in
                 # the dimension with shape as stride
                 # TODO: we should use the actual stride
-                total_unicast_cost = 0.5*(shape_repeats-1)*shape_repeats*last_fanout * volume
-                max_unicast_hops = (shape_repeats-1)*last_fanout
+                total_unicast_cost = (
+                    0.5 * (shape_repeats - 1) * shape_repeats * last_fanout * volume
+                )
+                max_unicast_hops = (shape_repeats - 1) * last_fanout
                 overall_max_hops += max_unicast_hops
 
                 accumulated_network_stats.total_hops += total_unicast_cost
                 accumulated_network_stats.max_hops = max(
                     accumulated_network_stats.max_hops,
-                    overall_max_hops + child_network_stats.max_hops
+                    overall_max_hops + child_network_stats.max_hops,
                 )
             elif isinstance(relevancy, PartiallyRelevant):
                 raise NotImplementedError()
@@ -1256,9 +1264,7 @@ def analyze_reservation(node_idx, current_shape, info: AnalysisInfo):
 
     # Reservation nodes are the first to produce stats for a network
     network_node = info.job.spec.arch.find_first_of_type_above(
-        NetworkSpec,
-        buffet.level,
-        default=None
+        NetworkSpec, buffet.level, default=None
     )
     if network_node is not None:
         network = Network(
@@ -1266,7 +1272,7 @@ def analyze_reservation(node_idx, current_shape, info: AnalysisInfo):
             einsum_name,
             info.data_movement_connections.get_src(buffet),
             buffet,
-            component=network_node.name if network_node else network_node
+            component=network_node.name if network_node else network_node,
         )
         assert network not in child_result.network_stats
         child_result.network_stats[network] = NetworkStats()
@@ -1313,9 +1319,7 @@ def analyze_compute(
         result_accumulator.buffet_stats[buffet] = stats
 
         network_node = info.job.spec.arch.find_first_of_type_above(
-            NetworkSpec,
-            node.component,
-            default=None
+            NetworkSpec, node.component, default=None
         )
         if network_node is not None:
             network = Network(
@@ -1323,7 +1327,7 @@ def analyze_compute(
                 info.job.einsum_name,
                 info.data_movement_connections.get_src(buffet),
                 buffet,
-                component=network_node.name if network_node else network_node
+                component=network_node.name if network_node else network_node,
             )
             result_accumulator.network_stats[network] = NetworkStats()
 

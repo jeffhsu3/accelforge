@@ -3,7 +3,14 @@ from __future__ import annotations
 from accelforge.frontend.mapper import FFM
 from accelforge.frontend.renames import EinsumName, Renames
 from accelforge.util._eval_expressions import EvaluationError, ParseExpressionsContext
-from accelforge.frontend.arch import Compute, Leaf, Component, Arch, Container, Spatialable
+from accelforge.frontend.arch import (
+    Compute,
+    Leaf,
+    Component,
+    Arch,
+    Container,
+    Spatialable,
+)
 
 from accelforge.frontend.workload import Workload
 from accelforge.frontend.variables import Variables
