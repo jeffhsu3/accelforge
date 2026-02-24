@@ -45,7 +45,6 @@ arch:
     spatial:
     - {name: reuse_output, fanout: 8, min_usage: 1, may_reuse: output, reuse: output}
     - {name: reuse_input, fanout: 8, min_usage: 1, may_reuse: input, reuse: input}
-    # - {name: reuse_all, fanout: 8, min_usage: 1}
 
   - !Memory
     name: Register
