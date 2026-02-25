@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - main
+  pull_request:
+    branches:
+      - main
   release:
     types: [created]
 
@@ -41,22 +44,20 @@ jobs:
         run: |
           python3 -m unittest discover -s tests -p "*.py" -v
 
-  pypi-publish:
-    name: Publish package to PyPI
-    runs-on: ubuntu-latest
+  build-package:
+    name: Build package on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
     needs: run-tests
-    environment:
-      name: pypi
-      url: https://pypi.org/p/accelforge
-    permissions:
-      id-token: write
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0  # Fetch all history and tags for setuptools-scm
           submodules: recursive  # Check out all submodules
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: "3.12"
       - name: Install dependencies
@@ -69,5 +70,32 @@ jobs:
           PYTHONPATH: ${{ github.workspace }}
         run: |
           python -m build
+      - name: Upload distributions
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ matrix.os }}
+          path: dist/*
+
+  pypi-publish:
+    name: Publish package to PyPI
+    runs-on: ubuntu-latest
+    needs: build-package
+    environment:
+      name: pypi
+      url: https://pypi.org/p/accelforge
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Fetch all history and tags for setuptools-scm
+          submodules: recursive  # Check out all submodules
+      - name: Download all distributions
+        uses: actions/download-artifact@v4
+        with:
+          pattern: dist-*
+          merge-multiple: true
+          path: dist
       - name: Publish package distributions to PyPI
+        if: github.event_name != 'pull_request'
         uses: pypa/gh-action-pypi-publish@release/v1
