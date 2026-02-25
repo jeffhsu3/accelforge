@@ -58,11 +58,12 @@ def evaluate_mapping(
     from accelforge.mapper.FFM._make_pmappings.make_pmappings import (
         get_rank_variable_bounds_for_all_einsums,
     )
-    from accelforge.mapper.FFM._make_pmappings.make_pmappings_from_templates.run_model import (
+    from accelforge.model.run_model import (
         run_model,
     )
     from accelforge.mapper.FFM._make_pmappings.make_pmappings_from_templates.make_tile_shapes import (
-        _calculate_iterations_and_rank_columns, _clean_energy_columns,
+        _calculate_iterations_and_rank_columns,
+        _clean_energy_columns,
     )
     from accelforge.mapper.FFM._make_pmappings.pmapper_job import Job
 
@@ -147,7 +148,7 @@ def evaluate_mapping(
         # Calculate iteration counts and rank columns
         _clean_energy_columns(df, job.metrics)
         _calculate_iterations_and_rank_columns(
-            pmapping.nodes, job, df, job.rank_variable_bounds
+            job.mapping.nodes, job, df, job.rank_variable_bounds
         )
         compatibility = Compatibility.from_mapping(
             job.mapping,
@@ -185,7 +186,12 @@ def evaluate_mapping(
         einsum2pmappings[job.einsum_name] = [
             PmappingGroup(
                 compatibility,
-                PmappingDataframe(pd.DataFrame(df, columns=df.keys(), index=[0]), 1, 1),
+                PmappingDataframe(
+                    data=pd.DataFrame(df, columns=df.keys(), index=[0]),
+                    n_total_pmappings=1,
+                    n_valid_pmappings=1,
+                    ignored_resources=set(),
+                ),
             )
         ]
         pmapping_objects[job.einsum_name] = {pmapping_id: job.mapping}
