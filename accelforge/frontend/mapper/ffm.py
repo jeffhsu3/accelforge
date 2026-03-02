@@ -1,6 +1,7 @@
 from typing import Any, Annotated, Literal
 
 from accelforge.frontend.mapper.metrics import Metrics
+from accelforge.frontend.renames import EinsumName
 from accelforge.util._basetypes import EvalableModel
 
 
@@ -88,9 +89,10 @@ class FFM(EvalableModel):
     "save_outermost_memory_usage".
     """
 
-    _only_output_pmapping_with_index: int | None = None
+    _only_output_pmapping_with_index: int | dict[EinsumName, int] | None = None
     """
-    For debugging. Only output the pmapping with this index.
+    For debugging. Only output the pmapping with this index. If a dictionary, then the
+    keys are einsum names and the values are the indices.
     """
 
     memory_limit: float | int = float("inf")
