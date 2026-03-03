@@ -5,7 +5,7 @@ import logging
 import time
 from typing import Callable
 
-from accelforge._accelerated_imports import pd
+from accelforge._accelerated_imports import pd, np
 from accelforge.frontend.spec import Spec
 from accelforge.frontend.mapping import Mapping
 from accelforge.frontend.mapper.metrics import Metrics
@@ -22,7 +22,10 @@ from accelforge.mapper.FFM._make_pmappings.make_pmappings import (
 from accelforge.mapper.FFM._join_pmappings.pmapping_dataframe import (
     row2pmappings,
 )
-from accelforge.mapper.FFM._pareto_df.df_convention import MAPPING_COLUMN
+from accelforge.mapper.FFM._pareto_df.df_convention import (
+    MAPPING_COLUMN,
+    col_used_in_pareto,
+)
 from accelforge.mapper.FFM._join_pmappings.pmapping_group import (
     PmappingGroup,
     Compatibility,
@@ -57,9 +60,45 @@ class JoiningTimer:
         logger.info(f"============================\n")
 
 
+class OptimalityThresholder:
+    def __init__(
+        self,
+        prev_solutions: Mappings,
+        _pmapping_row_filter_function: Callable[[pd.DataFrame], np.ndarray],
+    ):
+        compare_to = prev_solutions.data
+        compare_cols = [c for c in compare_to.columns if col_used_in_pareto(c)]
+        compare_to = compare_to.sort_values(by=compare_cols, ascending=False)
+        if len(compare_to) > 10:
+            chosen_indices = np.round(np.linspace(0, len(compare_to) - 1, 10))
+        else:
+            chosen_indices = np.arange(len(compare_to))
+
+        self._pmapping_row_filter_function = _pmapping_row_filter_function
+
+        self.compare_to: list[dict[str, float]] = []
+        for i in chosen_indices:
+            for c in compare_cols:
+                self.compare_to.append({c: compare_to.iloc[i][c]})
+
+    def __call__(self, mapping: pd.DataFrame) -> bool:
+        nondominated_by_all = np.ones(len(mapping), dtype=bool)
+        for c in self.compare_to:
+            nondominated = np.zeros(len(mapping), dtype=bool)
+            for k, v in c.items():
+                nondominated |= mapping[k] <= v
+            nondominated_by_all &= nondominated
+
+        if self._pmapping_row_filter_function is not None:
+            nondominated_by_all &= self._pmapping_row_filter_function(mapping)
+
+        return nondominated_by_all
+
+
 def clean_compress_and_join_pmappings(
     pmappings: MultiEinsumPmappings,
     metrics: Metrics,
+    for_model: bool,
     require_all_einsums: bool = True,
     _pmapping_row_filter_function: Callable[[pd.Series], bool] | None = None,
     print_progress: bool = True,
@@ -76,13 +115,39 @@ def clean_compress_and_join_pmappings(
     compressed, decompress_data = compress_einsum2pmappings(
         einsum2pmappings, print_progress
     )
-    joined = join_pmappings(
-        compressed,
-        pmappings.spec,
-        _pmapping_row_filter_function=_pmapping_row_filter_function,
-        print_progress=print_progress,
-        metrics=metrics,
-    )
+
+    if for_model:
+        thresholds = [0]
+    else:
+        thresholds = [10, 0.01, 0]
+
+    filter_func = _pmapping_row_filter_function
+    for i, threshold in enumerate(thresholds):
+        if not for_model and print_progress:
+            if i < len(thresholds) - 1:
+                print(f"Dirty joining with objectives <= {1 + threshold}× optimal")
+            else:
+                print("Final clean join.")
+        try:
+            for p in compressed.values():
+                for pg in p:
+                    pg.mappings.objective_precision = threshold
+                    pg.mappings.resource_usage_precision = threshold
+
+            joined = join_pmappings(
+                compressed,
+                pmappings.spec,
+                _pmapping_row_filter_function=filter_func,
+                print_progress=print_progress,
+                metrics=metrics,
+            )
+            filter_func = OptimalityThresholder(joined, _pmapping_row_filter_function)
+        except Exception as e:
+            if threshold == 0:
+                raise
+            if print_progress:
+                print(f"Error with optimality threshold {threshold}: {e}")
+
     joined = decompress_pmappings(joined, decompress_data)
 
     for einsum_name in einsum2pmappings:
@@ -269,7 +334,8 @@ def join_pmappings(
             for e in pmapping_groups
         }
         new_n = sum(len(s.mappings.data) for sg in pmapping_groups.values() for s in sg)
-        print(f"Filtered {n} -> {new_n} ({new_n / n:.2%} kept) pmappings")
+        if print_progress:
+            print(f"Filtered {n} -> {new_n} ({new_n / n:.2%} kept) pmappings")
 
     if drop_valid_reservations:
         pmapping_groups, ignored_resources = get_memories_to_track(

@@ -78,8 +78,8 @@ def evaluate_mapping(
         metrics=spec.model.metrics,
         rank_variable_bounds=get_rank_variable_bounds_for_all_einsums(spec),
         spec_one_einsum=spec,
-        resource_usage_precision=spec.model._resource_usage_precision,
-        objective_precision=spec.model._objective_precision,
+        resource_usage_precision=0,  # spec.model._resource_usage_precision,
+        objective_precision=0,  # spec.model._objective_precision,
     )
 
     einsum2pmappings = {}
@@ -218,6 +218,7 @@ def evaluate_mapping(
         ),
         metrics=spec.model.metrics,
         print_progress=False,
+        for_model=True,
     )
 
 

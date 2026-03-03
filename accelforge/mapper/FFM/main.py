@@ -15,11 +15,7 @@ from accelforge.frontend.workload import EinsumName
 from accelforge.mapper.FFM._join_pmappings.join_pmappings import (
     clean_compress_and_join_pmappings,
 )
-from accelforge.mapper.FFM._join_pmappings.join_pmappings import (
-    _check_einsum2pmappings_not_empty,
-)
 from accelforge._accelerated_imports import pd
-from tqdm import tqdm
 
 from accelforge.util import delayed, parallel
 
@@ -220,6 +216,7 @@ def join_pmappings(
         require_all_einsums=require_all_einsums,
         _pmapping_row_filter_function=_pmapping_row_filter_function,
         print_progress=print_progress,
+        for_model=False,
     )
 
 

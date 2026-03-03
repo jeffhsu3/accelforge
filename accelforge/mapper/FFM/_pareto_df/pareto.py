@@ -192,15 +192,10 @@ def round_to_precision(x: pd.Series, precision: float) -> pd.Series:
 def logscale_to_precision(x: pd.Series, precision: float) -> pd.Series:
     if precision == 0 or precision is None:
         return x
-    assert 0 < precision < 1
-
+    assert precision > 0
     if x.min() <= 0:
         return x
-
-    logged = np.log(x)
-    new = np.round(logged / precision) * precision
-    # print(f'Scaled from {len(np.unique(x))} to {len(np.unique(new))}')
-    return new
+    return np.round(np.log(x) / np.log(1 + precision))
 
 
 def makepareto(
