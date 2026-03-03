@@ -536,10 +536,10 @@ def join_pmappings(
     if score_target is not None:
         tracker._scale_score_by *= 1 / score_target
 
-    if population_size != float('inf'):
+    if population_size != float("inf"):
         pop_size_per_thread = max(1, population_size // get_n_parallel_jobs())
     else:
-        pop_size_per_thread = float('inf')
+        pop_size_per_thread = float("inf")
 
     # Multiply by the number of einsums
     # print(

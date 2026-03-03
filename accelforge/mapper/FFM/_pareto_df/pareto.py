@@ -12,6 +12,7 @@ from accelforge._accelerated_imports import np
 from accelforge.util.parallel import parallel
 
 from accelforge.mapper.FFM._pareto_df.df_convention import (
+    col2nameloop,
     col_used_in_pareto,
     is_fused_loop_col,
     is_n_iterations_col,
@@ -71,7 +72,7 @@ def makepareto_quick(mappings: pd.DataFrame, columns: list[str]) -> pd.DataFrame
 
 
 def paretofy_chunk(chunk, sense: list[str]):
-    return fast_pareto_mask(chunk.values if hasattr(chunk, 'values') else chunk, sense)
+    return fast_pareto_mask(chunk.values if hasattr(chunk, "values") else chunk, sense)
 
 
 def makepareto_merge(
@@ -175,11 +176,40 @@ def pareto_front_cupy_blockwise_sorted_recursive(X, block_size=2000):
 #         mask = pareto_front_cupy_blockwise_sorted_recursive(mappings[columns].to_cupy())
 #         return mappings[mask]
 
+
+def round_to_precision(x: pd.Series, precision: float) -> pd.Series:
+    return logscale_to_precision(x, precision)
+
+    if precision == 0:
+        return x
+    maxval = x.max()
+    minval = x.min()
+    x = (x - minval) / (maxval - minval)
+    x = np.round(x / precision) * precision
+    return x * (maxval - minval) + minval
+
+
+def logscale_to_precision(x: pd.Series, precision: float) -> pd.Series:
+    if precision == 0 or precision is None:
+        return x
+    assert 0 < precision < 1
+
+    if x.min() <= 0:
+        return x
+
+    logged = np.log(x)
+    new = np.round(logged / precision) * precision
+    # print(f'Scaled from {len(np.unique(x))} to {len(np.unique(new))}')
+    return new
+
+
 def makepareto(
     mappings: pd.DataFrame,
     columns: list[str] = None,
     parallelize: bool = False,
     split_by_cols: list[str] = (),
+    resource_usage_precision: float = 0,
+    objective_precision: float = 0,
 ) -> pd.DataFrame:
     # return makepareto_time_compare(mappings)
     if columns is None:
@@ -195,22 +225,23 @@ def makepareto(
 
     goals = []
     to_pareto = []
-    pareto_cols = []
     for c in mappings.columns:
         if mappings[c].nunique() <= 1:
             continue
 
         if c in columns and is_objective_col(c):  # or col_used_in_pareto(c)):
-            to_pareto.append(mappings[c])
-            pareto_cols.append(c)
-            goals += ["min"]
+            to_pareto.append(logscale_to_precision(mappings[c], objective_precision))
+            goals.append("min")
         elif c in split_by_cols:
             to_pareto.append(mappings[c])
-            pareto_cols.append(c)
             goals.append("diff")
         elif c in columns:
-            to_pareto.append(mappings[c])
-            pareto_cols.append(c)
+            if col2nameloop(c) is not None and resource_usage_precision != 0:
+                to_pareto.append(
+                    round_to_precision(mappings[c], resource_usage_precision)
+                )
+            else:
+                to_pareto.append(mappings[c])
             goals.append("min")
 
     if not to_pareto:
@@ -257,34 +288,48 @@ def prime_factor_counts(arr: np.ndarray) -> np.ndarray:
 def makepareto_numpy(
     mappings: np.ndarray,
     goals: list[str],
-    dirty: bool = False # Doesn't do anything
+    dirty: bool = False,  # Doesn't do anything
+    precisions: list[float] = None,
 ) -> pd.DataFrame:
 
     to_pareto = []
     new_goals = []
+    if precisions is None:
+        precisions = [0] * len(goals)
+
     assert len(goals) == mappings.shape[1]
     for c in range(mappings.shape[1]):
         if len(np.unique(mappings[:, c])) <= 1:
             continue
 
         goal = goals[c]
+        if precisions[c] is not None:
+            precision_type, precision = precisions[c]
+            if precision_type == "round":
+                rounded = round_to_precision(mappings[:, c], precision)
+            elif precision_type == "logscale":
+                rounded = logscale_to_precision(mappings[:, c], precision)
+            else:
+                raise ValueError(f"Unknown precision type: {precision_type}")
+        else:
+            rounded = mappings[:, c]
+        rounded = rounded.reshape((-1, 1))
+
         if goal in ["min", "max"]:
-            # l = logify(mappings[:, c].reshape((-1, 1)))
-            l = mappings[:, c].reshape((-1, 1))
-            to_pareto.append(l if goal == "min" else -l)
+            to_pareto.append(rounded if goal == "min" else -rounded)
             new_goals.append("min")
         elif goal == "diff":
-            to_pareto.append(mappings[:, c].reshape((-1, 1)))
+            to_pareto.append(rounded)
             new_goals.append("diff")
         elif goal == "min_per_prime_factor":
-            counts = prime_factor_counts(mappings[:, c])
+            counts = prime_factor_counts(rounded)
             for i in range(counts.shape[1]):
-                to_pareto.append(counts[:, i].reshape((-1, 1)))
+                to_pareto.append(counts[:, i])
                 new_goals.append("min")
         elif goal == "max_per_prime_factor":
-            counts = prime_factor_counts(mappings[:, c])
+            counts = prime_factor_counts(rounded)
             for i in range(counts.shape[1]):
-                to_pareto.append(counts[:, i].reshape((-1, 1)))
+                to_pareto.append(counts[:, i])
                 new_goals.append("max")
         else:
             raise ValueError(f"Unknown goal: {goal}")

@@ -710,7 +710,10 @@ def join_pmappings(
     return mappings
 
 
-def _check_einsum2pmappings_not_empty(einsum2pmappings: dict[EinsumName, list[PmappingGroup]], pmappings: MultiEinsumPmappings):
+def _check_einsum2pmappings_not_empty(
+    einsum2pmappings: dict[EinsumName, list[PmappingGroup]],
+    pmappings: MultiEinsumPmappings,
+):
     for einsum_name, einsum_pmappings in einsum2pmappings.items():
         total = sum(len(p.mappings.data) for p in einsum_pmappings)
         n_compatibilities = len(einsum_pmappings)

@@ -30,7 +30,9 @@ from accelforge.mapper.FFM._make_pmappings.make_pmappings_from_templates import 
 )
 from accelforge.mapper.FFM._join_pmappings.compatibility import Compatibility
 from accelforge.mapper.FFM._join_pmappings.pmapping_group import PmappingGroup
-from accelforge.mapper.FFM._make_pmappings.make_pmappings_from_templates.symbol_relations import get_initial_delta_choices
+from accelforge.mapper.FFM._make_pmappings.make_pmappings_from_templates.symbol_relations import (
+    get_initial_delta_choices,
+)
 from accelforge.util.parallel import (
     parallel,
     _memmap_read,
@@ -109,7 +111,8 @@ def get_jobs(
                 einsum_name=einsum_name,
                 area=False,
             )
-            ._for_einsum(einsum_name)._clear_component_models()
+            ._for_einsum(einsum_name)
+            ._clear_component_models()
         )
         einsum2spec[einsum_name] = _memmap_read(einsum2spec[einsum_name])
 
@@ -136,6 +139,8 @@ def get_jobs(
                 fusable_tensors=fusable_tensors & workload_einsum.tensor_names,
                 stride_and_halo=stride_and_halo,
                 initial_delta_choices=initial_delta_choices_for_einsum,
+                resource_usage_precision=spec.mapper._resource_usage_precision,
+                objective_precision=spec.mapper._objective_precision,
             )
             for j in make_pmapping_templates(job, print_progress):
                 jobs.setdefault(j.compatibility, SameCompatibilityJobs()).append(j)

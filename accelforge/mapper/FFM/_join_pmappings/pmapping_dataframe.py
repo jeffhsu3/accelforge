@@ -73,11 +73,11 @@ def reduce_precision(data: pd.DataFrame) -> pd.DataFrame:
             return s
 
         max_val = s.max()
-        if max_val <= 2 ** 8 - 1 and s.dtype != np.uint8:
+        if max_val <= 2**8 - 1 and s.dtype != np.uint8:
             return s.astype(np.uint8)
-        elif max_val <= 2 ** 16 - 1 and s.dtype != np.uint16:
+        elif max_val <= 2**16 - 1 and s.dtype != np.uint16:
             return s.astype(np.uint16)
-        elif max_val <= 2 ** 32 - 1 and s.dtype != np.uint32:
+        elif max_val <= 2**32 - 1 and s.dtype != np.uint32:
             return s.astype(np.uint32)
         return s
 
@@ -85,6 +85,7 @@ def reduce_precision(data: pd.DataFrame) -> pd.DataFrame:
         data[c] = _reduce_precision(c, data[c])
 
     return data
+
 
 class PmappingDataframe:
     def __init__(
@@ -100,6 +101,8 @@ class PmappingDataframe:
         next_shared_loop_index: int = None,
         parallelize_pareto: bool = False,
         limit_capacity_drop_valid_reservations: bool = True,
+        resource_usage_precision: float = 0,
+        objective_precision: float = 0,
     ):
         self._data: pd.DataFrame = data
         reduce_precision(self._data)
@@ -110,6 +113,8 @@ class PmappingDataframe:
         self._make_reservations()
         self.n_total_pmappings: float = n_total_pmappings
         self.n_valid_pmappings: float = n_valid_pmappings
+        self.resource_usage_precision: float = resource_usage_precision
+        self.objective_precision: float = objective_precision
 
         if next_shared_loop_index is not None:
             assert (
@@ -600,6 +605,7 @@ class PmappingDataframe:
             n_total_pmappings=n_total_pmappings,
             n_valid_pmappings=n_valid_pmappings,
             ignored_resources=self.ignored_resources,
+            resource_usage_precision=self.resource_usage_precision,
         )
         # Remove tensors that were allocated in both branches and got added
         # together.
@@ -725,6 +731,8 @@ class PmappingDataframe:
             n_total_pmappings=sum(p.n_total_pmappings for p in paretos),
             n_valid_pmappings=sum(p.n_valid_pmappings for p in paretos),
             ignored_resources=next(iter(paretos)).ignored_resources,
+            resource_usage_precision=next(iter(paretos)).resource_usage_precision,
+            objective_precision=next(iter(paretos)).objective_precision,
         )
         return p
 
@@ -740,6 +748,8 @@ class PmappingDataframe:
             n_total_pmappings=self.n_total_pmappings,
             n_valid_pmappings=self.n_valid_pmappings,
             ignored_resources=self.ignored_resources,
+            resource_usage_precision=self.resource_usage_precision,
+            objective_precision=self.objective_precision,
         )
         args.update(kwargs)
         return PmappingDataframe(**args)
@@ -799,7 +809,13 @@ class PmappingDataframe:
 
     def make_pareto(self, columns: list[str] = None, parallelize: bool = False):
         self._check_reservations()
-        self._data = makepareto(self.data, columns, parallelize=parallelize)
+        self._data = makepareto(
+            self.data,
+            columns,
+            parallelize=parallelize,
+            resource_usage_precision=self.resource_usage_precision,
+            objective_precision=self.objective_precision,
+        )
         self._check_reservations()
 
     def has_reservations(self):

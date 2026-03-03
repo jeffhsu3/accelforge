@@ -312,7 +312,12 @@ def make_pmappings_from_templates(
     job0 = next(iter(jobs_with_similar_compatibilities))
 
     # Pareto prune
-    df = makepareto(df, split_by_cols=fused_loop_cols).copy()
+    df = makepareto(
+        df,
+        split_by_cols=fused_loop_cols,
+        resource_usage_precision=job0.resource_usage_precision,
+        objective_precision=job0.objective_precision,
+    ).copy()
 
     jobs_passed_pareto = sorted(df[f"{einsum_name}<SEP>{MAPPING_COLUMN}"].unique())
     pmapping_objects = {
@@ -390,6 +395,8 @@ def make_pmappings_from_templates(
             # False because we may have lifetimes that stretch through this Einsum
             # due to data dependencies, not loops
             limit_capacity_drop_valid_reservations=False,
+            resource_usage_precision=job0.resource_usage_precision,
+            objective_precision=job0.objective_precision,
         )
         pmapping_groups.append(PmappingGroup(compatibility, partial_mappings))
 

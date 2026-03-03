@@ -12,3 +12,15 @@ class Model(EvalableModel):
     If using spec to call mapper, leave this configuration as is. The mapper
     will make necessary configurations.
     """
+
+    _resource_usage_precision: float = 0
+    """
+    Rounds resource usage to the nearest multiple of this value. Must be between 0 and
+    1. If zero, then no rounding is performed.
+    """
+
+    _objective_precision: float = 0
+    """
+    Rounds objective values to the nearest value representable by (1 + precision) ^ N.
+    Must be between 0 and 1. If zero, then no rounding is performed.
+    """

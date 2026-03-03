@@ -294,10 +294,12 @@ class Goal:
         goal: str = None,
         max_value: Optional[float] = None,
         only_care_if_valid: bool = False,
+        precision: tuple[str, float] = ("round", 0),
     ):
         self.goal = goal
         self.max_value = max_value
         self.only_care_if_valid = only_care_if_valid
+        self.precision: float = precision
 
     def __or__(self, other: "Goal"):
         if self.goal is None:
@@ -309,17 +311,32 @@ class Goal:
         mv = self.max_value
         care = self.only_care_if_valid or other.only_care_if_valid
 
+        if self.precision[0] == other.precision[0]:
+            p = (self.precision[0], min(self.precision[1], other.precision[1]))
+        else:
+            p = ("round", 0)
+
         # If the goals are the same, space doesn't change
         if self.goal == other.goal:
-            return Goal(self.goal, max_value=mv, only_care_if_valid=care)
+            return Goal(self.goal, max_value=mv, only_care_if_valid=care, precision=p)
 
         # min_per_prime_factor is a superset of min, so we can just keep the min_per_prime_factor goal
         if {self.goal, other.goal} == {"min", "min_per_prime_factor"}:
-            return Goal("min_per_prime_factor", max_value=mv, only_care_if_valid=care)
+            return Goal(
+                "min_per_prime_factor",
+                max_value=mv,
+                only_care_if_valid=care,
+                precision=p,
+            )
 
         # max_per_prime_factor is a superset of max, so we can just keep the max_per_prime_factor goal
         if {self.goal, other.goal} == {"max", "max_per_prime_factor"}:
-            return Goal("max_per_prime_factor", max_value=mv, only_care_if_valid=care)
+            return Goal(
+                "max_per_prime_factor",
+                max_value=mv,
+                only_care_if_valid=care,
+                precision=p,
+            )
 
         # Otherwise, there's a disagreement and the only space we're both in can be diff
         return Goal("diff", max_value=mv, only_care_if_valid=care)
@@ -332,9 +349,9 @@ class Goal:
 
     def __invert__(self):
         if self.goal == "min":
-            return Goal("max", self.max_value, self.only_care_if_valid)
+            return Goal("max", self.max_value, self.only_care_if_valid, self.precision)
         elif self.goal == "max":
-            return Goal("min", self.max_value, self.only_care_if_valid)
+            return Goal("min", self.max_value, self.only_care_if_valid, self.precision)
         elif self.goal == "min_per_prime_factor":
             raise ValueError("Can't invert min_per_prime_factor")
         elif self.goal == "max_per_prime_factor":
@@ -348,6 +365,7 @@ class Goal:
             and self.goal == other.goal
             and self.max_value == other.max_value
             and self.only_care_if_valid == other.only_care_if_valid
+            and self.precision == other.precision
         )
 
 
@@ -363,6 +381,7 @@ class Objective:
         inclusive: bool = True,
         try_best_if_none_reaches_min: bool = False,
         terms_do_not_cross_zero: bool = False,
+        precision: float = 0,
     ):
         if isinstance(formula, Number):
             formula = sympy.Number(formula)
@@ -377,6 +396,7 @@ class Objective:
         self.inclusive: bool = inclusive
         self.try_best_if_none_reaches_min: bool = try_best_if_none_reaches_min
         self.terms_do_not_cross_zero: bool = terms_do_not_cross_zero
+        self.precision: float = precision
 
 
 def is_constant(f: Expr) -> bool:
@@ -1519,6 +1539,9 @@ def get_tile_shape_choices(
                 for k, v in goals.items():
                     log_message("formula", f"\t -> {k}: {v}")
 
+                if len(goals) == 1 and next(iter(goals.keys())) == objective.formula:
+                    next(iter(goals.values())).precision = objective.precision
+
                 for symbol, goal in goals.items():
                     update_symbol2goal(symbol, goal)
 
@@ -1576,14 +1599,18 @@ def get_tile_shape_choices(
 
                 drop_cols = []
                 pareto_goals = []
+                precisions = []
                 for i, (formula, goal) in enumerate(objective_values.items()):
                     goal = symbol2goal[formula]
                     if i not in drop_cols:
                         pareto_goals.append(goal.goal)
+                        precisions.append(goal.precision)
                 to_pareto = to_pareto[
                     :, [i for i in range(to_pareto.shape[1]) if i not in drop_cols]
                 ]
-                keep = makepareto_numpy(to_pareto, pareto_goals, dirty=True)
+                keep = makepareto_numpy(
+                    to_pareto, pareto_goals, dirty=True, precisions=precisions
+                )
                 prev_size = choices_enumerated.shape[0]
                 choices_enumerated = choices_enumerated[keep]
                 job.log_porp_pmappings_kept(
@@ -1879,6 +1906,7 @@ def _make_tile_shapes(job: "Job"):
                 only_care_if_valid=only_care_if_valid,
                 max_value=1,
                 terms_do_not_cross_zero=True,
+                precision=("logscale", job.resource_usage_precision),
             )
         )
 
@@ -1923,11 +1951,18 @@ def _make_tile_shapes(job: "Job"):
                 formula=v,
                 symbols=symbols,
                 terms_do_not_cross_zero="energy" in k or "latency" in k,
+                precision=("logscale", job.objective_precision),
             )
         )
     for k, v in actions_df.items():
         alt_objectives.append(
-            Objective(name=k, formula=v, symbols=symbols, terms_do_not_cross_zero=True)
+            Objective(
+                name=k,
+                formula=v,
+                symbols=symbols,
+                terms_do_not_cross_zero=True,
+                precision=("logscale", job.objective_precision),
+            )
         )
 
     rank2symbols = {}

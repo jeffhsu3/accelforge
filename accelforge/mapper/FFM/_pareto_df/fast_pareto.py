@@ -29,6 +29,7 @@ from accelforge.util import NUMPY_FLOAT_TYPE
 # Numba helpers
 # ============================================================================
 
+
 @numba.jit(nopython=True)
 def _is_constant(arr, n):
     """Check if a 1D array is constant. O(1) best case via early exit."""
@@ -63,6 +64,7 @@ def _counting_sort(codes, n_groups):
 # Prime factor utilities
 # ============================================================================
 
+
 @functools.lru_cache(maxsize=10000)
 def _factorint_cached(x: int):
     return factorint(x)
@@ -87,6 +89,7 @@ def prime_factor_counts(arr):
 # ============================================================================
 # Core SFS + Block-BNL (block size 16)
 # ============================================================================
+
 
 @numba.jit(nopython=True, fastmath=True)
 def _sfs_bnl_core(data, sorted_idx, offsets, n_total_groups, result_mask):
@@ -282,6 +285,7 @@ def _sfs_bnl_core(data, sorted_idx, offsets, n_total_groups, result_mask):
 # Group encoding
 # ============================================================================
 
+
 def _encode_groups(data, diff_cols):
     """Encode diff columns into integer group IDs using pd.factorize."""
     n = data.shape[0]
@@ -328,13 +332,14 @@ def _encode_groups(data, diff_cols):
 # Deduplication
 # ============================================================================
 
+
 def _dedup_mask(data, n):
     """Return a boolean mask keeping only the first occurrence of each unique row."""
     if n == 0:
         return np.zeros(0, dtype=bool)
-    if data.dtype.kind in ('f', 'i', 'u'):
+    if data.dtype.kind in ("f", "i", "u"):
         c = np.ascontiguousarray(data)
-        dt = np.dtype([(f'f{i}', c.dtype) for i in range(c.shape[1])])
+        dt = np.dtype([(f"f{i}", c.dtype) for i in range(c.shape[1])])
         _, idx = np.unique(c.view(dt).ravel(), return_index=True)
     else:
         codes = np.zeros(n, dtype=np.int64)
@@ -358,6 +363,7 @@ def _dedup_mask(data, n):
 # Main entry point
 # ============================================================================
 
+
 def fast_pareto_mask(df_values, goals, distinct=True):
     """
     Compute Pareto mask for a numpy array with given goals.
@@ -378,21 +384,21 @@ def fast_pareto_mask(df_values, goals, distinct=True):
 
     # Parse goals
     diff_cols = []
-    simple_opt_cols = []   # (col_index, sign)
-    extra_opt_parts = []   # (array, sign) for prime factor expansions
+    simple_opt_cols = []  # (col_index, sign)
+    extra_opt_parts = []  # (array, sign) for prime factor expansions
 
     for i, g in enumerate(goals):
-        if g == 'diff':
+        if g == "diff":
             diff_cols.append(i)
-        elif g == 'min':
+        elif g == "min":
             simple_opt_cols.append((i, 1.0))
-        elif g == 'max':
+        elif g == "max":
             simple_opt_cols.append((i, -1.0))
-        elif g == 'min_per_prime_factor':
+        elif g == "min_per_prime_factor":
             counts = prime_factor_counts(data[:, i])
             for j in range(counts.shape[1]):
                 extra_opt_parts.append((counts[:, j], 1.0))
-        elif g == 'max_per_prime_factor':
+        elif g == "max_per_prime_factor":
             counts = prime_factor_counts(data[:, i])
             for j in range(counts.shape[1]):
                 extra_opt_parts.append((counts[:, j], -1.0))
@@ -406,7 +412,7 @@ def fast_pareto_mask(df_values, goals, distinct=True):
 
     # Filter to non-constant columns (JIT early-exit for numeric dtypes)
     effective_cols = []
-    use_jit = data.dtype.kind in ('f', 'i', 'u')
+    use_jit = data.dtype.kind in ("f", "i", "u")
     for col_idx, sign in simple_opt_cols:
         col = data[:, col_idx]
         if use_jit:
@@ -483,7 +489,7 @@ def fast_pareto_mask(df_values, goals, distinct=True):
         n_pareto = len(pareto_idx)
         if n_pareto > 1:
             pareto_rows = data[pareto_idx]
-            dup_mask = pd.DataFrame(pareto_rows).duplicated(keep='first').values
+            dup_mask = pd.DataFrame(pareto_rows).duplicated(keep="first").values
             if dup_mask.any():
                 new_mask = np.zeros(n, dtype=bool)
                 new_mask[pareto_idx[~dup_mask]] = True
@@ -495,6 +501,7 @@ def fast_pareto_mask(df_values, goals, distinct=True):
 # ============================================================================
 # Warmup
 # ============================================================================
+
 
 def warmup():
     """Pre-compile all numba functions."""

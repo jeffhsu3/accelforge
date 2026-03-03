@@ -29,6 +29,8 @@ def make_job(mapping: Mapping, workload: Workload) -> Job:
         spec=None,
         mapping=mapping,
         workload=workload,
+        resource_usage_precision=0,
+        objective_precision=0,
     )
 
 

@@ -142,10 +142,12 @@ def first_arg_maybe_iterable(f):
     Canonicalizes the first argument, which may be one element or an iterable,
     into a list.
     """
+
     def new_f(*args, **kwargs):
         mappings = args[0]
         mappings = mappings if isinstance(mappings, Iterable) else [mappings]
         return f(mappings, *args[1:], **kwargs)
+
     return new_f
 
 

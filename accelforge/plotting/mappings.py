@@ -127,15 +127,15 @@ def plot_energy_comparison(mappings: Iterable[Mappings] | Mappings, labels=None)
 @first_arg_maybe_iterable
 def plot_memory_usage_breakdown(
     mappings: Iterable[Mappings] | Mappings,
-    memory_levels: set[str]=None,
-    labels: Iterable[str]=None,
+    memory_levels: set[str] = None,
+    labels: Iterable[str] = None,
 ):
     tensor2color = {}
     if memory_levels is None:
         memory_levels = set()
         for mapper_result in mappings:
             for c in mapper_result.data.columns:
-                if not USAGE/MEMORY in c:
+                if not USAGE / MEMORY in c:
                     continue
                 memory, tensor, einsum = col2memory_usage(c)
                 memory_levels.add(memory)
@@ -144,7 +144,7 @@ def plot_memory_usage_breakdown(
     tensor2color = {}
     for mapper_result in mappings:
         for c in mapper_result.data.columns:
-            if not USAGE/MEMORY in c:
+            if not USAGE / MEMORY in c:
                 continue
             memory, tensor, einsum = col2memory_usage(c)
             if tensor not in tensor2color:
@@ -165,7 +165,7 @@ def plot_memory_usage_breakdown(
 
                 einsum2tensor2usage = defaultdict(dict)
                 for c in mapper_result.data.columns:
-                    if not USAGE/MEMORY in c:
+                    if not USAGE / MEMORY in c:
                         continue
                     memory, tensor, einsum = col2memory_usage(c)
                     if memory != level:
@@ -179,7 +179,7 @@ def plot_memory_usage_breakdown(
                             einsum,
                             running_usage,
                             label=tensor,
-                            color=tensor2color[tensor]
+                            color=tensor2color[tensor],
                         )
                         running_usage -= usage
                 lines_labels.append(ax.get_legend_handles_labels())

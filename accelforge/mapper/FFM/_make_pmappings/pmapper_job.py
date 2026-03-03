@@ -51,6 +51,8 @@ def make_compatibility(
 class Job:
     spec_one_einsum: Spec | None
     metrics: Metrics
+    resource_usage_precision: float
+    objective_precision: float
     rank_variable_bounds: dict[RankVariable, int]
 
     job_id: UUID = field(default_factory=uuid4)
