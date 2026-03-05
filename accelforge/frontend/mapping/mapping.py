@@ -503,7 +503,6 @@ class Spatial(Loop):
             and super().__eq__(other)
             and self.name == other.name
             and self.component == other.component
-            and self.component_object == other.component_object
         )
 
     def _merge(self, other: "Spatial") -> "Spatial":

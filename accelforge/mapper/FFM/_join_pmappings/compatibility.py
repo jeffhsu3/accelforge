@@ -7,7 +7,6 @@ from typing import Literal, TypeVar
 
 import pandas as pd
 from accelforge.frontend.mapping import (
-    Loop,
     Mapping,
     Spatial,
     TensorHolder,
