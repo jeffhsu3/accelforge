@@ -114,6 +114,16 @@ class FFM(EvalableModel):
     are so many templates being generated?).
     """
 
+    prioritize_reuse_of_unfused_tensors: bool = False
+    """
+    If set to True, then for all memory levels, the mapper will place the storage nodes
+    of unfused tensors above those of fused tensors. This is overridden if there is any
+    tensor_order_options specified for a memory level. The result of this is that the
+    mapper will avoid mappings that repeatedly fetch unfused tensors in order to allow
+    for smaller tiles of fused tensors. This may lead to better mappings,
+    but slows down the mapper.
+    """
+
     _count_option_for_mapsapce_size_evaluation: tuple[
         Literal[
             "redundant_loop_orders",
