@@ -79,6 +79,8 @@ class Job:
 
     initial_delta_choices: dict[RankVariable, frozenset[int]] | None = None
 
+    ranks_with_tile_pattern: set[Rank] | None = None
+
     @property
     def einsum(self) -> Einsum:
         return self.spec_one_einsum.workload.einsums[self.einsum_name]

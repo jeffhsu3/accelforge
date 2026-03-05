@@ -276,6 +276,7 @@ def iterate_mappings_no_constraints(
     ranks_with_tile_pattern = {
         r for r, c in job.initial_delta_choices.items() if len(c) > 1
     }
+    job.ranks_with_tile_pattern = ranks_with_tile_pattern
 
     fanouts = {}
     fanout = 1
@@ -290,6 +291,7 @@ def iterate_mappings_no_constraints(
         first_memory,
         fusable_tensors,
         fanouts,
+        spec.mapper.prioritize_reuse_of_unfused_tensors,
     ):
         logging.info(
             "\tGenerated tensor choices: " + ", ".join(m.compact_str() for m in mapping)

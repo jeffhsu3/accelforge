@@ -77,9 +77,9 @@ def fillna_and_numeric_cast(df: pd.DataFrame, value: float) -> pd.DataFrame:
     for col in df.columns:
         # If it's an object col and all of them are integers, convert to int. nans count
         # as True
-        if df[col].dtype == object and df[col].apply(lambda x: _is_int(x)).all():
+        if df[col].dtype == object and all(_is_int(x) for x in df[col]):
             df[col] = df[col].replace(float("nan"), value).astype(int)
-        if df[col].dtype == object and df[col].apply(lambda x: _is_float(x)).all():
+        if df[col].dtype == object and all(_is_float(x) for x in df[col]):
             df[col] = df[col].replace(float("nan"), value).astype(float)
 
     cols = df.select_dtypes(include=[np.floating, float, np.integer, int]).columns

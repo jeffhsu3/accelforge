@@ -139,8 +139,8 @@ def get_jobs(
                 fusable_tensors=fusable_tensors & workload_einsum.tensor_names,
                 stride_and_halo=stride_and_halo,
                 initial_delta_choices=initial_delta_choices_for_einsum,
-                resource_usage_precision=0,  # spec.mapper._resource_usage_precision,
-                objective_precision=0,  # spec.mapper._objective_precision,
+                resource_usage_precision=0,
+                objective_precision=spec.mapper._objective_precision,
             )
             for j in make_pmapping_templates(job, print_progress):
                 jobs.setdefault(j.compatibility, SameCompatibilityJobs()).append(j)

@@ -1,9 +1,10 @@
+from copy import deepcopy
 from accelforge.mapper.FFM._join_pmappings.compatibility import Compatibility
 from collections import defaultdict
 import itertools
 import logging
 import time
-from typing import Callable
+from typing import Any, Callable
 
 from accelforge._accelerated_imports import pd, np
 from accelforge.frontend.spec import Spec
@@ -25,6 +26,7 @@ from accelforge.mapper.FFM._join_pmappings.pmapping_dataframe import (
 from accelforge.mapper.FFM._pareto_df.df_convention import (
     MAPPING_COLUMN,
     col_used_in_pareto,
+    is_reservation_col,
 )
 from accelforge.mapper.FFM._join_pmappings.pmapping_group import (
     PmappingGroup,
@@ -104,6 +106,111 @@ class OptimalityThresholder:
         return nondominated_by_all
 
 
+def join_strategy_2(
+    spec: Spec,
+    compressed: dict[EinsumName, list[PmappingGroup]],
+    print_progress: bool,
+    metrics: Metrics,
+    for_model: bool,
+    _pmapping_row_filter_function: Callable[[pd.DataFrame], np.ndarray] | None = None,
+):
+    thresholds = [1, 0]
+    thresholds = [t for t in thresholds if t > spec.mapper._objective_precision]
+    thresholds.append(spec.mapper._objective_precision)
+
+    filter_func = _pmapping_row_filter_function
+    for i, threshold in enumerate(thresholds):
+        if not for_model and print_progress:
+            if i < len(thresholds) - 1:
+                print(f"Dirty joining with objectives <= {1 + threshold}× optimal")
+            else:
+                print("Final clean join.")
+        try:
+            for p in compressed.values():
+                for pg in p:
+                    pg.mappings.objective_precision = threshold
+                    # pg.mappings.resource_usage_precision = threshold
+
+            joined = join_pmappings(
+                deepcopy(compressed),
+                spec,
+                _pmapping_row_filter_function=filter_func,
+                print_progress=print_progress,
+                metrics=metrics,
+            )
+            assert joined.objective_precision == threshold, "Lost objective precision?!"
+            if i < len(thresholds) - 1:
+                filter_func = OptimalityThresholder(
+                    joined, _pmapping_row_filter_function, print_progress
+                )
+        except Exception as e:
+            if threshold == 0:
+                raise
+            if print_progress:
+                print(f"Error with optimality threshold {threshold}: {e}")
+
+    return joined
+
+
+def multi_strategy_join(
+    spec: Spec,
+    compressed: dict[EinsumName, list[PmappingGroup]],
+    print_progress: bool,
+    metrics: Metrics,
+    for_model: bool,
+    _pmapping_row_filter_function: Callable[[pd.DataFrame], np.ndarray] | None = None,
+):
+    # If it's for the model, just join things directly
+    if for_model:
+        return join_pmappings(
+            compressed,
+            spec,
+            print_progress=print_progress,
+            metrics=metrics,
+            _pmapping_row_filter_function=_pmapping_row_filter_function,
+        )
+
+    if metrics & Metrics.RESOURCE_USAGE:
+        return join_strategy_2(
+            spec,
+            compressed,
+            print_progress,
+            metrics,
+            for_model,
+            _pmapping_row_filter_function,
+        )
+
+    resource_usage_thresholds = [0.02, 0.01, 0.001, 0.0001, 0]
+    for i, threshold in enumerate(resource_usage_thresholds):
+        for p in compressed.values():
+            for pg in p:
+                pg.mappings.resource_usage_precision = threshold
+        if i < len(resource_usage_thresholds) - 1 and print_progress:
+            print(f"Dirty joining with resource usage <= {1 + threshold}× optimal")
+        joined = join_strategy_2(
+            spec,
+            compressed,
+            print_progress,
+            metrics,
+            for_model,
+            _pmapping_row_filter_function,
+        )
+        assert joined.resource_usage_precision == threshold, "Lost resource precision?!"
+        for c in joined.data.columns:
+            if is_reservation_col(c):
+                maxvalue = joined.data[c].max()
+                if maxvalue > 1:
+                    if print_progress:
+                        oversubscribed = f"{col2nameloop(c)[0]} ({maxvalue * 100:.2f}%)"
+                        print(f"Oversubscribed {oversubscribed}. Reducing threshold...")
+                    break
+        else:
+            if print_progress:
+                print("Dirty joining returned a valid & optimal mapping! Returning...")
+            return joined
+    return joined
+
+
 def clean_compress_and_join_pmappings(
     pmappings: MultiEinsumPmappings,
     metrics: Metrics,
@@ -125,40 +232,14 @@ def clean_compress_and_join_pmappings(
         einsum2pmappings, print_progress
     )
 
-    if for_model:
-        thresholds = [0]
-    else:
-        thresholds = [10, 0.01, 0]
-
-    filter_func = _pmapping_row_filter_function
-    for i, threshold in enumerate(thresholds):
-        if not for_model and print_progress:
-            if i < len(thresholds) - 1:
-                print(f"Dirty joining with objectives <= {1 + threshold}× optimal")
-            else:
-                print("Final clean join.")
-        try:
-            for p in compressed.values():
-                for pg in p:
-                    pg.mappings.objective_precision = threshold
-                    pg.mappings.resource_usage_precision = threshold
-
-            joined = join_pmappings(
-                compressed,
-                pmappings.spec,
-                _pmapping_row_filter_function=filter_func,
-                print_progress=print_progress,
-                metrics=metrics,
-            )
-            if i < len(thresholds) - 1:
-                filter_func = OptimalityThresholder(
-                    joined, _pmapping_row_filter_function, print_progress
-                )
-        except Exception as e:
-            if threshold == 0:
-                raise
-            if print_progress:
-                print(f"Error with optimality threshold {threshold}: {e}")
+    joined = multi_strategy_join(
+        pmappings.spec,
+        compressed,
+        print_progress,
+        metrics,
+        for_model,
+        _pmapping_row_filter_function,
+    )
 
     joined = decompress_pmappings(joined, decompress_data)
 
@@ -354,6 +435,10 @@ def join_pmappings(
         pmapping_groups, ignored_resources = get_memories_to_track(
             pmapping_groups, print_progress
         )
+
+    for einsum_name, einsum_pmapping_groups in pmapping_groups.items():
+        for s in einsum_pmapping_groups:
+            s.mappings.drop_valid_reservations = drop_valid_reservations
 
     aliased_tensors = spec.workload.get_tensor_copies()
 
@@ -581,7 +666,6 @@ def join_pmappings(
                         live_tensors_with_right,
                         aliased_tensors,
                         compatibility_joined=compatibility_joined,
-                        drop_valid_reservations=drop_valid_reservations,
                         permuted_compatibility_left=compatibility_a,
                         permuted_compatibility_right=compatibility_b,
                         delay=DELAY,
@@ -608,6 +692,13 @@ def join_pmappings(
                 if k not in left:
                     for b, _ in right[k]:
                         print(f"\tREVERSE: No match for {b.compatibility} using {k}")
+
+        for l in left.values():
+            for s, _ in l:
+                s.mappings = None
+        for r in right.values():
+            for s, _ in r:
+                s.mappings = None
 
         # print_time("Bucket merging")
         def raise_no_match_error():
@@ -733,28 +824,28 @@ def join_pmappings(
         #     f'Scaled runtime by {cur_nmappings / prev_nmappings}. Runtime: {runtime[f"{prev_einsum} → {einsum}"]:.2f}'
         # )
 
-        # ======================================================================
-        # Print statements
-        # ======================================================================
-        logger.info(
-            f"\tCombining {sum(len(s) for s in left.values())}({len(left)}) x {sum(len(s) for s in right.values())}({len(right)}) -> {len(combined)}"
-        )
+        # # ======================================================================
+        # # Print statements
+        # # ======================================================================
+        # logger.info(
+        #     f"\tCombining {sum(len(s) for s in left.values())}({len(left)}) x {sum(len(s) for s in right.values())}({len(right)}) -> {len(combined)}"
+        # )
 
-        nmappings = sum(len(s.mappings.data) for s in combined)
-        for_einsum_text = f"for Einsum {right_einsum}"
-        logger.info(f"\tNumber of groups {for_einsum_text}: {len(combined)}")
-        # for c in combined:
-        #     print(f"\t\t{c.compatibility}")
-        logger.info(f"\tNumber of mappings {for_einsum_text}: {nmappings}")
-        logger.info(
-            f"\tMappings per group {for_einsum_text}: {nmappings / len(combined)}"
-        )
-        logger.info(
-            f"\tLargest left: {max(len(s2.mappings.data) for s in left.values() for s2, _ in s)}"
-        )
-        logger.info(
-            f"\tLargest right: {max(len(s2.mappings.data) for s in right.values() for s2, _ in s)}"
-        )
+        # nmappings = sum(len(s.mappings.data) for s in combined)
+        # for_einsum_text = f"for Einsum {right_einsum}"
+        # logger.info(f"\tNumber of groups {for_einsum_text}: {len(combined)}")
+        # # for c in combined:
+        # #     print(f"\t\t{c.compatibility}")
+        # logger.info(f"\tNumber of mappings {for_einsum_text}: {nmappings}")
+        # logger.info(
+        #     f"\tMappings per group {for_einsum_text}: {nmappings / len(combined)}"
+        # )
+        # logger.info(
+        #     f"\tLargest left: {max(len(s2.mappings.data) for s in left.values() for s2, _ in s)}"
+        # )
+        # logger.info(
+        #     f"\tLargest right: {max(len(s2.mappings.data) for s in right.values() for s2, _ in s)}"
+        # )
 
         # ======================================================================
         # Update left for the next iteration.
@@ -775,6 +866,7 @@ def join_pmappings(
     )
     assert len(s_final) == 1
     mappings = s_final[0].mappings
+    mappings.limit_capacity(next_shared_loop_index=-1)
     mappings.free_to_loop_index(-2)
     mappings.make_pareto()
 

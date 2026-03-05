@@ -60,7 +60,6 @@ class PmappingGroup:
         ignored_resources: set[str],
         permuted_compatibility_left: Compatibility,
         permuted_compatibility_right: Compatibility,
-        drop_valid_reservations: bool = True,
         delay: bool = False,
         _pmapping_row_filter_function: Callable[[pd.Series], bool] | None = None,
     ) -> "PmappingGroup":
@@ -93,7 +92,6 @@ class PmappingGroup:
             compatibility_left=permuted_compatibility_left,
             compatibility_right=permuted_compatibility_right,
             compatibility_joined=compatibility_joined,
-            drop_valid_reservations=drop_valid_reservations,
             _pmapping_row_filter_function=_pmapping_row_filter_function,
             ignored_resources=ignored_resources,
         )
@@ -191,7 +189,6 @@ class PmappingGroup:
                 for b in pmapping_groups[1:]:
                     if a.compatibility != b.compatibility:
                         break
-                PmappingGroup.combine_combineable((a, b), "All")
                 assert (
                     a == b
                 ), f"Cannot concat PmappingGroups with different compatibilies:\n\t{a}\n\t{b}"
@@ -204,9 +201,8 @@ class PmappingGroup:
         to_concat = [pmapping_groups[0]] + [
             s.rename_compatibility(c0) for s in pmapping_groups[1:]
         ]
-        return PmappingGroup(
-            c0, PmappingDataframe.concat([s.mappings for s in to_concat])
-        )
+        catted = PmappingDataframe.concat([s.mappings for s in to_concat])
+        return PmappingGroup(c0, catted)
 
     def rename_compatibility(self, new_c: Compatibility) -> Compatibility:
         c, renamed = self.compatibility._rename_to_match(new_c)

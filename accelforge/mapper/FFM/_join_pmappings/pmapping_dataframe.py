@@ -3,6 +3,7 @@ import copy
 import functools
 import itertools
 
+import numbers
 from typing import Callable, Iterable, Optional
 
 import sympy
@@ -22,7 +23,7 @@ from accelforge._accelerated_imports import pd
 
 from accelforge.mapper.FFM._pareto_df.df_convention import *
 from accelforge.mapper.FFM._pareto_df.pareto import makepareto
-
+from accelforge.util import NUMPY_FLOAT_TYPE
 
 CHECK_CORRECTNESS = False
 
@@ -57,33 +58,11 @@ def error_check_wrapper(func):
 
 
 def reduce_precision(data: pd.DataFrame) -> pd.DataFrame:
-    def _reduce_precision(c: str, s: pd.Series) -> pd.Series:
-        # If it's an int type, check the range. If within range of 8b change to 8b. If
-        # within the range of 16b change to 16b...
-
-        # If it's a float, cast to NUMPY_FLOAT_TYPE
-        if pd.api.types.is_float_dtype(s) and s.dtype != NUMPY_FLOAT_TYPE:
-            return s.astype(NUMPY_FLOAT_TYPE)
-
-        if not is_fused_loop_col(c):
-            return s
-
-        # Get the range of the column
-        min_val = s.min()
-        if min_val < 0:
-            return s
-
-        max_val = s.max()
-        if max_val <= 2**8 - 1 and s.dtype != np.uint8:
-            return s.astype(np.uint8)
-        elif max_val <= 2**16 - 1 and s.dtype != np.uint16:
-            return s.astype(np.uint16)
-        elif max_val <= 2**32 - 1 and s.dtype != np.uint32:
-            return s.astype(np.uint32)
-        return s
-
-    for c in data.columns:
-        data.loc[:, c] = _reduce_precision(c, data.loc[:, c])
+    for col in data.columns:
+        if isinstance(data[col].dtype, numbers.Integral):
+            data[col] = pd.to_numeric(data[col], downcast="integer")
+        if isinstance(data[col].dtype, numbers.Real):
+            data[col] = data[col].astype(NUMPY_FLOAT_TYPE)
 
     return data
 
@@ -95,6 +74,8 @@ class PmappingDataframe:
         n_total_pmappings: float,
         n_valid_pmappings: float,
         ignored_resources: set[str],
+        resource_usage_precision: float,
+        objective_precision: float,
         skip_pareto: bool = False,
         fill_reservation_cols: set | str = fzs(),
         check_above_subset_below: bool = CHECK_CORRECTNESS,
@@ -102,8 +83,6 @@ class PmappingDataframe:
         next_shared_loop_index: int = None,
         parallelize_pareto: bool = False,
         limit_capacity_drop_valid_reservations: bool = True,
-        resource_usage_precision: float = 0,
-        objective_precision: float = 0,
     ):
         self._data: pd.DataFrame = reduce_precision(data)
         self.right_reservations: dict[set] = None
@@ -115,6 +94,7 @@ class PmappingDataframe:
         self.n_valid_pmappings: float = n_valid_pmappings
         self.resource_usage_precision: float = resource_usage_precision
         self.objective_precision: float = objective_precision
+        self.drop_valid_reservations: bool = limit_capacity_drop_valid_reservations
 
         if next_shared_loop_index is not None:
             assert (
@@ -123,7 +103,6 @@ class PmappingDataframe:
             self.free_to_loop_index(loop_index=next_shared_loop_index)
             self.limit_capacity(
                 next_shared_loop_index=next_shared_loop_index,
-                drop_valid_reservations=limit_capacity_drop_valid_reservations,
                 ignored_resources=ignored_resources,
             )
             self._check_reservations()
@@ -424,7 +403,6 @@ class PmappingDataframe:
         compatibility_right: Compatibility,
         compatibility_joined: Compatibility,
         ignored_resources: set[str],
-        drop_valid_reservations: bool = True,
         _pmapping_row_filter_function: Callable[[pd.Series], bool] | None = None,
     ) -> "PmappingDataframe":
         """
@@ -606,6 +584,7 @@ class PmappingDataframe:
             n_valid_pmappings=n_valid_pmappings,
             ignored_resources=self.ignored_resources,
             resource_usage_precision=self.resource_usage_precision,
+            objective_precision=self.objective_precision,
         )
         # Remove tensors that were allocated in both branches and got added
         # together.
@@ -628,9 +607,7 @@ class PmappingDataframe:
         result.free_to_loop_index(next_shared_loop_index, live_tensors=live_tensors)
         if not CHECK_CORRECTNESS:
             result.limit_capacity(
-                next_shared_loop_index,
-                drop_valid_reservations,
-                ignored_resources=ignored_resources,
+                next_shared_loop_index, ignored_resources=ignored_resources
             )
         result.max_right_to_left()
         if _pmapping_row_filter_function is not None:
@@ -754,20 +731,19 @@ class PmappingDataframe:
         args.update(kwargs)
         return PmappingDataframe(**args)
 
-    def copy(self) -> "PmappingDataframe":
+    def copy(self, copy_df: bool = True) -> "PmappingDataframe":
         return self.update(
-            data=self.data.copy(),
+            data=self.data.copy() if copy_df else self.data,
             skip_pareto=True,
             check_above_subset_below=False,
         )
-        return p
 
     def limit_capacity(
         self,
         next_shared_loop_index: int = None,
-        drop_valid_reservations: bool = True,
         ignored_resources: set[str] = set(),
     ):
+        precision = self.resource_usage_precision
         dropcols = []
         for resource in sorted(
             set(self.right_reservations) | set(self.left_reservations)
@@ -779,13 +755,15 @@ class PmappingDataframe:
             if right_loops:
                 n = max(right_loops)
                 col = nameloop2col(resource, n)
-                self._data = self.data[self.data[col] <= 1]
+                self._data = self.data[self.data[col] <= 1 + precision]
             for l in list(right_loops):
+                col = nameloop2col(resource, l)
                 if (
                     l == 0
                     and next_shared_loop_index == -1
-                    and drop_valid_reservations
+                    and self.drop_valid_reservations
                     and resource not in ignored_resources
+                    and (precision == 0 or not any(self.data[col] > 1))
                 ):
                     right_loops.discard(l)
                     dropcols.append(col)
@@ -795,11 +773,12 @@ class PmappingDataframe:
             left_loops = self.left_reservations.get(resource, set())
             for l in list(left_loops):
                 col = nameloop2col(resource, l, left=True)
-                self._data = self.data[self.data[col] <= 1]
+                self._data = self.data[self.data[col] <= 1 + precision]
                 if (
                     l == 0
-                    and drop_valid_reservations
+                    and self.drop_valid_reservations
                     and resource not in ignored_resources
+                    and (precision == 0 or not any(self.data[col] > 1))
                 ):
                     left_loops.discard(l)
                     dropcols.append(col)
@@ -809,12 +788,14 @@ class PmappingDataframe:
 
     def make_pareto(self, columns: list[str] = None, parallelize: bool = False):
         self._check_reservations()
+        resources_are_objectives = not self.drop_valid_reservations
         self._data = makepareto(
             self.data,
             columns,
             parallelize=parallelize,
             resource_usage_precision=self.resource_usage_precision,
             objective_precision=self.objective_precision,
+            use_objective_precision_for_resource_usage=resources_are_objectives,
         )
         self._check_reservations()
 

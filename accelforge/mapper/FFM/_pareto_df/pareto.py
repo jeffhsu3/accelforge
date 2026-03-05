@@ -178,15 +178,13 @@ def pareto_front_cupy_blockwise_sorted_recursive(X, block_size=2000):
 
 
 def round_to_precision(x: pd.Series, precision: float) -> pd.Series:
-    return logscale_to_precision(x, precision)
-
     if precision == 0:
         return x
-    maxval = x.max()
-    minval = x.min()
-    x = (x - minval) / (maxval - minval)
+    # maxval = x.max()
+    # minval = x.min()
+    # x = (x - minval) / (maxval - minval)
     x = np.round(x / precision) * precision
-    return x * (maxval - minval) + minval
+    return x  # * (maxval - minval) + minval
 
 
 def logscale_to_precision(x: pd.Series, precision: float) -> pd.Series:
@@ -205,6 +203,7 @@ def makepareto(
     split_by_cols: list[str] = (),
     resource_usage_precision: float = 0,
     objective_precision: float = 0,
+    use_objective_precision_for_resource_usage: bool = False,
 ) -> pd.DataFrame:
     # return makepareto_time_compare(mappings)
     if columns is None:
@@ -224,19 +223,21 @@ def makepareto(
         if mappings[c].nunique() <= 1:
             continue
 
-        if c in columns and is_objective_col(c):  # or col_used_in_pareto(c)):
+        if c in columns and is_objective_col(c):
             to_pareto.append(logscale_to_precision(mappings[c], objective_precision))
             goals.append("min")
         elif c in split_by_cols:
             to_pareto.append(mappings[c])
             goals.append("diff")
         elif c in columns:
-            if col2nameloop(c) is not None and resource_usage_precision != 0:
-                to_pareto.append(
-                    round_to_precision(mappings[c], resource_usage_precision)
-                )
-            else:
-                to_pareto.append(mappings[c])
+            x = mappings[c]
+            if col2nameloop(c) is not None:
+                if use_objective_precision_for_resource_usage:
+                    if objective_precision != 0:
+                        x = logscale_to_precision(x, objective_precision)
+                elif resource_usage_precision != 0:
+                    x = logscale_to_precision(x, resource_usage_precision)
+            to_pareto.append(x)
             goals.append("min")
 
     if not to_pareto:
@@ -301,6 +302,8 @@ def makepareto_numpy(
         if precisions[c] is not None:
             precision_type, precision = precisions[c]
             if precision_type == "round":
+                if precision != 0:
+                    assert False, "I thought I removed these from tile shape making"
                 rounded = round_to_precision(mappings[:, c], precision)
             elif precision_type == "logscale":
                 rounded = logscale_to_precision(mappings[:, c], precision)

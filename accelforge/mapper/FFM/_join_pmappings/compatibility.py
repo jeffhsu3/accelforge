@@ -102,10 +102,20 @@ class Loop(Updatable):
     def clear_loop_bound(self, value=0):
         return self.update(tile_pattern=value)
 
-    def populate(self, nloop: int) -> "Loop":
+    def populate(self, nloop: int, ranks_with_tile_pattern: set[Rank]) -> "Loop":
+        initial = (
+            initial2col(self.rank_name, nloop)
+            if self.rank_name in ranks_with_tile_pattern
+            else None
+        )
+        tile_shape = (
+            stride2col(self.rank_name, nloop)
+            if self.rank_name in ranks_with_tile_pattern
+            else None
+        )
         tile_pattern = TilePattern(
-            tile_shape=stride2col(self.rank_name, nloop),
-            initial_tile_shape=initial2col(self.rank_name, nloop),
+            tile_shape=tile_shape,
+            initial_tile_shape=initial,
             calculated_n_iterations=iterations2col(nloop),
         )
         return self.update(tile_pattern=tile_pattern)
@@ -178,9 +188,12 @@ class TensorReservation(Updatable):
     def clear_loop_bounds(self) -> "Reservation":
         return self.update(loops=tuple(loop.clear_loop_bound() for loop in self.loops))
 
-    def populate_loops(self) -> "TensorReservation":
+    def populate_loops(self, ranks_with_tile_pattern: set[Rank]) -> "TensorReservation":
         return self.update(
-            loops=tuple(loop.populate(nloop) for nloop, loop in enumerate(self.loops))
+            loops=tuple(
+                loop.populate(nloop, ranks_with_tile_pattern)
+                for nloop, loop in enumerate(self.loops)
+            )
         )
 
     @staticmethod
@@ -379,7 +392,7 @@ class Compatibility(Updatable):
         return self.__repr__()
 
     def __repr__(self):
-        return f"Compatibility(n_loops={self.n_loops}, tensors={repr(self.tensors)}), splits={repr(self.splits)}"
+        return f"Compatibility(n_loops={self.n_loops}, tensors={repr(self.tensors)}, splits={repr(self.splits)}, reservation_indices={repr(self.reservation_indices)})"
 
     def _and_tensors_with_names(self, names: set[str]) -> "Compatibility":
         return fzs(s for s in self.tensors if s.name in names)
@@ -495,9 +508,11 @@ class Compatibility(Updatable):
         #             return False
         # return True
 
-    def populate_loops(self):
+    def populate_loops(self, ranks_with_tile_pattern: set[Rank]):
         return self.update(
-            tensors=fzs(t.populate_loops() for t in self.tensors),
+            tensors=fzs(
+                t.populate_loops(ranks_with_tile_pattern) for t in self.tensors
+            ),
         )
 
     @classmethod

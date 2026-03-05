@@ -231,7 +231,9 @@ def make_pmappings_from_templates(
         except Exception as e:
             e.add_note(f"Einsum {jwsc.einsum_name} compatibility {job.compatibility}")
             raise
-        job.compatibility = job.compatibility.populate_loops()
+        job.compatibility = job.compatibility.populate_loops(
+            job.ranks_with_tile_pattern
+        )
 
         # Ctrl-F for CONTIGUOUS_ITERATION_SPACE_DISCUSSION TODO: Turn tensor2pmapping
         # into per-tensor compatibility
@@ -289,6 +291,8 @@ def make_pmappings_from_templates(
                 # False because we may have lifetimes that stretch through this Einsum
                 # due to data dependencies, not loops
                 limit_capacity_drop_valid_reservations=False,
+                resource_usage_precision=job.resource_usage_precision,
+                objective_precision=job.objective_precision,
             )
             for r in results
         ],
@@ -317,6 +321,7 @@ def make_pmappings_from_templates(
         split_by_cols=fused_loop_cols,
         resource_usage_precision=job0.resource_usage_precision,
         objective_precision=job0.objective_precision,
+        use_objective_precision_for_resource_usage=not limit_capacity_drop_valid_reservations,
     ).copy()
 
     jobs_passed_pareto = sorted(df[f"{einsum_name}<SEP>{MAPPING_COLUMN}"].unique())

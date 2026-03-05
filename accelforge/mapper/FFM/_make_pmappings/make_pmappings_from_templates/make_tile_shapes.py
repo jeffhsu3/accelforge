@@ -1728,6 +1728,9 @@ def _calculate_iterations_and_rank_columns(
     pmapping: list[MappingNode], job: "Job", df: pd.DataFrame, shape: dict[str, int]
 ):
     loops = [n for n in pmapping if isinstance(n, Loop)]
+
+    ranks_with_tile_pattern = job.ranks_with_tile_pattern
+
     # Some initial tile shapes are invalid
     for nloops, n in enumerate(loops):
         if not n._fused:
@@ -1775,6 +1778,13 @@ def _calculate_iterations_and_rank_columns(
             tensor = tensor_access.name
             projections = get_projection_expr(einsum, tensor)
             for rank, expr in projections.items():
+
+                if (
+                    ranks_with_tile_pattern is not None
+                    and rank not in ranks_with_tile_pattern
+                ):
+                    continue
+
                 free_symbols = tuple(expr.free_symbols)
                 free_symbols_str = tuple(symbol.name for symbol in free_symbols)
                 if n.rank_variable not in free_symbols_str:
