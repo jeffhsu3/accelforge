@@ -25,6 +25,7 @@ def get_tensor_choices(
     first_memory: arch.Memory,
     fusable_tensors: set[TensorName],
     fanouts: dict[str, int],
+    prioritize_reuse_of_unfused_tensors: bool,
 ) -> Generator[tuple[list[TensorHolder], SymbolTable, arch.Compute], None, None]:
     nodes, compute = nodes[:-1], nodes[-1]
     # while True:
@@ -70,7 +71,9 @@ def get_tensor_choices(
         #         base_mapping.append(node)
 
         # Get the dataflow constraints for the mapping
-        required_order = get_tensor_order_constraint(nodes, symbol_table, tensors)
+        required_order = get_tensor_order_constraint(
+            nodes, symbol_table, tensors, prioritize_reuse_of_unfused_tensors
+        )
 
         symbol_table["arch_attributes"] = {}
         cur_compute = compute._eval_expressions(
@@ -99,7 +102,9 @@ def get_tensor_choices(
             yield mapping, symbol_table, cur_compute
 
 
-def get_tensor_order_constraint(nodes, symbol_table, tensors):
+def get_tensor_order_constraint(
+    nodes, symbol_table, tensors, prioritize_reuse_of_unfused_tensors: bool
+):
     required_order: dict[str, list[Order]] = {}
     for node in nodes:
         if isinstance(node, arch.Container):
@@ -110,6 +115,25 @@ def get_tensor_order_constraint(nodes, symbol_table, tensors):
             must_copy=False,
             location=f"arch.{node.name}.tensors",
         )[0]
+        tensor_order_options = list(node_tensors.tensor_order_options)
+        if prioritize_reuse_of_unfused_tensors and not tensor_order_options:
+            tensor_order_options.append(
+                [
+                    eval_set_expression(
+                        f"Above",
+                        symbol_table,
+                        "tensors",
+                        f"arch.{node.name}.tensor_order_options",
+                    ),
+                    eval_set_expression(
+                        f"~Above",
+                        symbol_table,
+                        "tensors",
+                        f"arch.{node.name}.tensor_order_options",
+                    ),
+                ]
+            )
+
         for order_constraint in node_tensors.tensor_order_options:
             order = Order()
             for together_tensors in order_constraint:
