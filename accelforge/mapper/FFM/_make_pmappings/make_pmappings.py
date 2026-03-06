@@ -270,17 +270,18 @@ def get_memories_to_track(
     # pmapping exploration but can drop it immediately
     for m in list(memories_track_all):
         must_track = False
-        for job in jobs:
-            seen = False
-            for node in job.mapping.nodes:
-                if isinstance(node, TensorHolder) and node.component == m:
-                    seen = True
-                    if node.persistent:
-                        ignored_resources.add(m)
-                    if node._backing:
+        for _, jobs in einsum2jobs.items():
+            for job in jobs:
+                seen = False
+                for node in job.mapping.nodes:
+                    if isinstance(node, TensorHolder) and node.component == m:
+                        seen = True
+                        if node.persistent:
+                            ignored_resources.add(m)
+                        if node._backing:
+                            must_track = True
+                    if isinstance(node, Loop) and node._fused and seen:
                         must_track = True
-                if isinstance(node, Loop) and node._fused and seen:
-                    must_track = True
 
         if not must_track:
             memories_track_all.remove(m)
