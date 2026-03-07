@@ -82,6 +82,7 @@ class OptimalityThresholder:
         for i in chosen_indices.astype(int):
             self.compare_to.append({c: compare_to.iloc[i][c] for c in compare_cols})
             if print_progress:
+                print(f'Filtering out pmappings worse than the following:')
                 print(
                     "\t"
                     + "    ".join(
@@ -160,6 +161,10 @@ def multi_strategy_join(
     for_model: bool,
     _pmapping_row_filter_function: Callable[[pd.DataFrame], np.ndarray] | None = None,
 ):
+    for _, p in compressed.items():
+        for pg in p:
+            pg.mappings.drop_valid_reservations = not (Metrics.RESOURCE_USAGE & metrics)
+
     # If it's for the model, just join things directly
     if for_model:
         return join_pmappings(

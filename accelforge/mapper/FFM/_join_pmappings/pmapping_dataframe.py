@@ -122,13 +122,13 @@ class PmappingDataframe:
         ignored_resources: set[str],
         resource_usage_precision: float,
         objective_precision: float,
+        drop_valid_reservations: bool,
         skip_pareto: bool = False,
         fill_reservation_cols: set | str = fzs(),
         check_above_subset_below: bool = CHECK_CORRECTNESS,
         max_right_to_left: bool = False,
         next_shared_loop_index: int = None,
         parallelize_pareto: bool = False,
-        limit_capacity_drop_valid_reservations: bool = True,
     ):
         self._data: pd.DataFrame = reduce_precision(data)
         self._prev_free_to_loop_index = None
@@ -137,7 +137,7 @@ class PmappingDataframe:
         self.n_valid_pmappings: float = n_valid_pmappings
         self.resource_usage_precision: float = resource_usage_precision
         self.objective_precision: float = objective_precision
-        self.drop_valid_reservations: bool = limit_capacity_drop_valid_reservations
+        self.drop_valid_reservations: bool = drop_valid_reservations
 
         if next_shared_loop_index is not None:
             assert (
@@ -614,6 +614,7 @@ class PmappingDataframe:
             ignored_resources=self.ignored_resources,
             resource_usage_precision=self.resource_usage_precision,
             objective_precision=self.objective_precision,
+            drop_valid_reservations=self.drop_valid_reservations,
         )
         # Remove tensors that were allocated in both branches and got added
         # together.
@@ -742,6 +743,7 @@ class PmappingDataframe:
             ignored_resources=next(iter(paretos)).ignored_resources,
             resource_usage_precision=next(iter(paretos)).resource_usage_precision,
             objective_precision=next(iter(paretos)).objective_precision,
+            drop_valid_reservations=next(iter(paretos)).drop_valid_reservations,
         )
         return p
 
@@ -759,6 +761,7 @@ class PmappingDataframe:
             ignored_resources=self.ignored_resources,
             resource_usage_precision=self.resource_usage_precision,
             objective_precision=self.objective_precision,
+            drop_valid_reservations=self.drop_valid_reservations,
         )
         args.update(kwargs)
         return PmappingDataframe(**args)

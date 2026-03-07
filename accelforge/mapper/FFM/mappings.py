@@ -321,7 +321,7 @@ class Mappings:
             that are either a single value or a list of values.
         """
         new = self.data.to_dict(orient="list")
-        if list_if_one_mapping and len(self) == 1:
+        if len(self) == 1 and not list_if_one_mapping:
             new = {k: v[0] for k, v in new.items()}
         return new
 

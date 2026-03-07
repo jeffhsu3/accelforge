@@ -190,6 +190,7 @@ def evaluate_mapping(
                     ignored_resources=set(),
                     resource_usage_precision=job.resource_usage_precision,
                     objective_precision=job.objective_precision,
+                    drop_valid_reservations=False,
                 ),
             )
         ]

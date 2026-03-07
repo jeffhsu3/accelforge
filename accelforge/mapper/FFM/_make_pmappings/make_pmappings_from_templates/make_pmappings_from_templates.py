@@ -273,7 +273,7 @@ def make_pmappings_from_templates(
     fusable_tensors = jwsc.fusable_tensors
     einsum_name = jwsc.einsum_name
     metrics = jwsc.metrics
-    limit_capacity_drop_valid_reservations = not (Metrics.RESOURCE_USAGE & metrics)
+    drop_valid_reservations = not (Metrics.RESOURCE_USAGE & metrics)
     compatibility = jwsc.compatibility
 
     # Creating a PmappingDataframe fills in reservation columns since different pmappings
@@ -289,8 +289,12 @@ def make_pmappings_from_templates(
                 n_valid_pmappings=1,  # Unused for now, just making an initial Pareto
                 ignored_resources=job.ignored_resources,
                 # False because we may have lifetimes that stretch through this Einsum
-                # due to data dependencies, not loops
-                limit_capacity_drop_valid_reservations=False,
+                # due to data dependencies, not loops. For example, if we have no fused
+                # loops, we can't free our reservations because another Einsum may
+                # reserve a resource that lasts through us because it needs to propagate
+                # to another Einsum. drop_valid_reservations is turned on later at the
+                # joining stage because we have full information of live tensors then.
+                drop_valid_reservations=False,
                 resource_usage_precision=job.resource_usage_precision,
                 objective_precision=job.objective_precision,
             )
@@ -321,7 +325,7 @@ def make_pmappings_from_templates(
         split_by_cols=fused_loop_cols,
         resource_usage_precision=job0.resource_usage_precision,
         objective_precision=job0.objective_precision,
-        use_objective_precision_for_resource_usage=not limit_capacity_drop_valid_reservations,
+        use_objective_precision_for_resource_usage=not drop_valid_reservations,
     ).copy()
 
     jobs_passed_pareto = sorted(df[f"{einsum_name}<SEP>{MAPPING_COLUMN}"].unique())
@@ -397,9 +401,13 @@ def make_pmappings_from_templates(
             skip_pareto=next_shared_loop_index_this_group == next_shared_loop_index,
             ignored_resources=job.ignored_resources
             | set(job.memories_track_pmappings_only),
-            # False because we may have lifetimes that stretch through this Einsum
-            # due to data dependencies, not loops
-            limit_capacity_drop_valid_reservations=False,
+            # False because we may have lifetimes that stretch through this Einsum due
+            # to data dependencies, not loops. For example, if we have no fused loops,
+            # we can't free our reservations because another Einsum may reserve a
+            # resource that lasts through us because it needs to propagate to another
+            # Einsum. drop_valid_reservations is turned on later at the joining stage
+            # because we have full information of live tensors then.
+            drop_valid_reservations=False,
             resource_usage_precision=job0.resource_usage_precision,
             objective_precision=job0.objective_precision,
         )
