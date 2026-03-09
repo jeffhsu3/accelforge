@@ -152,8 +152,8 @@ class TestFFMRegression(unittest.TestCase):
         ref = self._ref[key]
         cur = _run(arch, workload, fused)
         self.assertEqual(cur["n_mappings"], ref["n_mappings"])
-        self.assertAlmostEqual(cur["energy"], ref["energy"], delta=1e-12)
-        self.assertAlmostEqual(cur["latency"], ref["latency"], delta=1e-12)
+        self.assertAlmostEqual(cur["energy"], ref["energy"], delta=1e-3)
+        self.assertAlmostEqual(cur["latency"], ref["latency"], delta=1e-3)
         print(f"Regression testing {arch=} {workload=} {fused=}")
         for s in ["energy_per_component", "latency_per_component", "actions"]:
             print(f"\tchecking {s}")

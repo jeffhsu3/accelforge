@@ -37,10 +37,11 @@ class TestPmappingExploration(unittest.TestCase):
         pmapping_groups, decompress_data = pmapping_cache.set(make_pmappings(spec))
         for per_einsum_pmappings in pmapping_groups.values():
             for pmapping_group in per_einsum_pmappings:
+                _, right_reservations = pmapping_group.mappings._make_reservations()
                 for (
                     resource,
                     levels,
-                ) in pmapping_group.mappings.right_reservations.items():
+                ) in right_reservations.items():
                     for level in levels:
                         self.assertTrue(
                             nameloop2col(resource, level)

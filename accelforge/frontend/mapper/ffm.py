@@ -135,12 +135,17 @@ class FFM(EvalableModel):
 
     objective_tolerance: float = 0
     """
-    Objectives may be suboptimal within (1 +/- tolerance).
+    Reduces memory usage and runtime for the mapper. When set to a nonzero value, the
+    mapper may return mappings up to (1 + tolerance)× optimal. Also see
+    resource_usage_tolerance to further reduce mapper memory usage and runtime.
     """
 
     resource_usage_tolerance: float = 0
     """
-    Pmappings with resource usage > (1 - tolerance) may be dropped. Must be between 0
-    and 1. If zero, then no dropping is performed. If Metrics.RESOURCE_USAGE is set,
-    then this is ignored.
+    Reduces memory usage and runtime for the mapper. When set to a nonzero value, the
+    mapper may drop mappings with resource usage > (1 - tolerance)× optimal. The mapper
+    is guaranteed to return all Pareto-optimal mappings with resource usage below this,
+    and perhaps more. If Metrics.RESOURCE_USAGE is set, then this is ignored. Setting
+    this, as well as objective_tolerance, to a greater-than-zero value will reduce
+    memory usage for the mapper.
     """
