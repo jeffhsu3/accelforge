@@ -594,6 +594,12 @@ def analyze_reuse_and_add_reservations_to_mapping(
         for node in mapping:
             print(f"\t{node.compact_str()}")
 
+        print('Per-tensor mapping:')
+        for tensor, mapping in result.tensor2mapping.items():
+            print(f"\t{tensor}")
+            for node in mapping.nodes:
+                print(f"\t\t{node.compact_str()}")
+
         for buffet, stats in result.buffet_stats.items():
             print(f"Einsum {buffet.einsum} tensor {buffet.tensor} level {buffet.level}")
             print(f"\tTotal reads to parent: {stats.total_reads_to_parent}")
@@ -608,6 +614,8 @@ def analyze_reuse_and_add_reservations_to_mapping(
             print(f"\tTotal writes to peer: {stats.total_writes_to_peer}")
             print(f"\tMax per unit reads to peer: {stats.max_per_unit_reads_to_peer}")
             print(f"\tMax per unit writes to peer: {stats.max_per_unit_writes_to_peer}")
+            print(f"\tMax occupancy: {stats.max_occupancy}")
+            print(f"\tN loops above: {stats.n_loops_above}")
 
     return result
 

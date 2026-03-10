@@ -1568,7 +1568,7 @@ def get_tile_shape_choices(
                                 ]
                             elif complete:
                                 valid |= result == (
-                                    result.min()
+                                    result.max()
                                     if isinstance(result, np.ndarray)
                                     else result
                                 )
