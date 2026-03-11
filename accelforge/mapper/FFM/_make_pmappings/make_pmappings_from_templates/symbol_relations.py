@@ -1,4 +1,5 @@
 from collections import defaultdict
+from functools import lru_cache
 from numbers import Number
 
 from sympy import Symbol
@@ -25,6 +26,7 @@ class SymbolRelations:
         )
         self.bounds = tuple((s, 1, self.get_max_size(s)) for s in all_symbols)
 
+    @lru_cache(maxsize=100)
     def is_stride(self, symbol: Symbol) -> bool:
         """Check if `symbol` is a stride."""
         for tile_shape, initial in self.tile_shape_and_initial:
@@ -34,6 +36,7 @@ class SymbolRelations:
                 return False
         return True
 
+    @lru_cache(maxsize=100)
     def is_initial_tile_shape(self, symbol: Symbol) -> bool:
         """Check if `symbol` is a initial tile shape."""
         for tile_shape, initial in self.tile_shape_and_initial:
@@ -43,6 +46,7 @@ class SymbolRelations:
                 return True
         return False
 
+    @lru_cache(maxsize=100)
     def get_tile_shape(
         self, symbol: Symbol, none_if_fail: bool = False
     ) -> Symbol | int:
@@ -60,6 +64,7 @@ class SymbolRelations:
             return found
         raise ValueError(f"Symbol {symbol} not found as initial in {self}")
 
+    @lru_cache(maxsize=100)
     def get_initial(self, symbol: Symbol, none_if_fail: bool = False) -> Symbol | int:
         found = None
         for tile_shape, initial in self.tile_shape_and_initial:
@@ -81,6 +86,7 @@ class SymbolRelations:
                 return choices
         raise ValueError(f"Symbol {symbol} not found in {self}")
 
+    @lru_cache(maxsize=100)
     def get_inner_tiles(
         self, symbol: Symbol, none_if_fail: bool = False
     ) -> Symbol | int | None:
@@ -98,6 +104,7 @@ class SymbolRelations:
             return found
         raise ValueError(f"Symbol {symbol} not found in {self}")
 
+    @lru_cache(maxsize=100)
     def get_outer_tiles(
         self, symbol: Symbol, none_if_fail: bool = False
     ) -> Symbol | int | None:
@@ -115,6 +122,7 @@ class SymbolRelations:
             return found
         raise ValueError(f"Symbol {symbol} not found in {self}")
 
+    @lru_cache(maxsize=100)
     def get_max_size(self, symbol: Symbol) -> Number:
         while not isinstance(symbol, Number):
             symbol = self.get_outer_tiles(symbol)

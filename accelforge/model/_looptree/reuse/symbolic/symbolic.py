@@ -594,7 +594,7 @@ def analyze_reuse_and_add_reservations_to_mapping(
         for node in mapping:
             print(f"\t{node.compact_str()}")
 
-        print('Per-tensor mapping:')
+        print("Per-tensor mapping:")
         for tensor, mapping in result.tensor2mapping.items():
             print(f"\t{tensor}")
             for node in mapping.nodes:

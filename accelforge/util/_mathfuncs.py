@@ -8,6 +8,7 @@ import numpy as np
 
 NUMPY_FLOAT_TYPE = np.float32
 
+
 @functools.lru_cache(maxsize=None)
 def _count_factorizations_imperfect(n, into_n_parts):
     # Factorize n into into_n_parts parts

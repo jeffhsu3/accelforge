@@ -1094,6 +1094,9 @@ def get_tile_shape_choices(
                 "one_rv_at_a_time", "smallest_first"
             )
 
+        for o in objectives:
+            o._formula_subs_one = o.formula.subs({g: 1 for g in symbols_enumerated})
+
         def hybrid(s):
             keep = s in keep_symbols
 
@@ -1101,7 +1104,7 @@ def get_tile_shape_choices(
             score = 0
             all_symbols = set(symbols_enumerated)
             for o in objectives:
-                f = o.formula.subs({g: 1 for g in symbols_enumerated})
+                f = o._formula_subs_one
                 n_symbols = sum(1 for _ in f.atoms(Symbol))
                 score += o.formula.count(s) / max(1, n_symbols)
 
@@ -1377,7 +1380,14 @@ def get_tile_shape_choices(
         if alt_objectives_first:
             prune_by = prune_by[::-1]
 
-        for cur_objectives in prune_by:
+        for i, cur_objectives in enumerate(prune_by):
+
+            # There's diminishing returns with more sets of Pareto objectives, so only
+            # attempt multiple sets if there's a lot of choices already and we really
+            # need to control the number of choices.
+            if i > 0 and len(choices_enumerated) < 1000000:
+                break
+
             # ==========================================================================
             # Create initial Pareto-finding goals
             # ==========================================================================
@@ -1742,11 +1752,6 @@ def get_tile_shape_choices(
                 #         cur_symbol = choices_enumerated[:, i]
                 #         matched &= cur_symbol == expected_shapes[s]
                 # assert np.sum(matched) > 0
-
-            # There's diminishing returns with more sets of Pareto objectives, so only
-            # attempt multiple sets if there's a lot of choices already.
-            if len(choices_enumerated) < 1000000:
-                break
 
     # ==================================================================================
     # Return the choices
