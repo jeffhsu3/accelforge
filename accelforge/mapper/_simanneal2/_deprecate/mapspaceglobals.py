@@ -215,7 +215,7 @@ class MapspaceGlobals:
                 if t not in pm_group_list[0].tensor_names:
                     continue
                 for sim in pm_group_list:
-                    tensor = sim.compatibility.get_tensor_by_name(t)
+                    tensor = sim.compatibility.get_reservation_of_tensor(t)
                     cur_memories.add(tensor)
                 possible_memories.append(cur_memories)
             if possible_memories:

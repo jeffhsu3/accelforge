@@ -53,7 +53,7 @@ class PmappingGroup:
     def merge_next(
         self,
         right: "PmappingGroup",
-        live_tensors: set[str],
+        live_tensors_post_join: set[str],
         live_tensors_with_right: set[str],
         aliased_tensors: dict[str, set[str]],
         compatibility_joined: Compatibility,
@@ -64,14 +64,20 @@ class PmappingGroup:
         _pmapping_row_filter_function: Callable[[pd.Series], bool] | None = None,
     ) -> "PmappingGroup":
         shared_loop_index = self.compatibility.shared_loop_index(
-            right.compatibility.tensor_names | live_tensors
+            right.compatibility.tensor_names | live_tensors_post_join
         )
-        next_shared_loop_index = compatibility_joined.shared_loop_index(live_tensors)
+        assert shared_loop_index == self.compatibility.n_loops-1, \
+            "shared loop index not equal to left pmapping n_loops - 1"
+        next_shared_loop_index = compatibility_joined.shared_loop_index(live_tensors_post_join)
+        assert next_shared_loop_index == compatibility_joined.n_loops - 1, \
+            "next shared loop index not equal to joined pmapping n_loops - 1"
+        assert compatibility_joined.tensor_names.issubset(live_tensors_post_join), \
+            "joined compatibility includes tensors not live after joining"
 
         still_live_reservations = [
             r
             for r in self.compatibility.tensors
-            if r.name in live_tensors and r.name not in right.compatibility.tensor_names
+            if r.name in live_tensors_post_join and r.name not in right.compatibility.tensor_names
         ]
 
         duplicated_aliased_tensors = set()
@@ -84,10 +90,6 @@ class PmappingGroup:
 
         mapping = delayed(self.mappings.merge_next)(
             right.mappings,
-            shared_loop_index,
-            next_shared_loop_index,
-            live_tensors_with_right,
-            still_live_reservations,
             duplicated_aliased_tensors,
             compatibility_left=permuted_compatibility_left,
             compatibility_right=permuted_compatibility_right,

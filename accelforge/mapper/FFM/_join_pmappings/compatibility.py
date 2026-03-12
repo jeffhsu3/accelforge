@@ -334,7 +334,7 @@ class Compatibility(Updatable):
         )
         tensors = []
         for t in self.tensors:
-            other_t = other.get_tensor_by_name(t.name)
+            other_t = other.get_reservation_of_tensor(t.name)
             t, new_renames = t._rename_to_match(other_t)
             tensors.append(t)
             _update_rename_dict(renames, new_renames)
@@ -482,7 +482,7 @@ class Compatibility(Updatable):
         ]
         return [(self.permute(p), p) for p in all_permutations]
 
-    def get_tensor_by_name(self, tensor: str) -> TensorReservation:
+    def get_reservation_of_tensor(self, tensor: str) -> TensorReservation:
         for s in self.tensors:
             if s.name == tensor:
                 return s

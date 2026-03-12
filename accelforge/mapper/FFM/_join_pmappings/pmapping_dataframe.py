@@ -413,10 +413,6 @@ class PmappingDataframe:
     def merge_next(
         self,
         right: "PmappingDataframe",
-        shared_loop_index: int,
-        next_shared_loop_index: int,
-        live_tensors: set[int],
-        still_live_reservations: set[TensorReservation],
         duplicated_aliased_tensors: set[TensorReservation],
         compatibility_left: Compatibility,
         compatibility_right: Compatibility,
@@ -441,14 +437,18 @@ class PmappingDataframe:
               |
               F2+D
         """
-        self.free_to_loop_index(shared_loop_index, live_tensors=live_tensors)
+        live_tensors = compatibility_joined.tensor_names
+        shared_loop_index = compatibility_left.n_loops-1
+        next_shared_loop_index = compatibility_joined.n_loops-1
+
+        self.free_to_loop_index(shared_loop_index)
         self.shift_bottom_reservation_left(shared_loop_index)
 
         shared_tensor_names = (
             compatibility_left.tensor_names & compatibility_right.tensor_names
         )
         shared_tensors = [
-            compatibility_left.get_tensor_by_name(s) for s in shared_tensor_names
+            compatibility_left.get_reservation_of_tensor(s) for s in shared_tensor_names
         ]
         left_match, right_match = [], []
         make_empty_result = False
@@ -463,8 +463,8 @@ class PmappingDataframe:
 
         try:
             for s in shared_tensor_names:
-                ta = compatibility_left.get_tensor_by_name(s)
-                tb = compatibility_right.get_tensor_by_name(s)
+                ta = compatibility_left.get_reservation_of_tensor(s)
+                tb = compatibility_right.get_reservation_of_tensor(s)
                 for la, lb in zip(ta.loops, tb.loops):
                     check_match(la, lb, "initial_tile_shape")
                     check_match(la, lb, "tile_shape")
@@ -617,8 +617,13 @@ class PmappingDataframe:
         shared_to_free = [
             s for s in shared_tensors if s.above_loop_index <= shared_loop_index
         ]
+        reservations_of_live_tensor_not_in_right = [
+            compatibility_joined.get_reservation_of_tensor(t)
+            for t in compatibility_joined.tensor_names - compatibility_right.tensor_names
+        ]
         live_to_alloc = [
-            s for s in still_live_reservations if s.above_loop_index > shared_loop_index
+            r for r in reservations_of_live_tensor_not_in_right
+            if r.above_loop_index > shared_loop_index
         ]
         result.adjust_reservations(
             alloc=live_to_alloc,
