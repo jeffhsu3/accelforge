@@ -687,6 +687,7 @@ class PmappingDataframe:
             )
             if source:
                 add_to_col(self.data, target, source)
+                add_to_col(self.data, target, size)
             else:
                 self.data[target] = size
 
