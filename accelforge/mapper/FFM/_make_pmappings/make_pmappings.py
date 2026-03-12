@@ -144,7 +144,8 @@ def get_jobs(
                 objective_tolerance=spec.mapper.objective_tolerance,
                 resource_usage_tolerance=spec.mapper.resource_usage_tolerance,
                 workload_n_einsums=n_einsums,
-                intermediate_tensors=intermediate_tensors,
+                intermediate_tensors=intermediate_tensors
+                & workload_einsum.tensor_names,
             )
             for j in make_pmapping_templates(job, print_progress):
                 jobs.setdefault(j.compatibility, SameCompatibilityJobs()).append(j)
