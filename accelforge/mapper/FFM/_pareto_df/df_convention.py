@@ -127,6 +127,8 @@ def col2energy(colname: str) -> ActionKey | VerboseActionKey:
 
 
 ReservationKey = namedtuple("ReservationKey", ["name", "nloops"])
+
+
 @dict_cached
 def col2reservation(x: str) -> ReservationKey | None:
     """Format: reservation name nloops left"""

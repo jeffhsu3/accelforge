@@ -203,7 +203,7 @@ def multi_strategy_join(
     # If it's for the model, just join things directly
     if for_model:
         return join_pmappings(
-            compressed,
+            deepcopy(compressed),
             spec,
             print_progress=print_progress,
             metrics=metrics,
@@ -241,7 +241,9 @@ def multi_strategy_join(
                 maxvalue = joined.data[c].max()
                 if maxvalue > 1:
                     if print_progress:
-                        oversubscribed = f"{col2reservation(c).name} ({maxvalue * 100:.2f}%)"
+                        oversubscribed = (
+                            f"{col2reservation(c).name} ({maxvalue * 100:.2f}%)"
+                        )
                         print(f"Oversubscribed {oversubscribed}. Reducing threshold...")
                     break
         else:
