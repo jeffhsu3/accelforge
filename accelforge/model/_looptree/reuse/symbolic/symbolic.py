@@ -383,8 +383,9 @@ class SymbolicAnalysisOutput:
         # assert self.temporal_steps == other.temporal_steps, "BUG"
         self.temporal_steps.update(other.temporal_steps)
         self.symbols.extend([s for s in other.symbols if s not in self.symbols])
-        # Assert compute stats are the same
-        # assert self.compute_stats == other.compute_stats, "BUG"
+        for key in self.compute_stats:
+            if key in other.compute_stats:
+                assert self.compute_stats[key].total_ops == other.compute_stats[key].total_ops
 
     def add_network_stats(self, other: "SymbolicAnalysisOutput"):
         assert not (set(self.network_stats) & set(other.network_stats)), "BUG"
@@ -413,6 +414,16 @@ class AnalysisInfo:
     tensor_to_reservation_backer_id: dict[TensorName, int] = field(default_factory=dict)
 
     data_movement_connections: DataMovementConnections = None
+
+    # For a given tensor, we may rearrange irrelevant loops, which nominally would
+    # affect the iteration count and tile shapes. However, they're irrelevant, so we can
+    # just track the iteration count for the canonical order and that's sufficient.
+    precomputed_iterations: dict[int, Any] = field(default_factory=dict)
+
+    # True during the initial pass that records loop iteration counts.
+    is_recording_iterations: bool = False
+
+    tensor_rank_variables: set = field(default_factory=set)
 
     # We track first latency for these nodes (should be Temporal)
     last_temporal_node_idx: int = None
@@ -512,7 +523,7 @@ def analyze_reuse_and_add_reservations_to_mapping(
 
     einsum_tensor_to_projection = {}
     einsum = workload.einsums[einsum_name]
-    all_tensors = einsum.tensor_names
+    all_tensors = sorted(einsum.tensor_names)
     for tensor in all_tensors:
         einsum_tensor_to_projection[(einsum_name, tensor)] = get_projection_expr(
             einsum, tensor
@@ -554,21 +565,32 @@ def analyze_reuse_and_add_reservations_to_mapping(
        performing such analysis until the outermost storage node for a particular memory
        has been analyzed.
     """
+
+    # The first iteration (tensor=None) runs on the original mapping to record the
+    # correct iteration count for every loop.  Per-tensor mappings may reorder
+    # spatial/temporal loops for rank variables irrelevant to the tensor. This changes
+    # the iteration counts and tile shapes for the loops, so we use the precomputed
+    # iteration counts from the original mapping order. The tile shapes don't matter
+    # because we only do it for irrelevant loops.
+
     result = None
+    precomputed_iterations = {}
 
     tensor2mapping = {}
-    index_expressions = set(einsum.indexing_expressions)
-    for k, v in job.rank_variable_bounds.items():
-        index_expressions.add(f"0 < {k} <= {v}")
-    for tensor in all_tensors:
-        cur_mapping = job.mapping._get_single_tensor_mapping(
-            tensor, job.flattened_arch, index_expressions
-        )
+    for tensor in [None] + all_tensors:
+        if tensor is None:
+            cur_mapping = job.mapping
+        else:
+            cur_mapping = job.mapping._get_single_tensor_mapping(
+                tensor, job.flattened_arch,
+                tensor_rank_variables=einsum.tensor2rank_variables.get(tensor),
+            )
+
         info = AnalysisInfo(
             mapping=cur_mapping.nodes,
             workload=workload,
             full_rank_variable_shapes=job.rank_variable_bounds,
-            all_tensors=set([tensor]),
+            all_tensors=set([tensor]) if tensor is not None else set(),
             einsum_tensor_to_projection=einsum_tensor_to_projection,
             tensor_to_relevancy=tensor_to_relevancy,
             tensor_to_backer_id=tensor_to_backer_id,
@@ -577,8 +599,15 @@ def analyze_reuse_and_add_reservations_to_mapping(
             data_movement_connections=DataMovementConnections.from_pmapping(
                 cur_mapping.nodes
             ),
+            precomputed_iterations=precomputed_iterations,
+            tensor_rank_variables=einsum.tensor2rank_variables.get(tensor, set()),
+            is_recording_iterations=tensor is None,
         )
         cur_result = analyze_node(0, job.rank_variable_bounds, info)
+
+        if tensor is None:
+            continue  # Recording pass only; don't merge results.
+
         if result is None:
             result = cur_result
         else:
@@ -800,12 +829,42 @@ def analyze_node(node_idx, current_shape, info: AnalysisInfo) -> SymbolicAnalysi
     return class2analysis_function[type(node)](node_idx, current_shape, info)
 
 
+def _loop_stride_and_shape(node, current_shape, node_idx, info):
+    """Get the stride-and-shape for a loop node.
+
+    During the initial analysis pass (is_recording_iterations), records each
+    loop's iteration count into info.precomputed_iterations.
+
+    During per-tensor passes, loops whose rank variable is irrelevant to the
+    tensor may have been reordered relative to other loops on the same rank
+    variable, giving them a wrong current_shape. For those loops, the
+    iteration count is replaced with the value recorded during the initial
+    pass.
+    """
+    # For irrelevant loops that may have been reordered, use the precomputed
+    # iteration count from the original mapping order.
+    if (
+        not info.is_recording_iterations
+        and node.rank_variable not in info.tensor_rank_variables # True -> irrelevant
+    ):
+        n_iters = info.precomputed_iterations[id(node)]
+        stride = node.tile_shape
+        return StrideAndShape(stride, RepeatedValue(stride, n_iters))
+
+    stride_and_shape = get_stride_and_tile_shape(node, current_shape, node_idx, info)
+
+    if info.is_recording_iterations:
+        info.precomputed_iterations[id(node)] = stride_and_shape.shape.repeats
+
+    return stride_and_shape
+
+
 def analyze_temporal(
     node_idx, current_shape, info: AnalysisInfo
 ) -> SymbolicAnalysisOutput:
     mapping = info.mapping
     node = mapping[node_idx]
-    stride_and_shape = get_stride_and_tile_shape(node, current_shape, node_idx, info)
+    stride_and_shape = _loop_stride_and_shape(node, current_shape, node_idx, info)
 
     result_accumulator = SymbolicAnalysisOutput()
 
@@ -884,7 +943,7 @@ def analyze_spatial(node_idx, current_shape, info: AnalysisInfo):
     node_dim = node.name
     spatial_component = find_component_object(node.component, info.job.flattened_arch)
     component_spatial_dim = spatial_component.spatial[node_dim]
-    stride_and_shape = get_stride_and_tile_shape(node, current_shape, node_idx, info)
+    stride_and_shape = _loop_stride_and_shape(node, current_shape, node_idx, info)
 
     result_accumulator = SymbolicAnalysisOutput()
 
@@ -1351,6 +1410,10 @@ class RepeatedValue[T]:
 @dataclass
 class SequenceOfRepatedvalues[T]:
     sequence: list[RepeatedValue[T]]
+
+    @property
+    def repeats(self):
+        return sum(rv.repeats for rv in self.sequence)
 
 
 @dataclass

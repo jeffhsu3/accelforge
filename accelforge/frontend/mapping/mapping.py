@@ -1287,7 +1287,7 @@ class Nested(MappingNodeWithChildren):
         self,
         tensor_name: TensorName,
         flattened_arch: list[arch.Leaf],
-        indexing_expressions: set[str],
+        tensor_rank_variables: set[str],
     ) -> Self:
         """
         Ctrl-F for CONTIGUOUS_ITERATION_SPACE_DISCUSSION
@@ -1450,59 +1450,40 @@ class Nested(MappingNodeWithChildren):
             prev_idx2 = prev_node2idx[id(node2)]
             if isinstance(node, TensorHolder) and isinstance(node2, TensorHolder):
                 assert (idx1 > idx2) == (prev_idx1 > prev_idx2), "BUG"
-            # Because of the reordering above, may lower loops beneath tensor holders
-            # and temporal loops in order to place them as low as possble above the
-            # fanout.
-            # elif isinstance(node, TensorHolder) and isinstance(node2, Spatial):
-            #     assert (idx1 > idx2) == (prev_idx1 > prev_idx2), "BUG"
-            # elif isinstance(node, Spatial) and isinstance(node2, TensorHolder):
-            #     assert (idx1 > idx2) == (prev_idx1 > prev_idx2), "BUG"
             elif isinstance(node, Spatial) and isinstance(node2, Spatial):
                 assert (idx1 > idx2) == (prev_idx1 > prev_idx2), "BUG"
 
-        # for m in mapping:
-        #   print(m.compact_str())
-        # for n in self.nodes:
-        #   print(n.compact_str())
-
-        # Check for spatial/temporal loops that have been reordered. These ones can not
-        # co-exist because the tiling is inconsistent.
-        # Ctrl-F for CONTIGUOUS_ITERATION_SPACE_DISCUSSION
-        from accelforge.frontend.workload import isl_expression_has_variable
-
+        # Check for spatial/temporal loops that have been reordered for the
+        # same rank variable. These can't co-exist because the tiling is
+        # inconsistent. OK for irrelevant loops.
         node2idx = {id(node): i for i, node in enumerate(self.nodes)}
         for node1, node2 in itertools.combinations(mapping, 2):
-            # Both must be loops
             if not isinstance(node1, Loop) or not isinstance(node2, Loop):
                 continue
-            # Must have been reordered
             if node2idx[id(node1)] <= node2idx[id(node2)]:
                 continue
-            # Must affect the same rank variable expression
-            for expr in indexing_expressions:
-                if not isl_expression_has_variable(expr, node1.rank_variable):
-                    continue
-                if not isl_expression_has_variable(expr, node2.rank_variable):
-                    continue
+            if node1.rank_variable not in tensor_rank_variables:
+                continue
+            if node1.rank_variable != node2.rank_variable:
+                continue
+            s = """
+            In the given mapping, there exists (potentially with other nodes in
+            between) a spatial loop above a temporal loop above a storage node,
+            where the loops index into the same indexing expression, and the storage
+            node is not fanned out by the spatial loop. This is not allowed.
 
-                s = """
-                In the given mapping, there exists (potentially with other nodes in
-                between) a spatial loop above a temporal loop above a storage node,
-                where the loops index into the same indexing expression, and the storage
-                node is not fanned out by the spatial loop. This is not allowed.
+            Mapping:
+            """
+            s = s.replace("                ", "")
 
-                Mapping:
-                """
-                s = s.replace("                ", "")
+            to_add = []
+            for n in self.nodes:
+                if id(n) == id(node1) or id(n) == id(node2):
+                    to_add.append(f"\t{n.compact_str()} <-- Offending Loop")
+                else:
+                    to_add.append(f"\t{n.compact_str()}")
 
-                to_add = []
-                for n in self.nodes:
-                    if id(n) == id(node1) or id(n) == id(node2):
-                        to_add.append(f"\t{n.compact_str()} <-- Offending Loop")
-                    else:
-                        to_add.append(f"\t{n.compact_str()}")
-
-                raise ValueError(s + "\n".join(to_add))
+            raise ValueError(s + "\n".join(to_add))
 
         return type(self)(nodes=mapping)
 

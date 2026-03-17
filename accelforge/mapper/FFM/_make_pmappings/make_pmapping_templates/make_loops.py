@@ -80,7 +80,6 @@ def insert_temporal_loops(
     for k, v in tensor2partially_relevant_rank_vars.items():
         tensor2partially_relevant_rank_vars[k] = v - tensor2fully_relevant_rank_vars[k]
     tensor2irrelevant_rank_vars = einsum.tensor2irrelevant_rank_variables
-    tensor2rank_vars = einsum.tensor2rank_variables
     tensors = einsum.tensor_names
 
     is_fused_loops = True
@@ -175,11 +174,12 @@ def insert_temporal_loops(
 
         # If the fanout is about to increase, then spatial loops may be placed below the
         # current node. There may have been constrained temporal loops earlier that need
-        # to be placed here, so we won't prohibit any loops.
+        # to be placed here, so we won't prohibit any loops. TODO:
+        # CONTIGUOUS_ITERATION_SPACE_DISCUSSION: This causes all loops to be added, but
+        # really we only need to re-add the ones that may conflict with a spatial loop.
         if someone_elses_spatials_may_be_placed_below:
             pass
         else:
-
             # Optimality-preserving optimization: Loops below tolls aren't helpful
             # because there is no storage. Ctrl-F for
             # CONTIGUOUS_ITERATION_SPACE_DISCUSSION: Can't do this if we may put another
@@ -189,18 +189,13 @@ def insert_temporal_loops(
             if prev_storages and isinstance(prev_storages[0], Toll):
                 rank_variables &= set()
 
-            # Generally we want to only use rank variables that are irrelevant to the
-            # previous tensors, else we'd just lower those tensors. However, we can't
-            # lower backing TensorHolder nodes because this will add loops to
-            # compatibility.
-
             # Optimality-preserving optimization: We can trivially lower non-backing
             # TensorHolder nodes through fully-relevant loops. Can't do this if the
-            # loops are fused because that'd add loops to the compatibility. Ctrl-F
-            # forCONTIGUOUS_ITERATION_SPACE_DISCUSSION: Can't do this if we may put
-            # another node's spatial loops below this one, because lowering would add
-            # move the spatials down, which would constrain the temporals due to
-            # spatial-temporal crossing.
+            # loops are fused because that'd add loops to the compatibility.
+            # CONTIGUOUS_ITERATION_SPACE_DISCUSSION: Can't do this if we may put another
+            # node's spatial loops below this one, because lowering would add move the
+            # spatials down, which would constrain the temporals due to spatial-temporal
+            # crossing.
             for s in prev_storages:
                 for t in s.tensors:
                     if t not in s._backing and not s._must_be_here:
@@ -209,14 +204,12 @@ def insert_temporal_loops(
             # Optimality-preserving optimization: We can trivially raise TensorHolder
             # nodes through irrelevant unfused loops. Can't do this if the loops are
             # fused because that'd increase the lifetime of the TensorHolder node. Can't
-            # do this if the irrelevant rank variables partially-relevant to the
+            # do this if the irrelevant rank variables are partially-relevant to the
             # previous tensors, since that affects the permutation. See
             # CONTIGUOUS_ITERATION_SPACE_DISCUSSION: Can't do this if we may put another
             # node's spatial loops above this one, because raising would add move the
             # temporals down, which would constrain them due to spatial-temporal
-            # crossing. TODO: CONTIGUOUS_ITERATION_SPACE_DISCUSSION: This causes all
-            # loops to be added, but really we only need to re-add the ones that may
-            # conflict with a spatial loop.
+            # crossing.
             if not is_fused_loops:
                 for s in next_storages:
                     if not s._must_be_here:
@@ -321,9 +314,16 @@ def insert_spatial_loops(
     tensor2fully_relevant_rank_vars = einsum.tensor2directly_indexing_rank_variables
 
     for node in nodes_with_fanout:
-        insertion_point = _idx_of_highest_tensor_holder_with_component_below_fanout(
+        # Insert spatials below the lowest storage node whose component is
+        # above the fanout in the arch, and below any temporal loops in the
+        # same block.
+        insertion_point = _idx_below_lowest_tensor_holder_with_component_above_fanout(
             node, mapping, arch_node_names
         )
+        while insertion_point < len(mapping) and isinstance(
+            mapping[insertion_point], Temporal
+        ):
+            insertion_point += 1
 
         # No recomputation: If we haven't seen a tensor yet, must only iterate over
         # fully-relevant rank variables.
@@ -357,17 +357,19 @@ def _tensors_seen_above_point(idx, mapping):
     return seen_tensors
 
 
-def _idx_of_highest_tensor_holder_with_component_below_fanout(
+def _idx_below_lowest_tensor_holder_with_component_above_fanout(
     fanout_node, mapping, arch_node_names
 ):
+    """Return the index right after the lowest TensorHolder whose component
+    is above the fanout in the arch. If none found, returns len(mapping)."""
+    fanout_arch_idx = arch_node_names.index(fanout_node.name)
+    result = len(mapping)
     for i in range(len(mapping)):
         if not isinstance(mapping[i], TensorHolder):
             continue
-        if arch_node_names.index(mapping[i].component) >= arch_node_names.index(
-            fanout_node.name
-        ):
-            return i
-    return len(mapping)
+        if arch_node_names.index(mapping[i].component) < fanout_arch_idx:
+            result = i + 1
+    return result
 
 
 def canonical_loop_orders(
