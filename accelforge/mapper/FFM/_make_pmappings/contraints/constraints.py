@@ -250,7 +250,8 @@ def get_constraints(
                 constraint = _TileShapeConstraintLambda(c, new_nodes, exp)
                 constraints.tile_shape_constraints.append(constraint)
 
-        exp = symbol_table[m.name] & m.tensors.no_refetch_from_above
+        no_refetch = mapping[index].component_object.tensors.no_refetch_from_above
+        exp = symbol_table[m.name] & no_refetch
 
         nodes = []
         for no_refetch in exp.iter_one_element_sets():
