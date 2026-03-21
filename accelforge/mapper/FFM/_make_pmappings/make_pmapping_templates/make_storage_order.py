@@ -9,8 +9,8 @@ from accelforge.frontend.mapping import MappingNode, Toll, TensorHolder
 from accelforge.frontend.spec import Spec
 from accelforge.frontend.workload import TensorName, SymbolTable
 from accelforge.util._eval_expressions import MATH_FUNCS
-from accelforge.util._setexpressions import eval_set_expression
 
+from accelforge.util._frozenset import oset
 from accelforge.mapper.FFM._make_pmappings.make_pmapping_templates.make_storages import (
     make_storage_choices_all_levels,
 )
@@ -25,19 +25,21 @@ def get_tensor_choices(
     first_memory: arch.Memory,
     fusable_tensors: set[TensorName],
     fanouts: dict[str, int],
+    prioritize_reuse_of_unfused_tensors: bool,
 ) -> Generator[tuple[list[TensorHolder], SymbolTable, arch.Compute], None, None]:
     nodes, compute = nodes[:-1], nodes[-1]
-    while True:
-        if not nodes:
-            return
-        if not isinstance(nodes[0], arch.Memory):
-            nodes = nodes[1:]
-            continue
-        assert isinstance(nodes[0].enabled, bool)
-        if not nodes[0].enabled:
-            nodes = nodes[1:]
-            continue
-        break
+    # while True:
+    #     if not nodes:
+    #         return
+    #     if not isinstance(nodes[0], arch.Memory):
+    #         nodes = nodes[1:]
+    #         continue
+    #     assert isinstance(nodes[0].enabled, bool)
+    #     if not nodes[0].enabled:
+    #         nodes = nodes[1:]
+    #         continue
+    #     break
+    nodes = list(filter(lambda n: isinstance(n, arch.TensorHolder), nodes))
 
     tensors = spec.workload.einsums[einsum_name].tensor_names
     is_copy_op = spec.workload.einsums[einsum_name].is_copy_operation
@@ -52,8 +54,9 @@ def get_tensor_choices(
         symbol_table=symbol_table,
         is_copy_op=is_copy_op,
         persistent_tensors=persistent_tensors,
-        seen_tensors=set(),
+        seen_tensors=oset(),
         einsum_name=einsum_name,
+        prioritize_reuse_of_unfused_tensors=prioritize_reuse_of_unfused_tensors,
     ):
         x = [y for z in choice.values() for y in z]
         logging.info(
@@ -63,13 +66,20 @@ def get_tensor_choices(
 
         # Start out the mapping with the outermost memory name
         base_mapping = []
-        # for node in list(all_tensor_holders[::-1]):
-        #     if node.component == first_tensor_holder.name:
-        #         all_tensor_holders.remove(node)
-        #         base_mapping.append(node)
+
+        # make_storage_chocies_all_levels will parse the "tensors" field for each node,
+        # and we'll want those parsed values for later steps. This code grabs it from
+        # the nodes in the mapping. We only check the first storage node for each memory
+        # level since they're all the same.
+        parsed_nodes_in_mapping = []
+        for k, v in choice.items():
+            for s in v[:1]:
+                parsed_nodes_in_mapping.append(s.component_object)
 
         # Get the dataflow constraints for the mapping
-        required_order = get_tensor_order_constraint(nodes, symbol_table, tensors)
+        required_order = get_tensor_order_constraint(
+            parsed_nodes_in_mapping, symbol_table, tensors
+        )
 
         symbol_table["arch_attributes"] = {}
         cur_compute = compute._eval_expressions(
@@ -100,10 +110,18 @@ def get_tensor_choices(
 
 def get_tensor_order_constraint(nodes, symbol_table, tensors):
     required_order: dict[str, list[Order]] = {}
+    seen_tensors = oset()
     for node in nodes:
         if isinstance(node, arch.Container):
             continue
-        for order_constraint in node.tensors.tensor_order_options:
+        node_tensors: arch.Tensors = node.tensors._eval_expressions(
+            symbol_table=symbol_table,
+            musteval_tryeval_to=True,
+            must_copy=False,
+            location=f"arch.{node.name}.tensors",
+        )[0]
+        tensor_order_options = list(node_tensors.tensor_order_options)
+        for order_constraint in tensor_order_options:
             order = Order()
             for together_tensors in order_constraint:
                 in_mapping_together_tensors = [
@@ -116,6 +134,7 @@ def get_tensor_order_constraint(nodes, symbol_table, tensors):
                     order.add_together_tensors(in_mapping_together_tensors)
             if order.order:
                 required_order.setdefault(node.name, []).append(order)
+        seen_tensors.update(node_tensors.keep)
     return required_order
 
 
@@ -157,7 +176,7 @@ def recursive_order_tensor_choices(
     # immediately
     if is_copy_op:
         tensor_holders = [node for node in mapping if isinstance(node, TensorHolder)]
-        if set().union(*[t._backing for t in tensor_holders]) == tensors:
+        if oset().union(*[t._backing for t in tensor_holders]) == tensors:
             check_has_tensors(mapping)
             yield mapping
             return
@@ -315,7 +334,7 @@ def valid_tensor_holder_order(
                         continue
 
                     good = True
-                    for t1, t2 in product(mapping[i].tensors, mapping[j].tensors):
+                    for t1, t2 in product(m0.tensors, m1.tensors):
                         idx_of_i_in_order = order_choice.index(t1)
                         idx_of_j_in_order = order_choice.index(t2)
 
@@ -332,7 +351,7 @@ def valid_tensor_holder_order(
                 if len(memory_to_satisfied_constraints[s1]) == 0:
                     return False, reason
 
-            if not (set(m0.tensors) & set(m1.tensors)):
+            if not (oset(m0.tensors) & oset(m1.tensors)):
                 continue
 
             if i < j and s2_idx < s1_idx:
@@ -348,17 +367,17 @@ def valid_tensor_holder_order(
             ):
                 if same_fanout and (i == j or i == j - 1):
                     if s1_idx < s2_idx and not (
-                        (set(m0._must_keep_tensors) & set(m1.tensors)) or either_backing
+                        (oset(m0._must_keep_tensors) & oset(m1.tensors)) or either_backing
                     ):
-                        shared = set(m0._must_keep_tensors) & set(m1.tensors)
+                        shared = oset(m0._must_keep_tensors) & oset(m1.tensors)
                         return (
                             False,
                             f"{shared} stored in back-to-back storage nodes, and could have bypassed the outer one.",
                         )
                     if s2_idx < s1_idx and not (
-                        (set(m1._must_keep_tensors) & set(m0.tensors)) or either_backing
+                        (oset(m1._must_keep_tensors) & oset(m0.tensors)) or either_backing
                     ):
-                        shared = set(m1._must_keep_tensors) & set(m0.tensors)
+                        shared = oset(m1._must_keep_tensors) & oset(m0.tensors)
                         return (
                             False,
                             f"{shared} is stored in back-to-back storage nodes, and could have bypassed the outer one.",

@@ -11,6 +11,7 @@ import uuid
 from tqdm import tqdm
 
 import accelforge.frontend.arch as arch
+from accelforge.util._frozenset import oset
 from accelforge.frontend.mapping import (
     Compute,
     Loop,
@@ -20,6 +21,7 @@ from accelforge.frontend.mapping import (
     TensorHolder,
     Temporal,
 )
+from accelforge.frontend.renames import Rank
 from accelforge.frontend.spec import Spec
 from accelforge.frontend._workload_isl._isl import get_rank_variable_bounds
 from accelforge.frontend._workload_isl._symbolic import (
@@ -35,7 +37,6 @@ from accelforge.frontend.workload import (
     EinsumName,
     RankVariable,
     Workload,
-    isl_expression_has_variable,
     SymbolTable,
 )
 from accelforge.mapper.FFM._make_pmappings.make_pmapping_templates.make_storage_order import (
@@ -56,7 +57,11 @@ from accelforge.mapper.FFM._make_pmappings.pmapper_job import (
     Job,
     SameEinsumJobs,
 )
-from accelforge.model._looptree.reuse.symbolic import label_fused_loops
+from accelforge.mapper.FFM._join_pmappings.compatibility import Compatibility
+from accelforge.model._looptree.reuse.symbolic import (
+    label_fused_loops,
+    quick_insert_reservation_nodes,
+)
 
 
 def unpack_loops_to_rank_variables(mapping: List[MappingNode]):
@@ -135,58 +140,58 @@ def remove_unordered_spatial_temporal_loops(
     for node in flattened_arch:
         fanouts[node.name] = (fanout := fanout * node.get_fanout())
 
-    index_exprs = einsum.indexing_expressions
+    # TensorHolders' tiles include the full iteration space of temporal loops below
+    # them. If all of the following are true:
+    # - Any later spatials have <= the fanout of this TensorHolder
+    # - There's a temporal loop between the TensorHolder and the Spatial
+    # - The temporal/spatial have the same rank variable
+    # - The rank variable indexes into the tensor
+    #
+    # Then the temporal/spatial pair will result in a non-contiguous tile of the
+    # iteration space, which is not supported and must be removed.
 
-    # Remove a temporal loop if:
-    # - It's between a spatial loop and a storage node above that fanout in the arch
-    # - It indexes into one of the same indexing expressions as the spatial loop
 
+    tensor2rvs = einsum.tensor2rank_variables
     disallowed_combinations: list[tuple[set[int], set[int]]] = []
     for i, node in enumerate(mapping):
-        if not isinstance(node, Spatial):
+        # Track TensorHolders that have been seen and the rank variables that affect
+        # them
+        if not isinstance(node, TensorHolder):
             continue
 
-        last_idx_to_check = _idx_of_lowest_tensor_holder_with_component_above_fanout(
-            mapping, i, fanouts, node
-        )
-        to_check = mapping[i + 1 : last_idx_to_check]
-        to_remove = set()
-        for n in to_check:
-            if isinstance(n, Temporal):
-                for expr in index_exprs:
-                    if not isl_expression_has_variable(expr, node.rank_variable):
-                        continue
-                    if not isl_expression_has_variable(expr, n.rank_variable):
-                        continue
-                    to_remove.add(id(n))
-                    break
+        relevent_rvs = oset.union(*[tensor2rvs[t] for t in node.tensors])
 
-        if to_remove:
-            disallowed_combinations.append((set([id(node)]), to_remove))
+        # Find the last spatial whose component's fanout is <= the TensorHolder's
+        # component fanout. This spatial will affect the TensorHolder's tile.
+        check_up_to = i
+        for j, node2 in enumerate(mapping[i+1:]):
+            if isinstance(node2, Spatial):
+                if fanouts[node.component] >= fanouts[node2.component]:
+                    check_up_to = i + j + 1
+
+        # Find all temporal and spatial loops between the TensorHolder and the last
+        # spatial that affects it.
+        rv2spatial = {}
+        rv2temporal = {}
+        for node2 in mapping[i+1:check_up_to]:
+            if isinstance(node2, Spatial) and node2.rank_variable in relevent_rvs:
+                rv2spatial.setdefault(node2.rank_variable, []).append(node2)
+            if isinstance(node2, Temporal):
+                rv2temporal.setdefault(node2.rank_variable, []).append(node2)
+
+        for shared_rv in sorted(oset(rv2spatial) & oset(rv2temporal) & relevent_rvs):
+            disallowed_combinations.append((
+                tuple(id(x) for x in rv2spatial[shared_rv]),
+                tuple(id(x) for x in rv2temporal[shared_rv]),
+            ))
 
     if not explore_unordered_spatial_loops:
         disallowed_combinations = [x[1:] for x in disallowed_combinations]
 
     for combo in itertools.product(*disallowed_combinations):
-        combo = set.union(set(), *combo)
+        combo = oset.union(oset(), *combo)
         yield [n for n in mapping if id(n) not in combo]
 
-
-def _idx_of_lowest_tensor_holder_with_component_above_fanout(
-    mapping, start_idx, fanouts, node
-):
-    """
-    Return idx of lowest tensor holder with component above fanout. If none
-    found, returns index right under start idx (start_idx + 1).
-    """
-    for j in range(len(mapping) - 1, start_idx, -1):
-        n = mapping[j]
-        if (
-            isinstance(n, TensorHolder)
-            and fanouts[n.component] < fanouts[node.component]
-        ):
-            return j
-    return start_idx + 1
 
 
 def pad_with_bottom_loops(mapping: list[MappingNode], einsum: Einsum):
@@ -229,12 +234,12 @@ def assert_proper_fusion_labeling(
     fusable_tensors: set[TensorName],
     check_loops: bool = True,
 ):
-    tensors = set()
+    tensors = oset()
     for i, t in enumerate(mapping):
         if not isinstance(t, TensorHolder):
             continue
 
-        new = (set(t.tensors) - tensors) & fusable_tensors
+        new = (oset(t.tensors) - tensors) & fusable_tensors
 
         if new and check_loops:
             for j in range(i):
@@ -247,55 +252,6 @@ def assert_proper_fusion_labeling(
         ) == new, f"Node {i} backing missing {new - t._backing} in {' '.join(m.compact_str() for m in mapping)}"
         tensors.update(new)
         tensors.update(t.tensors)
-
-
-def get_initial_delta_choices(einsum_name: str, workload: Workload):
-    stride_and_halo = get_stride_and_halo(workload)
-    einsum = workload.einsums[einsum_name]
-
-    choices = defaultdict(lambda: set([0]))
-    consumer_chains = []
-    stack = [[(None, einsum)]]
-    while stack:
-        cur_chain = stack.pop()
-        last_tensor, last_einsum = cur_chain[-1]
-        for tensor in last_einsum.output_tensor_names:
-            einsums_with_tensor_as_input = workload.einsums_with_tensor_as_input(tensor)
-
-            if len(einsums_with_tensor_as_input) == 0:
-                consumer_chains.append(cur_chain)
-
-            for next_einsum in einsums_with_tensor_as_input:
-                stack.append(cur_chain + [(tensor, next_einsum)])
-
-    for chain in consumer_chains:
-        for (_, producer), (tensor, consumer) in zip(
-            list(reversed(chain))[1:], reversed(chain)
-        ):
-            rank_stride_and_halo = stride_and_halo[(consumer.name, tensor)]
-            if tensor is None:
-                break  # done
-
-            for cons_rank_var in consumer.rank_variables:
-                for prod_rank_var in producer.rank_variables:
-                    for cons_choice in choices[cons_rank_var]:
-                        if (prod_rank_var, cons_rank_var) not in rank_stride_and_halo:
-                            continue
-                        stride, halo = rank_stride_and_halo[
-                            (prod_rank_var, cons_rank_var)
-                        ]
-                        choices[prod_rank_var].add(cons_choice * stride + halo)
-
-    return choices
-
-
-def get_ranks_with_tile_pattern(producer_name: EinsumName, workload: Workload):
-    initial_choices = get_initial_delta_choices(producer_name, workload)
-    return {
-        rank_var
-        for rank_var in workload.einsums[producer_name].rank_variables
-        if len(initial_choices[rank_var]) > 1
-    }
 
 
 def iterate_mappings_no_constraints(
@@ -313,11 +269,14 @@ def iterate_mappings_no_constraints(
     if first_memory is None:
         raise ValueError("No memory found in architecture")
 
-    ranks_with_tile_pattern = get_ranks_with_tile_pattern(einsum_name, spec.workload)
-
     einsum = spec.workload.einsums[einsum_name]
     symbol_table = {r.name: r.source for r in einsum.renames}
     fusable_tensors = job.fusable_tensors
+
+    ranks_with_tile_pattern = {
+        r for r, c in job.initial_delta_choices.items() if len(c) > 1
+    }
+    job.ranks_with_tile_pattern = ranks_with_tile_pattern
 
     fanouts = {}
     fanout = 1
@@ -332,6 +291,7 @@ def iterate_mappings_no_constraints(
         first_memory,
         fusable_tensors,
         fanouts,
+        spec.mapper.prioritize_reuse_of_unfused_tensors,
     ):
         logging.info(
             "\tGenerated tensor choices: " + ", ".join(m.compact_str() for m in mapping)
@@ -348,9 +308,14 @@ def iterate_mappings_no_constraints(
             flattened_arch,
             spec.mapper.max_fused_loops,
             fanouts,
+            fusable_tensors,
+            job.intermediate_tensors,
+            spec.mapper._let_non_intermediate_tensors_respawn_in_backing_storage,
         ):
             mapping = copy.deepcopy(mapping)
-            insert_spatial_loops(mapping, einsum, flattened_arch)
+            insert_spatial_loops(
+                mapping, einsum, flattened_arch, job.intermediate_tensors
+            )
             mapping = unpack_loops_to_rank_variables(mapping)
             if spec.mapper._timeloop_style_even:
                 mapping = _timeloop_style_even(mapping)
@@ -421,7 +386,14 @@ def iterate_mappings_constraints(
                 yield mapping, constraints, symbol_table
                 n_yielded += 1
                 if n_yielded >= spec.mapper.max_pmapping_templates_per_einsum:
-                    return
+                    if spec.mapper._only_output_pmapping_with_index is None:
+                        return
+                    if (
+                        isinstance(spec.mapper._only_output_pmapping_with_index, dict)
+                        and einsum_name
+                        not in spec.mapper._only_output_pmapping_with_index
+                    ):
+                        return
 
 
 # =================================================================================================
@@ -432,13 +404,13 @@ def make_pmapping_templates(job: Job, print_progress: bool = True) -> SameEinsum
 
     job.tensor_to_relevancy = {
         tensor: get_rank_variable_relevancy(
-            job.spec.workload.einsums[job.einsum_name], tensor
+            job.spec_one_einsum.workload.einsums[job.einsum_name], tensor
         )
-        for tensor in job.spec.workload.einsums[job.einsum_name].tensor_names
+        for tensor in job.spec_one_einsum.workload.einsums[job.einsum_name].tensor_names
     }
 
     mappings_constraints = iterate_mappings_constraints(
-        job.spec,
+        job.spec_one_einsum,
         job.einsum_name,
         job.flattened_arch,
         job.rank_variable_bounds,
@@ -451,22 +423,30 @@ def make_pmapping_templates(job: Job, print_progress: bool = True) -> SameEinsum
             desc=f"Generating pmapping templates for compute {compute_name} Einsum {job.einsum_name}",
         )
 
-    stride_and_halo = get_stride_and_halo_of_einsum(
-        job.einsum_name, job.spec.workload, job.rank_variable_bounds
-    )
-
     jobs = SameEinsumJobs()
-    only_output_pmapping_index = job.spec.mapper._only_output_pmapping_with_index
+    only_output_pmapping_index = (
+        job.spec_one_einsum.mapper._only_output_pmapping_with_index
+    )
+    if isinstance(only_output_pmapping_index, dict):
+        only_output_pmapping_index = only_output_pmapping_index.get(
+            job.einsum_name, None
+        )
+
     for i, (mapping, constraints, symbol_table) in enumerate(mappings_constraints):
         if only_output_pmapping_index is not None and i != only_output_pmapping_index:
             continue
         new_job = copy.copy(job)
         new_job.mapping = mapping
+        new_job.mapping._template_index = i
         new_job.constraints = constraints
         new_job.job_id = uuid.uuid4()
         new_job.rank_variable_bounds = job.rank_variable_bounds
-        new_job.stride_and_halo = stride_and_halo
-        new_job.compatibility
+        mapping_with_reservations = quick_insert_reservation_nodes(new_job)
+        new_job.compatibility = Compatibility.from_mapping(
+            mapping_with_reservations,
+            new_job.fusable_tensors,
+            new_job.einsum,
+        )
         jobs.append(new_job)
 
     return jobs

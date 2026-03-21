@@ -6,8 +6,9 @@ import pandas as pd
 from accelforge.frontend import arch
 from accelforge.frontend.arch import Memory
 from accelforge.frontend.mapping.mapping import MappingNodeWithChildren
-from accelforge.frontend.renames import EinsumName
+from accelforge.frontend.renames import EinsumName, TensorName
 from accelforge.frontend.spec import Mapping, Spec
+from accelforge.util._frozenset import oset
 from accelforge.frontend.mapping import (
     Compute,
     Reservation,
@@ -18,8 +19,11 @@ from accelforge.frontend.mapping import (
 )
 from accelforge.frontend.workload import Workload
 from accelforge.frontend._workload_isl._symbolic import (
-    get_stride_and_halo_of_einsum,
+    get_stride_and_halo,
     get_rank_variable_relevancy,
+)
+from accelforge.mapper.FFM._make_pmappings.make_pmappings_from_templates.symbol_relations import (
+    get_initial_delta_choices,
 )
 from accelforge.mapper.FFM._pareto_df.df_convention import col_used_in_joining
 
@@ -74,7 +78,10 @@ def evaluate_mapping(
     original_job = Job(
         metrics=spec.model.metrics,
         rank_variable_bounds=get_rank_variable_bounds_for_all_einsums(spec),
-        spec=spec,
+        spec_one_einsum=spec,
+        resource_usage_tolerance=0,  # spec.model.resource_usage_tolerance,
+        objective_tolerance=0,  # spec.model.objective_tolerance,
+        workload_n_einsums=len(spec.workload.einsum_names),
     )
 
     einsum2pmappings = {}
@@ -86,6 +93,9 @@ def evaluate_mapping(
     )
 
     needs_reservations = not bool(spec.mapping.get_nodes_of_type(Reservation))
+
+    fusable_tensors = spec.workload.tensor_names_used_in_multiple_einsums
+    stride_and_halo = get_stride_and_halo(spec.workload)
 
     assert not getattr(spec, "_evaluated", False), s
     for pmapping in _split_mapping_to_pmappings(spec.mapping, spec.workload):
@@ -107,12 +117,14 @@ def evaluate_mapping(
                 compute_node=pmapping.nodes[-1].component
             )
 
-        job.spec = cur_spec
+        job.spec_one_einsum = cur_spec
         job.einsum_name = pmapping.nodes[-1].einsum
-        job.stride_and_halo = get_stride_and_halo_of_einsum(
-            job.einsum_name, cur_spec.workload
+        job.stride_and_halo = stride_and_halo
+        # spec, not cur_spec, becuase cur_spec only has one einsum and the delta choices
+        # depend on >1 Einsums
+        job.initial_delta_choices = get_initial_delta_choices(
+            job.einsum_name, spec.workload
         )
-
         pmapping.split_reservations()
         pmapping.split_loop_with_multiple_rank_variables(job.einsum_name)
         pmapping.split_tensor_holders_with_multiple_tensors()
@@ -121,10 +133,14 @@ def evaluate_mapping(
         job.mapping = pmapping
         job.tensor_to_relevancy = {
             tensor: get_rank_variable_relevancy(
-                job.spec.workload.einsums[job.einsum_name], tensor
+                job.spec_one_einsum.workload.einsums[job.einsum_name], tensor
             )
-            for tensor in job.spec.workload.einsums[job.einsum_name].tensor_names
+            for tensor in job.spec_one_einsum.workload.einsums[
+                job.einsum_name
+            ].tensor_names
         }
+        pmapping.clear_irrelevant_reservations(oset(job.tensor_to_relevancy))
+
         einsum2jobs[job.einsum_name] = job
 
         job.flattened_arch = flattened_arch
@@ -132,16 +148,10 @@ def evaluate_mapping(
             m.name for m in flattened_arch if isinstance(m, Memory)
         ]
 
-        job.fusable_tensors = set(
-            cur_spec.workload.tensor_names_used_in_multiple_einsums
-            & set(job.tensor_to_relevancy)
-        )
+        job.fusable_tensors = fusable_tensors & oset(job.tensor_to_relevancy)
         einsum = cur_spec.workload.einsums[job.einsum_name]
-        rank_variable_to_ranks = {
-            t.name: t.rank_variable2ranks for t in einsum.tensor_accesses
-        }
 
-        _, df, _, _, tensor2mapping = run_model(
+        _, df, _, _, tensor2mapping, _ = run_model(
             job, add_reservations=needs_reservations
         )
 
@@ -153,24 +163,13 @@ def evaluate_mapping(
         compatibility = Compatibility.from_mapping(
             job.mapping,
             job.fusable_tensors,
-            rank_variable_to_ranks,
+            einsum,
         )
         symbol_renames, compatibility = compatibility.make_fused_loop_symbols(
             einsum_name
         )
         for k, v in symbol_renames.items():
-            try:
-                df[v] = df.pop(k)
-            except:
-                Compatibility.from_mapping(
-                    job.mapping,
-                    job.fusable_tensors,
-                    rank_variable_to_ranks,
-                )
-                _calculate_iterations_and_rank_columns(
-                    job.mapping.nodes, job, df, job.rank_variable_bounds
-                )
-                raise
+            df[v] = df.pop(k)
 
         new_df = {}
         for key, value in df.items():
@@ -190,7 +189,8 @@ def evaluate_mapping(
                     data=pd.DataFrame(df, columns=df.keys(), index=[0]),
                     n_total_pmappings=1,
                     n_valid_pmappings=1,
-                    ignored_resources=set(),
+                    ignored_resources=oset(),
+                    drop_valid_reservations=False,
                 ),
             )
         ]
@@ -210,20 +210,21 @@ def evaluate_mapping(
             pmapping_objects=pmapping_objects,
             einsum2jobs=einsum2jobs,
             can_combine_multiple_runs=False,
-            einsums_with_pmappings_generated=set(spec.workload.einsum_names),
+            einsums_with_pmappings_generated=oset(spec.workload.einsum_names),
             flattened_arches=flattened_arches,
             evaluated_specs=evaluated_specs,
         ),
         metrics=spec.model.metrics,
         print_progress=False,
+        for_model=True,
     )
 
 
 def _add_backing_to_tensor_holders(pmapping: Mapping):
-    seen_tensors = set()
+    seen_tensors = oset()
     for node in pmapping.nodes:
         if isinstance(node, TensorHolder):
-            new_tensors = set(node.tensors) - seen_tensors
+            new_tensors = oset(node.tensors) - seen_tensors
             node._backing = new_tensors
             seen_tensors.update(new_tensors)
 
@@ -267,7 +268,7 @@ def _remove_storage_of_unrelevant_tensors(pmapping: Mapping, workload: Workload)
     """
     einsum_name = pmapping.nodes[-1].einsum
     einsum = workload.einsums[einsum_name]
-    relevant_tensors = set(t.name for t in einsum.tensor_accesses)
+    relevant_tensors = oset(t.name for t in einsum.tensor_accesses)
 
     new_nodes = []
     for node in pmapping.nodes:

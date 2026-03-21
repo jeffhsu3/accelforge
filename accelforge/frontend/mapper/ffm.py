@@ -1,6 +1,7 @@
 from typing import Any, Annotated, Literal
 
 from accelforge.frontend.mapper.metrics import Metrics
+from accelforge.frontend.renames import EinsumName
 from accelforge.util._basetypes import EvalableModel
 
 
@@ -88,9 +89,10 @@ class FFM(EvalableModel):
     "save_outermost_memory_usage".
     """
 
-    _only_output_pmapping_with_index: int | None = None
+    _only_output_pmapping_with_index: int | dict[EinsumName, int] | None = None
     """
-    For debugging. Only output the pmapping with this index.
+    For debugging. Only output the pmapping with this index. If a dictionary, then the
+    keys are einsum names and the values are the indices.
     """
 
     memory_limit: float | int = float("inf")
@@ -112,6 +114,16 @@ class FFM(EvalableModel):
     are so many templates being generated?).
     """
 
+    prioritize_reuse_of_unfused_tensors: bool = False
+    """
+    If set to True, then for all memory levels, the mapper will place the storage nodes
+    of unfused tensors above those of fused tensors. This is overridden if there is any
+    tensor_order_options specified for a memory level. The result of this is that the
+    mapper will avoid mappings that repeatedly fetch unfused tensors in order to allow
+    for smaller tiles of fused tensors. This may lead to better mappings,
+    but slows down the mapper.
+    """
+
     _count_option_for_mapsapce_size_evaluation: tuple[
         Literal[
             "redundant_loop_orders",
@@ -120,3 +132,26 @@ class FFM(EvalableModel):
             "redundant_dataplacements",
         ]
     ] = ()
+
+    objective_tolerance: float = 0
+    """
+    Reduces memory usage and runtime for the mapper. When set to a nonzero value, the
+    mapper may return mappings up to (1 + tolerance)× optimal. Also see
+    resource_usage_tolerance to further reduce mapper memory usage and runtime.
+    """
+
+    resource_usage_tolerance: float = 0
+    """
+    Reduces memory usage and runtime for the mapper. When set to a nonzero value, the
+    mapper may drop mappings with resource usage > (1 - tolerance)× optimal. The mapper
+    is guaranteed to return all Pareto-optimal mappings with resource usage below this,
+    and perhaps more. If Metrics.RESOURCE_USAGE is set, then this is ignored. Setting
+    this, as well as objective_tolerance, to a greater-than-zero value will reduce
+    memory usage for the mapper.
+    """
+
+    _let_non_intermediate_tensors_respawn_in_backing_storage: bool = False
+    """
+    If set to True, we can have temporal loops above the backing storage for
+    non-intermediate tensors, which effectively causes them to respawn.
+    """

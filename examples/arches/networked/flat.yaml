@@ -17,6 +17,7 @@ arch:
     actions: []
 
   - !Array
+    name: Array
     spatial:
     - {name: X, fanout: 4}
     - {name: Y, fanout: 4}

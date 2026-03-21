@@ -4,6 +4,7 @@ from accelforge.frontend import arch
 from accelforge.frontend.spec import Spec
 from accelforge.frontend.workload import EinsumName
 from accelforge._accelerated_imports import pd
+from accelforge.util._frozenset import oset
 from accelforge.mapper.FFM._make_pmappings.make_pmappings import (
     get_num_computes,
     get_per_tensor_size,
@@ -195,7 +196,7 @@ class Mappings:
         Mappings
             A new Mappings object with only the given keys.
         """
-        assert len(set(self.data.columns)) == len(
+        assert len(oset(self.data.columns)) == len(
             self.data.columns
         ), "Columns must be unique"
 
@@ -249,7 +250,7 @@ class Mappings:
         Mappings
             A new Mappings object with the given keys dropped from all columns.
         """
-        assert len(set(self.data.columns)) == len(
+        assert len(oset(self.data.columns)) == len(
             self.data.columns
         ), "Columns must be unique"
 
@@ -321,7 +322,7 @@ class Mappings:
             that are either a single value or a list of values.
         """
         new = self.data.to_dict(orient="list")
-        if list_if_one_mapping and len(self) == 1:
+        if len(self) == 1 and not list_if_one_mapping:
             new = {k: v[0] for k, v in new.items()}
         return new
 

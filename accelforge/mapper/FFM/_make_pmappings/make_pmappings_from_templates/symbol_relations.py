@@ -1,10 +1,12 @@
 from collections import defaultdict
+from functools import lru_cache
 from numbers import Number
 
 from sympy import Symbol
 
 from accelforge.frontend.workload import Workload
 from accelforge.frontend._workload_isl._symbolic import get_stride_and_halo
+from accelforge.util._frozenset import oset, fzs
 from accelforge.frontend.mapping import (
     Loop,
     Mapping,
@@ -19,11 +21,12 @@ class SymbolRelations:
         self.bounds: tuple[tuple[Symbol, int, int], ...] = ()
 
     def make_bounds(self):
-        all_symbols = set(
+        all_symbols = oset(
             s for w in self.what_tiles_symbol for s in w if isinstance(s, Symbol)
         )
         self.bounds = tuple((s, 1, self.get_max_size(s)) for s in all_symbols)
 
+    @lru_cache(maxsize=100)
     def is_stride(self, symbol: Symbol) -> bool:
         """Check if `symbol` is a stride."""
         for tile_shape, initial in self.tile_shape_and_initial:
@@ -33,6 +36,7 @@ class SymbolRelations:
                 return False
         return True
 
+    @lru_cache(maxsize=100)
     def is_initial_tile_shape(self, symbol: Symbol) -> bool:
         """Check if `symbol` is a initial tile shape."""
         for tile_shape, initial in self.tile_shape_and_initial:
@@ -42,6 +46,7 @@ class SymbolRelations:
                 return True
         return False
 
+    @lru_cache(maxsize=100)
     def get_tile_shape(
         self, symbol: Symbol, none_if_fail: bool = False
     ) -> Symbol | int:
@@ -59,6 +64,7 @@ class SymbolRelations:
             return found
         raise ValueError(f"Symbol {symbol} not found as initial in {self}")
 
+    @lru_cache(maxsize=100)
     def get_initial(self, symbol: Symbol, none_if_fail: bool = False) -> Symbol | int:
         found = None
         for tile_shape, initial in self.tile_shape_and_initial:
@@ -80,6 +86,7 @@ class SymbolRelations:
                 return choices
         raise ValueError(f"Symbol {symbol} not found in {self}")
 
+    @lru_cache(maxsize=100)
     def get_inner_tiles(
         self, symbol: Symbol, none_if_fail: bool = False
     ) -> Symbol | int | None:
@@ -97,6 +104,7 @@ class SymbolRelations:
             return found
         raise ValueError(f"Symbol {symbol} not found in {self}")
 
+    @lru_cache(maxsize=100)
     def get_outer_tiles(
         self, symbol: Symbol, none_if_fail: bool = False
     ) -> Symbol | int | None:
@@ -114,6 +122,7 @@ class SymbolRelations:
             return found
         raise ValueError(f"Symbol {symbol} not found in {self}")
 
+    @lru_cache(maxsize=100)
     def get_max_size(self, symbol: Symbol) -> Number:
         while not isinstance(symbol, Number):
             symbol = self.get_outer_tiles(symbol)
@@ -121,12 +130,10 @@ class SymbolRelations:
 
     @staticmethod
     def from_pmapping_and_shape(
-        pmapping: Mapping, shape: dict[str, int], workload: Workload
+        pmapping: Mapping,
+        shape: dict[str, int],
+        initial_delta_choices: dict[Symbol, frozenset[int]],
     ) -> "SymbolRelations":
-        initial_delta_choices = get_initial_delta_choices(
-            pmapping.nodes[-1].einsum, workload
-        )
-
         relation = SymbolRelations()
         last_seen_loop_per_rank_var: dict[str, Symbol | int] = dict(shape)
         for node in pmapping.nodes:
@@ -149,7 +156,7 @@ class SymbolRelations:
                 relation.delta_choices.append(
                     (
                         node.initial_tile_shape,
-                        frozenset(initial_delta_choices[node.rank_variable]),
+                        fzs(initial_delta_choices.get(node.rank_variable, oset([0]))),
                     )
                 )
 
@@ -165,7 +172,7 @@ def get_initial_delta_choices(einsum_name: str, workload: Workload):
     stride_and_halo = get_stride_and_halo(workload)
     einsum = workload.einsums[einsum_name]
 
-    choices = defaultdict(lambda: set([0]))
+    choices = defaultdict(lambda: oset([0]))
     consumer_chains = []
     stack = [[(None, einsum)]]
     while stack:
@@ -198,4 +205,4 @@ def get_initial_delta_choices(einsum_name: str, workload: Workload):
                         stride, halo = rank_stride_and_halo[key]
                         choices[prod_rank_var].add(int(cons_choice * stride + halo))
 
-    return choices
+    return dict(choices)

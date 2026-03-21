@@ -3,6 +3,7 @@ from __future__ import annotations
 from accelforge.frontend.mapper import FFM
 from accelforge.frontend.renames import EinsumName, Renames
 from accelforge.util._eval_expressions import EvaluationError, ParseExpressionsContext
+from accelforge.util._frozenset import oset
 from accelforge.frontend.arch import (
     Compute,
     Leaf,
@@ -57,6 +58,26 @@ class Spec(EvalableModel):
 
     model: Model = Model()
     """Configures the model used to evaluate mappings."""
+
+    def _for_einsum(self, einsum_name: EinsumName) -> Self:
+        """
+        Return a copy of the spec with workload and renames only for the given einsum.
+        """
+        new = self.model_copy(deep=False)
+        new.workload = new.workload._for_einsum(einsum_name)
+        new.renames = new.renames._for_einsum(einsum_name)
+        return new
+
+    def _clear_component_models(self) -> Self:
+        """
+        Clear the component models from the architecture. This is used to avoid
+        pickling issues when parallelizing.
+        """
+        new = self.model_copy(deep=False)
+        new.arch = self.arch.model_copy()
+        for component in new.arch.get_nodes_of_type(Component):
+            component.component_model = None
+        return new
 
     def _eval_expressions(
         self,
@@ -294,7 +315,7 @@ class Spec(EvalableModel):
             self = self._spec_eval_expressions(einsum_name=einsum_name)
 
         all_leaves = self.arch.get_nodes_of_type(Leaf)
-        found_names = set()
+        found_names = oset()
         for leaf in all_leaves:
             if leaf.name in found_names:
                 raise EvaluationError(f"Duplicate name in architecture: {leaf.name}")

@@ -21,7 +21,7 @@ from accelforge.frontend.mapping import (
 from accelforge.frontend.renames import TensorName
 from accelforge.frontend.workload import EinsumName, RankVariable
 from accelforge.util._setexpressions import InvertibleSet
-from accelforge.util._frozenset import fzs
+from accelforge.util._frozenset import fzs, oset
 
 
 # =================================================================================================
@@ -78,7 +78,7 @@ class MappingConstraints:
         # because the loop above determines the number of tiles
         for c in self.min_usage_constraints.values():
             # Rank variables must be unique between mapping nodes
-            rank_variables = set(t.rank_variable for t in c.target_mapping_nodes)
+            rank_variables = oset(t.rank_variable for t in c.target_mapping_nodes)
             assert len(rank_variables) == len(
                 c.target_mapping_nodes
             ), "Rank variables must be unique between mapping nodes"
@@ -99,7 +99,7 @@ class MappingConstraints:
     ) -> list["MappingNode"]:
         # Not constrained to one --> Can't remove
         node2constraints = defaultdict(list)
-        do_not_remove = set()
+        do_not_remove = oset()
         for c in self.tile_shape_constraints:
             for t in c.target_mapping_nodes:
                 node2constraints[id(t)].append(c)
@@ -111,10 +111,10 @@ class MappingConstraints:
                     do_not_remove.add(id(t))
 
         # Constrained to one --> remove iff not in do_not_remove
-        to_remove = set()
+        to_remove = oset()
         for c in self.loop_bounds_constraints:
             if c.constraint._constrained_to_one():
-                my_remove = set(id(t) for t in c.target_mapping_nodes)
+                my_remove = oset(id(t) for t in c.target_mapping_nodes)
                 if my_remove & do_not_remove:
                     loops = [n for n in mapping if id(n) in my_remove]
                     p = len(loops) == 1
@@ -189,7 +189,7 @@ def constrained_loops(
     one_loop_per_rank_variable: bool = True,
 ) -> list[Loop]:
     nodes = []
-    remaining_rank_variables = set(rank_variables)
+    remaining_rank_variables = oset(rank_variables)
 
     if look_behind:
         to_check = list(enumerate(mapping))
@@ -254,9 +254,11 @@ def get_constraints(
                 constraint = _TileShapeConstraintLambda(c, new_nodes, exp)
                 constraints.tile_shape_constraints.append(constraint)
 
-        exp = symbol_table[m.name] & m.tensors.no_refetch_from_above
+        no_refetch = mapping[index].component_object.tensors.no_refetch_from_above
+        exp = symbol_table[m.name] & no_refetch
 
         nodes = []
+        seen = oset()
         for no_refetch in exp.iter_one_element_sets():
             # Start from the first index of the tensor holder, stop at index - 1
             start_index = 0
@@ -269,7 +271,7 @@ def get_constraints(
                     break
                 start_index += 1
 
-            end_index = start_index
+            end_index = start_index + 1
             while end_index < len(mapping):
                 if (
                     isinstance(mapping[end_index], TensorHolder)
@@ -279,11 +281,44 @@ def get_constraints(
                     break
                 end_index += 1
 
-            for i in range(start_index, end_index):
+            for i in range(start_index, min(end_index, len(mapping))):
                 if isinstance(mapping[i], Temporal) and not isinstance(
                     tensor_to_relevancy[n][mapping[i].rank_variable], Relevant
                 ):
-                    if mapping[i] not in nodes:
+                    if id(mapping[i]) not in seen:
+                        seen.add(id(mapping[i]))
+                        nodes.append(mapping[i])
+
+        no_resend = mapping[index].component_object.tensors.no_resend_to_below
+        for no_resend in no_resend.iter_one_element_sets():
+            # Start from the first index of this one, stop when we find someone else
+            # below
+            start_index = 0
+            n = next(iter(no_resend))
+            while start_index < len(mapping):
+                if (
+                    isinstance(mapping[start_index], TensorHolder)
+                    and n in mapping[start_index].tensors
+                    and mapping[start_index].component == m.name
+                ):
+                    break
+                start_index += 1
+
+            end_index = start_index + 1
+            while end_index < len(mapping):
+                if (
+                    isinstance(mapping[end_index], TensorHolder)
+                    and n in mapping[end_index].tensors
+                ):
+                    break
+                end_index += 1
+
+            for i in range(start_index, min(end_index, len(mapping))):
+                if isinstance(mapping[i], Temporal) and not isinstance(
+                    tensor_to_relevancy[n][mapping[i].rank_variable], Relevant
+                ):
+                    if id(mapping[i]) not in seen:
+                        seen.add(id(mapping[i]))
                         nodes.append(mapping[i])
 
         if nodes:
@@ -314,7 +349,7 @@ def get_constraints(
                         value=1,
                     )
                 )
-                loop_bounds[-1]._str_repr = f"reuse {set(dim.reuse)}"
+                loop_bounds[-1]._str_repr = f"reuse {oset(dim.reuse)}"
 
             # Loop bounds constraints
             if loop_bounds:
@@ -336,7 +371,7 @@ def get_constraints(
             if dim.min_usage > 0:
                 if not target_mapping_nodes:
                     continue
-                rank_variables = {t.rank_variable for t in target_mapping_nodes}
+                rank_variables = oset(t.rank_variable for t in target_mapping_nodes)
                 constraint = _MinUsageConstraintLambda(
                     target_mapping_nodes,
                     rank_variables,

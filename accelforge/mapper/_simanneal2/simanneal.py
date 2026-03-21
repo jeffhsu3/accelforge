@@ -8,6 +8,7 @@ from accelforge import arch, util
 from accelforge import Spec
 from accelforge.frontend.mapper.metrics import Metrics
 from accelforge.mapper.FFM.pmappings import MultiEinsumPmappings
+from accelforge.util._frozenset import oset
 from accelforge.mapper.FFM._join_pmappings.compress_pmappings import (
     compress_einsum2pmappings,
     decompress_pmappings,
@@ -17,7 +18,7 @@ from accelforge.frontend.mapping import Mapping
 from accelforge.mapper.FFM import PmappingGroup
 from accelforge.mapper.FFM._pareto_df.df_convention import (
     MAPPING_COLUMN,
-    col2nameloop,
+    col2reservation,
 )
 from accelforge.mapper.FFM._join_pmappings.pmapping_group import PmappingDataframe
 from accelforge.mapper.FFM._make_pmappings.make_pmappings import (
@@ -224,14 +225,14 @@ class SimAnnealMapping:
             # {e: s.compatibility for e, s in new_einsum2sim.items()}
 
         assert len(new_einsum2sim) == len(self.einsum2sim)
-        assert set(new_einsum2sim.keys()) == set(self.einsum2sim.keys())
+        assert oset(new_einsum2sim.keys()) == oset(self.einsum2sim.keys())
         self.einsum2sim = {k: new_einsum2sim[k] for k in self.einsum2sim.keys()}
 
     def _einsum2tensors(
         self, e: EinsumName | int | Generator[EinsumName | int, None, None]
     ) -> set[str]:
         if isinstance(e, Generator) or isinstance(e, range):
-            return set.union(set(), *(self._einsum2tensors(i) for i in e))
+            return oset.union(oset(), *(self._einsum2tensors(i) for i in e))
         if isinstance(e, int):
             e = list(self.mapspace_globals.einsum2sims.keys())[e]
         return self.mapspace_globals.einsum2sims[e][0].compatibility.tensor_names
@@ -244,9 +245,11 @@ class SimAnnealMapping:
         return PmappingGroup(
             compatibility=s.compatibility,
             mappings=PmappingDataframe(
-                data.iloc[i : i + 1],
+                data.iloc[i : i + 1].copy(),
                 n_total_pmappings=s.mappings.n_total_pmappings,
                 n_valid_pmappings=s.mappings.n_valid_pmappings,
+                ignored_resources=s.mappings.ignored_resources,
+                drop_valid_reservations=s.mappings.drop_valid_reservations,
             ),
         )
 
@@ -282,7 +285,7 @@ class SimAnnealMapping:
                         permuted_compatibility_right=right.compatibility,
                         drop_valid_reservations=True,
                         delay=False,
-                        ignored_resources=set(),
+                        ignored_resources=oset(),
                     )
                 except ValueError as err:
                     # print(err)
@@ -292,7 +295,7 @@ class SimAnnealMapping:
             joined_new = _merge_next(joined, self._access_index(e))
             if len(joined_new.mappings.data) == 1:
                 joined = joined_new
-                # print(' '.join(f'{k}={v}' for k, v in dict(joined.mappings.data.iloc[0]).items() if col2nameloop(k)))
+                # print(' '.join(f'{k}={v}' for k, v in dict(joined.mappings.data.iloc[0]).items() if col2reservation(k)))
                 continue
             if len(joined_new.mappings.data) > 1:
                 raise ValueError(
@@ -312,7 +315,7 @@ class SimAnnealMapping:
             )
             s.mappings._data = s.mappings.data.drop(columns=["_INDEX"])
             try:
-                i = random.choice(list(set(joined_new.mappings.data["_INDEX"])))
+                i = random.choice(list(oset(joined_new.mappings.data["_INDEX"])))
             except IndexError:
                 raise FailedMutation(f"No valid pmappings for {e}")
 
@@ -323,7 +326,7 @@ class SimAnnealMapping:
                 # If it worked, set the index
                 self.einsum2index[e] = i
                 joined = joined_new
-                # print(' '.join(f'{k}={v}' for k, v in dict(joined.mappings.data.iloc[0]).items() if col2nameloop(k)))
+                # print(' '.join(f'{k}={v}' for k, v in dict(joined.mappings.data.iloc[0]).items() if col2reservation(k)))
                 continue
 
             if len(joined_new.mappings.data) > 1:
@@ -535,7 +538,10 @@ def join_pmappings(
     if score_target is not None:
         tracker._scale_score_by *= 1 / score_target
 
-    pop_size_per_thread = max(1, population_size // get_n_parallel_jobs())
+    if population_size != float("inf"):
+        pop_size_per_thread = max(1, population_size // get_n_parallel_jobs())
+    else:
+        pop_size_per_thread = float("inf")
 
     # Multiply by the number of einsums
     # print(
@@ -616,5 +622,5 @@ def join_pmappings(
     # # Fill nans with 0. We might get missing columns for some mapping entries if there
     # # are energy entries for some pmappings but not others (e.g., one pmapping accesses
     # # DRAM while another doesn't.)
-    # joined._data = joined.data.fillna(0)
+    # joined._data = joined.data._fillna_and__numeric_cast(0)
     return t0  # Mappings(spec, list(pmappings.einsum2pmappings.keys()), joined.data)

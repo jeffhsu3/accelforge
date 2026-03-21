@@ -36,32 +36,32 @@ T = TypeVar("T")
 class ArchNode(EvalableModel):
     """A node in the architecture."""
 
-    def find(self, name: str, default: Any = _FIND_SENTINEL) -> Union["Leaf", Any]:
+    def find(self, name: str, default: D = _FIND_SENTINEL) -> Union["ArchNode", D]:
         """
 
-        Finds a `Leaf` node with the given name.
+        Finds a node with the given name.
 
         Parameters
         ----------
         name: str
-            The name of the `Leaf` node to find.
+            The name of the node to find.
         default: Any
-            The value to return if the `Leaf` node with the given name is not found.
+            The value to return if a node with the given name is not found.
             Otherwise, raises a ValueError.
 
         Raises
         ------
         ValueError
-            If the `Leaf` node with the given name is not found.
+            If a node with the given name is not found.
 
         Returns
         -------
-        Leaf
-            The `Leaf` node with the given name.
+        ArchNode
+            The node with the given name.
         default
             The value to return if the `Leaf` node with the given name is not found.
         """
-        if isinstance(self, Leaf) and getattr(self, "name", None) == name:
+        if getattr(self, "name", None) == name:
             return self
 
         if isinstance(self, Branch):
@@ -113,26 +113,36 @@ class ArchNode(EvalableModel):
 
     def iterate_hierarchically(self, _parents=None):
         """
-        Iterates over all Leaf nodes while also yielding the list of all Leaf
+        Iterates over all nodes with names while also yielding the list of all
         nodes that are hierarchical parents over the current node.
         """
         if _parents is None:
             _parents = []
 
-        if isinstance(self, Leaf):
+        if hasattr(self, "name"):
             yield self, _parents
             _parents.append(self)
+
+        # Fork -> don't update the _parents list from MY parent because we're branching
+        # off
+        if isinstance(self, Fork):
+            _parents = list(_parents)
+
+        if isinstance(self, Leaf):
             return
 
-        assert isinstance(self, Branch)
-        if isinstance(self, (Fork, Array)):
+        # Array -> Each node is independent. Create a new parent list for each one.
+        elif isinstance(self, Array):
             for node in self.nodes:
                 yield from node.iterate_hierarchically(list(_parents))
+
+        # Hierarchical -> Each node will update the _parents list to add itself and
+        # create the hierarchy
         elif isinstance(self, Hierarchical):
             for node in self.nodes:
                 yield from node.iterate_hierarchically(_parents)
         else:
-            raise RuntimeError("unhandled structure type")
+            raise RuntimeError(f"Unhandled structure type {type(self)}")
 
     def _render_node_name(self) -> str:
         """The name for a Pydot node."""
@@ -274,6 +284,17 @@ class Branch(ArchNode):
                 result.update(r)
                 non_power_gated_porp *= new_porp
 
+            elif isinstance(node, Array):
+                # TODO: this is a simplistic model for power gating physical
+                # units
+                for s in node.spatial:
+                    porp = used_fanout.get((node.name, s.name), 1) / s.fanout
+                    if s.power_gateable:
+                        non_power_gated_porp *= porp
+                r, _ = node._power_gating(compute_name, used_fanout)
+                r = {k: non_power_gated_porp for k in r}
+                result.update(r)
+
             elif isinstance(node, Leaf):
                 for s in node.spatial:
                     if found_compute or not i_have_compute:
@@ -295,6 +316,8 @@ class Branch(ArchNode):
 
 
 class Array(Branch, Spatialable):
+    name: str
+
     def model_post_init(self, __context__=None) -> None:
         for node in self.nodes:
             if isinstance(node, Fork):
@@ -315,9 +338,11 @@ class Array(Branch, Spatialable):
                 if isinstance(node, Branch):
                     raise RuntimeError("do not put branches inside array")
                 elif isinstance(node, Leaf):
-                    fanout *= node.get_fanout()
-                    node = deepcopy(node)
-                    node.spatial = EvalableList()
+                    if isinstance(node, Spatialable):
+                        fanout *= node.get_fanout()
+                        node = deepcopy(node)
+                        node._physical_spatial = node.spatial
+                        node.spatial = EvalableList()
                     nodes.append(node)
                 else:
                     raise RuntimeError(f"unhandled structure type {node}")

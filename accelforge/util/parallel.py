@@ -1,3 +1,4 @@
+import copy
 import itertools
 from numbers import Number
 import tempfile
@@ -13,6 +14,8 @@ import os
 from tqdm import tqdm
 import numpy as np
 
+from accelforge.util._mathfuncs import NUMPY_FLOAT_TYPE
+
 __all__ = [
     "set_n_parallel_jobs",
     "get_n_parallel_jobs",
@@ -23,8 +26,6 @@ __all__ = [
 
 PARALLELIZE = True
 N_PARALLEL_PROCESSES = os.cpu_count()
-
-NUMPY_FLOAT_TYPE = np.float32
 
 
 def _lambdify_type_check(*args, **kwargs):
@@ -159,7 +160,7 @@ def parallel(
             jobs = tqdm(
                 jobs, total=len(jobs), desc=pbar, leave=True, position=pbar_position
             )
-        return [j[0](*j[1], **j[2]) for j in jobs]
+        return copy.deepcopy([j[0](*j[1], **j[2]) for j in jobs])
 
     total_jobs = len(jobs)
 

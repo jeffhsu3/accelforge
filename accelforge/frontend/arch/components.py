@@ -1,6 +1,7 @@
 import copy
 import itertools
 import logging
+from accelforge.util._frozenset import oset
 from typing import (
     Any,
     Literal,
@@ -22,6 +23,7 @@ from accelforge.util._basetypes import (
     EvalsTo,
     TryEvalTo,
     _PostCall,
+    NoParse,
 )
 
 from accelforge.util.exceptions import EvaluationError
@@ -242,7 +244,7 @@ class Component(Spatialable):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     def _update_actions(self, new_actions: EvalableList[Action]):
-        has_actions = set(x.name for x in self.actions)
+        has_actions = oset(x.name for x in self.actions)
         for action in new_actions:
             if action.name not in has_actions:
                 self.actions.append(action)
@@ -803,6 +805,15 @@ class Tensors(EvalableModel):
     pieces (if they do not cause re-fetches of any piece).
     """
 
+    no_resend_to_below: TryEvalTo[InvertibleSet[TensorName]] = "~All"
+    """
+    The tensors that are not allowed to be refetched to below. This is given as a set of
+    :class:`~.TensorName` objects or a set expression that resolves to them. These
+    tensors must be fetched at most one time from this memory to below memories, and may
+    not be refetched across any temporal or spatial loop iterations. Tensors may be
+    fetched in pieces (if they do not cause re-fetches of any piece).
+    """
+
     tensor_order_options: EvalableList[
         EvalableList[TryEvalTo[InvertibleSet[TensorName]]]
     ] = EvalableList()
@@ -933,6 +944,14 @@ class Memory(TensorHolder):
 
     actions: EvalableList[TensorHolderAction] = MEMORY_ACTIONS
     """ The actions that this `Memory` can perform. """
+
+    _n_physical: NoParse[int] = 1
+    """
+    Number of physical units bound to this memory level.
+
+    Should always be 1 in the spec, but may be > 1 in a flattened arch since
+    physical units may be flattened into only one logical level.
+    """
 
     def _render_node_shape(self) -> str:
         return "cylinder"
