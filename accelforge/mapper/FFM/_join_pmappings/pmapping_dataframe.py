@@ -777,7 +777,8 @@ class PmappingDataframe:
                     # CAN'T DROP RESERVATIONS UNTIL WE'RE FINISHED JOINING. Persistent
                     # tensors may get saved later and would live at the same time as
                     # these reservations.
-                    and finished # self.drop_valid_reservations
+                    and finished
+                    and self.drop_valid_reservations
                     and resource not in ignored_resources
                     and (tolerance == 0 or not any(self.data[col] > 1))
                 ):
@@ -805,7 +806,8 @@ class PmappingDataframe:
                     l == 0
                     # CAN'T DROP RESERVATIONS UNTIL WE'RE FINISHED JOINING. Persistent
                     # tensors may get saved later.
-                    and finished # self.drop_valid_reservations
+                    and finished
+                    and self.drop_valid_reservations
                     and resource not in ignored_resources
                     and (tolerance == 0 or not any(self.data[col] > 1))
                 ):
