@@ -543,6 +543,7 @@ def analyze_reuse_and_add_reservations_to_mapping(
         )
     else:
         tensor_to_backer_id = get_tensor_to_backer_id(mapping)
+
     if add_reservations:
         mapping = quick_insert_reservation_nodes(
             job,
