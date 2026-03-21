@@ -4,7 +4,7 @@ import logging
 import os
 from pathlib import Path
 import re
-from pydantic import BaseModel, ConfigDict, Tag, ValidationError
+from pydantic import BaseModel, ConfigDict, ValidationError
 from pydantic.main import IncEx
 from pydantic_core.core_schema import (
     CoreSchema,
