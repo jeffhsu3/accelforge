@@ -978,10 +978,10 @@ class Workload(EvalableModel):
 
     def _check_consistent_persistent(self):
         for tensor in self.tensor_names:
-            persistents = {
+            persistents = oset(
                 e.tensor_accesses[tensor].persistent
                 for e in self.einsums_with_tensor(tensor)
-            }
+            )
             if len(persistents) > 1:
                 raise ValueError(
                     f"Tensor {tensor} is used in multiple Einsums with different "

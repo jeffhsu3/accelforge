@@ -273,9 +273,9 @@ def iterate_mappings_no_constraints(
     symbol_table = {r.name: r.source for r in einsum.renames}
     fusable_tensors = job.fusable_tensors
 
-    ranks_with_tile_pattern = {
+    ranks_with_tile_pattern = oset(
         r for r, c in job.initial_delta_choices.items() if len(c) > 1
-    }
+    )
     job.ranks_with_tile_pattern = ranks_with_tile_pattern
 
     fanouts = {}

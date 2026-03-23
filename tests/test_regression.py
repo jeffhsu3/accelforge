@@ -153,32 +153,38 @@ class TestFFMRegression(unittest.TestCase):
             self.skipTest(f"not in json: {key}")
         ref = self._ref[key]
         cur = _run(arch, workload, fused)
-        self.assertEqual(cur["n_mappings"], ref["n_mappings"])
+        self.assertEqual(
+            cur["n_mappings"], ref["n_mappings"],
+            msg=f"n_mappings for {key}: ref={ref['n_mappings']}, cur={cur['n_mappings']}",
+        )
         self.assertTrue(
             math.isclose(cur["energy"], ref["energy"], rel_tol=0.01),
-            msg=f"energy for {arch=} {workload=} {fused=}: "
-                f"ref={ref['energy']}, cur={cur['energy']}",
+            msg=f"energy for {key}: ref={ref['energy']}, cur={cur['energy']}",
         )
         self.assertTrue(
             math.isclose(cur["latency"], ref["latency"], rel_tol=0.01),
-            msg=f"latency for {arch=} {workload=} {fused=}: "
-                f"ref={ref['latency']}, cur={cur['latency']}",
+            msg=f"latency for {key}: ref={ref['latency']}, cur={cur['latency']}",
         )
-        # print(f"Regression testing {arch=} {workload=} {fused=}")
+        failures = []
         for s in ["energy_per_component", "latency_per_component", "actions"]:
-            # print(f"\tchecking {s}")
             for c in ref[s]:
-                # print(f"\t\tchecking {c}")
-                s2 = f"for {arch=} {workload=} {fused=} {s}"
-                self.assertIn(
-                    c,
-                    cur[s],
-                    msg=f"{s2} {c}: not in {cur[s]}",
-                )
-                self.assertTrue(
-                    math.isclose(cur[s][c], ref[s][c], rel_tol=0.01),
-                    msg=f"{s2} {c}: reference {ref[s][c]} -> current {cur[s][c]}",
-                )
+                if c not in cur[s]:
+                    failures.append(f"{s} {c}: missing in current (keys: {sorted(cur[s].keys())})")
+                    continue
+                if not math.isclose(cur[s][c], ref[s][c], rel_tol=0.01):
+                    ratio = cur[s][c] / ref[s][c] if ref[s][c] != 0 else float('inf')
+                    failures.append(
+                        f"{s} {c}: ref={ref[s][c]:.6e} cur={cur[s][c]:.6e} "
+                        f"ratio={ratio:.4f}"
+                    )
+        if failures:
+            self.fail(
+                f"Regression failures for {key} "
+                f"(n_mappings ref={ref['n_mappings']} cur={cur['n_mappings']}, "
+                f"energy ref={ref['energy']:.6e} cur={cur['energy']:.6e}, "
+                f"latency ref={ref['latency']:.6e} cur={cur['latency']:.6e}):\n"
+                + "\n".join(f"  {f}" for f in failures)
+            )
 
 
 for _k, _a, _w, _f in _cases():
