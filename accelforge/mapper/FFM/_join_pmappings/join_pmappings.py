@@ -163,11 +163,12 @@ def prune_with_tolerance(
 
     prev_n = sum(len(pg.mappings) for p in pmappings.values() for pg in p)
 
-    def prune(einsum_name, pg):
-        pg.mappings.make_pareto(
+    def prune(einsum_name: EinsumName, pg: PmappingGroup):
+        pg = PmappingGroup(pg.compatibility, pg.mappings.make_pareto(
             objective_tolerance=objective_tolerance,
             resource_usage_tolerance=resource_usage_tolerance,
-        )
+            inplace=False,
+        ))
         return einsum_name, pg
 
     jobs = [delayed(prune)(e, pg) for e, p in pmappings.items() for pg in p]
@@ -793,6 +794,11 @@ def join_pmappings(
                     for b, _ in right[k]:
                         print(f"\tREVERSE: No match for {b.compatibility} using {k}")
 
+        # Count before clearing (needed for skip_invalid=False)
+        if not skip_invalid:
+            _left_n = sum(len(s.mappings.data) for k in left.values() for s, _ in k)
+            _right_n = sum(len(s.mappings.data) for k in right.values() for s, _ in k)
+
         for l in left.values():
             for s, _ in l:
                 s.mappings = None
@@ -909,11 +915,7 @@ def join_pmappings(
 
         prev_nmappings = cur_nmappings
         if not skip_invalid:
-            left_nmappings = sum(len(s.mappings.data) for k in left.values() for s in k)
-            right_nmappings = sum(
-                len(s.mappings.data) for k in right.values() for s in k
-            )
-            cur_nmappings = left_nmappings * right_nmappings
+            cur_nmappings = _left_n * _right_n
         n_mappings[f"{left_einsum} → {right_einsum}"] = cur_nmappings
         n_evaluations += cur_nmappings
         step_time = (time.time() - t0) * (cur_nmappings / prev_nmappings)
