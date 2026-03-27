@@ -380,10 +380,12 @@ def make_pmappings(
 
     pmapping_objects = {}
     pmapping_groups = {einsum_name: [] for einsum_name in spec.workload.einsum_names}
+    keep_rates = []
     for (
         einsum_name,
         new_pmapping_groups,
         pmappings,
+        cur_keep_rates,
     ) in parallel(
         calls,
         pbar=f"Generating pmappings" if print_progress or one_pbar_only else None,
@@ -391,6 +393,7 @@ def make_pmappings(
     ):
         pmapping_groups[einsum_name].extend(new_pmapping_groups)
         pmapping_objects.setdefault(einsum_name, {}).update(pmappings)
+        keep_rates.extend(cur_keep_rates)
 
     for einsum_name in list(pmapping_groups.keys()):
         pmapping_groups[einsum_name] = PmappingGroup.combine_combineable(
@@ -403,6 +406,14 @@ def make_pmappings(
     return_jobs = {
         e: [j for jobs in v.values() for j in jobs] for e, v in einsum2jobs.items()
     }
+
+    # Propagate keep_rates from worker-side job copies back to original jobs
+    id2keep_rates = {jid: (keep_rates, n) for jid, keep_rates, n in keep_rates}
+    for jobs in return_jobs.values():
+        for job in jobs:
+            assert job.job_id in id2keep_rates, f"Job {job.job_id} not found"
+            job.pmapping_keep_rates.update(id2keep_rates[job.job_id][0])
+            job.n_total_pmappings = id2keep_rates[job.job_id][1]
 
     return pmapping_groups, pmapping_objects, return_jobs
 
