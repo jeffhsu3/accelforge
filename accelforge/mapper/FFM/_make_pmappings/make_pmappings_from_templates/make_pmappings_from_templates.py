@@ -1,6 +1,6 @@
 import copy
 import math
-import pandas as pd
+from accelforge._accelerated_imports import pandas as pd
 from uuid import UUID
 from collections import defaultdict
 
