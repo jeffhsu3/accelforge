@@ -64,7 +64,7 @@ def get_rank_variable_bounds_for_all_einsums(spec: Spec):
     return result
 
 
-def get_num_computes(spec: Spec, einsum_name: EinsumName | None = None) -> int:
+def get_n_computes(spec: Spec, einsum_name: EinsumName | None = None) -> int:
     einsums = spec.workload.einsums
     einsums = [einsum_name] if einsum_name is not None else spec.workload.einsum_names
     return sum(get_operation_space_size(spec.workload, e) for e in einsums)

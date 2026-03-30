@@ -1208,7 +1208,7 @@ class Workload(EvalableModel):
 
         return get_tensor_size(self, tensor)
 
-    def num_computes(self, einsum_name: str | None = None) -> int:
+    def n_computes(self, einsum_name: str | None = None) -> int:
         """
         Returns the number of computes for the given Einsum name, or total computes
         across all Einsums if ``einsum_name`` is ``None``.
@@ -1245,7 +1245,7 @@ class Workload(EvalableModel):
         float
             The compute intensity in #computes / #tensor elements.
         """
-        return self.num_computes(einsum_name) / sum(
+        return self.n_computes(einsum_name) / sum(
             self.get_tensor_size(tensor)
             for tensor in self.einsums[einsum_name].tensor_names
         )
