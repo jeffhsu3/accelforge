@@ -1537,14 +1537,6 @@ def get_tile_shape_choices(
                         sum(valid) / max(1, prev_size),
                     )
                     log_message(f"Valid check", f"{objective.name}", f"porp={porp:.2%}")
-                    if complete:
-                        objective.max_value = None  # We don't care anymore
-                        objective.min_value = None
-                        if objective.only_care_if_valid:
-                            cur_objectives.remove(objective)
-                            log_message(
-                                f"Removed {objective.name} because it is always valid"
-                            )
 
                 if objective.min_value is not None:
                     try:
@@ -1594,14 +1586,15 @@ def get_tile_shape_choices(
                         sum(valid) / max(1, prev_size),
                     )
                     log_message(f"Valid check", f"{objective.name}", f"porp={porp:.2%}")
-                    if complete:
-                        objective.max_value = None  # We don't care anymore
-                        objective.min_value = None
-                        if objective.only_care_if_valid:
-                            cur_objectives.remove(objective)
-                            log_message(
-                                f"Removed {objective.name} because it is always valid"
-                            )
+
+                if complete:
+                    objective.max_value = None  # We don't care anymore
+                    objective.min_value = None
+                    if objective.only_care_if_valid:
+                        cur_objectives.remove(objective)
+                        log_message(
+                            f"Removed {objective.name} because it is always valid"
+                        )
 
             if not choices_enumerated.shape[0]:
                 log_message(
