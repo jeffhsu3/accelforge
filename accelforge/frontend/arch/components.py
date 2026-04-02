@@ -758,16 +758,28 @@ def _eval_tensor2bits(
     return {k2: v for k, v in result.items() for k2 in k}
 
 
+_VALID_DIRECTIONS = {"up", "down", "up_and_down"}
+
+
 def _eval_direction(toeval, symbol_table: dict[str, Any]) -> dict[str, str]:
     """Evaluate a direction field. If a string, expand to all tensors. If a dict,
     resolve tensor expression keys."""
     if isinstance(toeval, str):
-        # Single direction for all tensors
+        if toeval not in _VALID_DIRECTIONS:
+            raise EvaluationError(
+                f'Invalid direction: "{toeval}". '
+                f"Must be one of {sorted(_VALID_DIRECTIONS)}."
+            )
         all_tensors = symbol_table["All"].instance
         return {t: toeval for t in all_tensors}
 
     result = {}
     for key, value in toeval.items():
+        if value not in _VALID_DIRECTIONS:
+            raise EvaluationError(
+                f'Invalid direction for {key}: "{value}". '
+                f"Must be one of {sorted(_VALID_DIRECTIONS)}."
+            )
         key_evaluated = eval_set_expression(
             expression=key,
             symbol_table=symbol_table,
@@ -1020,7 +1032,7 @@ class Toll(TensorHolder):
     zero.
     """
 
-    direction: EvalsTo[dict[str, Literal["up", "down", "up_and_down"]]]
+    direction: TryEvalTo[dict]
     """
     The direction in which data flows through this `Toll`. Can be:
 
