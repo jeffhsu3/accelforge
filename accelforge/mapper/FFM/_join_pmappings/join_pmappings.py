@@ -271,7 +271,19 @@ def multi_strategy_join(
             _pmapping_row_filter_function,
         )
 
-    resource_usage_thresholds = [0.02, 0.01, 0.001, 0.0001, 0]
+    resource_usage_thresholds = [
+        0.2,
+        .1,
+        .05,
+        .02,
+        .01,
+        .005,
+        .002,
+        .001,
+        .0001,
+        .00001,
+        0 # Give up, do full precision join
+    ]
     for i, threshold in enumerate(resource_usage_thresholds):
         for p in compressed.values():
             for pg in p:
@@ -342,6 +354,7 @@ def clean_compress_and_join_pmappings(
             lambda x: pmappings.pmapping_objects[einsum_name][x]
         )
     joined._data = _fillna_and__numeric_cast(joined.data, 0).reset_index(drop=True)
+    joined._data = joined._data.copy() # Defrag
 
     rank_variable_bounds = get_rank_variable_bounds_for_all_einsums(pmappings.spec)
     einsum_names = list(einsum2pmappings.keys())
@@ -942,6 +955,9 @@ def join_pmappings(
         # logger.info(
         #     f"\tLargest right: {max(len(s2.mappings.data) for s in right.values() for s2, _ in s)}"
         # )
+
+        print(f'Total number of mappings: {sum(len(s.mappings.data) for s in combined)}')
+        print(f'Total number of groups: {len(combined)}')
 
         # ======================================================================
         # Update left for the next iteration.
