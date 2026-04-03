@@ -273,16 +273,16 @@ def multi_strategy_join(
 
     resource_usage_thresholds = [
         0.2,
-        .1,
-        .05,
-        .02,
-        .01,
-        .005,
-        .002,
-        .001,
-        .0001,
-        .00001,
-        0 # Give up, do full precision join
+        0.1,
+        0.05,
+        0.02,
+        0.01,
+        0.005,
+        0.002,
+        0.001,
+        0.0001,
+        0.00001,
+        0,  # Give up, do full precision join
     ]
     for i, threshold in enumerate(resource_usage_thresholds):
         for p in compressed.values():
@@ -354,7 +354,7 @@ def clean_compress_and_join_pmappings(
             lambda x: pmappings.pmapping_objects[einsum_name][x]
         )
     joined._data = _fillna_and__numeric_cast(joined.data, 0).reset_index(drop=True)
-    joined._data = joined._data.copy() # Defrag
+    joined._data = joined._data.copy()  # Defrag
 
     rank_variable_bounds = get_rank_variable_bounds_for_all_einsums(pmappings.spec)
     einsum_names = list(einsum2pmappings.keys())
@@ -519,9 +519,9 @@ def join_pmappings(
     combine_reservations = spec.mapper._combine_reservations
     _runtime_log_file = spec.mapper._runtime_log_file
 
-    assert skip_invalid, (
-        "Joining only joins valid compatibilities in the for loops in this function."
-    )
+    assert (
+        skip_invalid
+    ), "Joining only joins valid compatibilities in the for loops in this function."
 
     drop_valid_reservations = not (Metrics.RESOURCE_USAGE & metrics)
     ignored_resources = oset()
@@ -955,9 +955,6 @@ def join_pmappings(
         # logger.info(
         #     f"\tLargest right: {max(len(s2.mappings.data) for s in right.values() for s2, _ in s)}"
         # )
-
-        print(f'Total number of mappings: {sum(len(s.mappings.data) for s in combined)}')
-        print(f'Total number of groups: {len(combined)}')
 
         # ======================================================================
         # Update left for the next iteration.
