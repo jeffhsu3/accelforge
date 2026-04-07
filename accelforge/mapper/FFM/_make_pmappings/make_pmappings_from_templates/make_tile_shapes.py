@@ -949,6 +949,175 @@ def coalesce_symbols(
     return symbol2goal
 
 
+_TILE_SHAPE_ORDER = "inner_to_outer_hybrid"
+
+def grab_symbol(
+    prev_symbol: Symbol,
+    symbols_remaining: list[Symbol],
+    what_tiles_symbol: "SymbolRelations",
+    objectives: list[Objective],
+    symbols_enumerated: list[Symbol],
+    keep_symbols: list[Symbol],
+    max_loop_check_groups: list[tuple[Number, list[Symbol]]],
+    log_message: Callable,
+):
+    strides = [s for s in symbols_remaining if what_tiles_symbol.is_stride(s)]
+    if not strides:
+        return symbols_remaining.pop(0)
+
+    tile_shape_order = _TILE_SHAPE_ORDER
+
+    if "inner_to_outer" in tile_shape_order:
+        strides = strides[::-1]
+        prev_tile = what_tiles_symbol.get_inner_tiles
+        next_tile = what_tiles_symbol.get_outer_tiles
+    elif "outer_to_inner" in tile_shape_order:
+        prev_tile = what_tiles_symbol.get_outer_tiles
+        next_tile = what_tiles_symbol.get_inner_tiles
+    else:
+        raise RuntimeError(f"BUG: invalid _TILE_SHAPE_ORDER: {_TILE_SHAPE_ORDER}")
+
+    if "one_rv_at_a_time" in tile_shape_order:
+        n = next_tile(prev_symbol, none_if_fail=True)
+        if n is not None and n in symbols_remaining:
+            symbols_remaining.remove(n)
+            return n
+        tile_shape_order = tile_shape_order.replace(
+            "one_rv_at_a_time", "smallest_first"
+        )
+
+    enumerated_set = oset(symbols_enumerated)
+
+    def _min_size(s):
+        return 1 / what_tiles_symbol.get_max_size(s)
+
+    def hybrid(s):
+        keep = s in keep_symbols
+
+        # Score for the % of symbols in objectives that are this symbol
+        score = 0
+        all_symbols = enumerated_set
+        for o in objectives:
+            n_symbols = sum(c for s2, c in o._symbol_counts.items() if s2 not in enumerated_set)
+            score += o._symbol_counts.get(s, 0) / max(1, n_symbols)
+
+        # Score for max_loop_check_groups partially resolved by this symbol
+        tiles = what_tiles_symbol.get_outer_tiles(s, none_if_fail=True)
+        tiled_by = what_tiles_symbol.get_inner_tiles(s, none_if_fail=True)
+        for _, g in max_loop_check_groups:
+            s_affects_group = s in g or tiled_by in g or tiles in g
+
+            # If we affect the group and we haven't enumerated anything else in the
+            # group, we'll need to keep this symbol for the current iteration.
+            if s_affects_group and not (oset(g) & all_symbols):
+                keep = True
+                break
+
+            # Otherwise, add score for nearing the completion of the group.
+            remaining = oset(g) - all_symbols
+            if s in remaining:
+                score += 1 / len(remaining)
+
+        score /= len(objectives) + len(max_loop_check_groups)
+
+        return (
+            -keep,
+            score,
+            _min_size(s),
+        )
+
+    def max_formulas(s):
+        following = next_tile(s, none_if_fail=True)
+        constrains_following = (
+            isinstance(following, Symbol) and following not in keep_symbols
+        )
+        return (
+            # Sum number of times it appears in all objectives
+            sum(o._symbol_counts.get(s, 0) for o in objectives) + 4**constrains_following,
+            # Number of objectives that have this symbol
+            len([o for o in objectives if s in o._free_symbols])
+            + 4**constrains_following,
+            # Minimize size
+            _min_size(s),
+        )
+
+    def min_loops_to_track(s):
+        max_f = prod(max_formulas(s))
+
+        def n_groups(s2):
+            return sum(1 for _, g in max_loop_check_groups if s2 in g) + (
+                s2 in keep_symbols
+            )
+
+        x = 0
+        while s is not None:
+            x += n_groups(s)
+            s = next_tile(s, none_if_fail=True)
+        return (x, max_f)
+
+    def _porp_of_formula(s):
+        prev = next_tile(s, none_if_fail=True)
+        n = 0
+        for o in objectives:
+            if s in o._free_symbols:
+                n += 1 / len(o._free_symbols)
+        constrains_prev = isinstance(prev, Symbol) and prev not in keep_symbols
+        if constrains_prev:
+            n += 1
+        return n
+
+    def porp_of_formulas(s):
+        n = 0
+        scale = 1
+        cur = s
+        while cur is not None and isinstance(cur, Symbol):
+            n += _porp_of_formula(cur)
+            break
+            cur = next_tile(cur, none_if_fail=True)
+            scale /= 2
+
+        return n / what_tiles_symbol.get_max_size(s)  # (
+        #     n,
+        #     *max_formulas(s)
+        # )
+
+    def prod_others(s):
+        return prod(max_formulas(s))
+
+    if "smallest_first" in tile_shape_order:
+        objective = _min_size
+    elif "most_formulas_first" in tile_shape_order:
+        objective = max_formulas
+    elif "prod_others" in tile_shape_order:
+        objective = prod_others
+    elif tile_shape_order in ["inner_to_outer", "outer_to_inner"]:
+        objective = lambda s: 1
+    elif "porp_of_formulas" in tile_shape_order:
+        objective = porp_of_formulas
+    elif "min_loops_to_track" in tile_shape_order:
+        objective = min_loops_to_track
+    elif "hybrid" in tile_shape_order:
+        objective = hybrid
+    else:
+        raise RuntimeError(f"BUG: invalid tile_shape_order: {tile_shape_order}")
+
+    choice, best = 0, objective(strides[0])
+    for i, s in enumerate(strides):
+        prev = prev_tile(s, none_if_fail=True)
+        if prev is not None and prev in symbols_remaining:
+            # Haven't made the prerequisite tile shape yet, so skip this symbol
+            continue
+        value = objective(s)
+        if value > best:
+            best = value
+            choice = i
+    choice = symbols_remaining.index(strides[choice])
+    log_message(
+        "Selected symbol", f"{symbols_remaining[choice]} with priority {best}"
+    )
+    return symbols_remaining.pop(choice)
+
+
 def get_tile_shape_choices(
     objectives: list[Objective],
     alt_objectives: list[Objective],
@@ -1003,19 +1172,13 @@ def get_tile_shape_choices(
 
     imperfect = IMPERFECT
 
-    # Inner to outer faster if there's symbols to keep because those symbols end up in
-    # the outer loops, so it does those symbols (which end up multiplying our choices)
-    # last. Outer to inner is faster if there's no symbols to keep because that's what
-    # happened on exactly one workload that Tanner tested.
-    TILE_SHAPE_ORDER = "inner_to_outer_hybrid"  # "min_loops_to_track_one_rv_at_a_time"
-
     # For imperfect, we make inner tile shapes, then create outer tile shapes that are
     # multiples of the non-residual part of the inner tile shape. This way, the very
     # last iteration of the outer tile shape fully contains the reisudal part of the
     # inner tile shape, and we don't have any cases where there are residuals stacking
     # across multiple loop levels.
     if IMPERFECT:
-        assert "inner_to_outer" in TILE_SHAPE_ORDER
+        assert "inner_to_outer" in _TILE_SHAPE_ORDER
 
     paretoed_by = []
 
@@ -1062,168 +1225,11 @@ def get_tile_shape_choices(
             **{str(k): v for k, v in padded_choices.items()},
         )
 
-    def grab_symbol(prev_symbol: Symbol = None):
-        strides = [s for s in symbols_remaining if what_tiles_symbol.is_stride(s)]
-        if not strides:
-            return symbols_remaining.pop(0)
-
-        tile_shape_order = TILE_SHAPE_ORDER
-
-        if "inner_to_outer" in tile_shape_order:
-            strides = strides[::-1]
-            prev_tile = what_tiles_symbol.get_inner_tiles
-            next_tile = what_tiles_symbol.get_outer_tiles
-        elif "outer_to_inner" in tile_shape_order:
-            prev_tile = what_tiles_symbol.get_outer_tiles
-            next_tile = what_tiles_symbol.get_inner_tiles
-        else:
-            raise RuntimeError(f"BUG: invalid TILE_SHAPE_ORDER: {TILE_SHAPE_ORDER}")
-
-        if "one_rv_at_a_time" in tile_shape_order:
-            n = next_tile(prev_symbol, none_if_fail=True)
-            if n is not None and n in symbols_remaining:
-                symbols_remaining.remove(n)
-                return n
-            tile_shape_order = tile_shape_order.replace(
-                "one_rv_at_a_time", "smallest_first"
-            )
-
-        for o in objectives:
-            o._formula_subs_one = o.formula.subs({g: 1 for g in symbols_enumerated})
-
-        def hybrid(s):
-            keep = s in keep_symbols
-
-            # Score for the % of symbols in objectives that are this symbol
-            score = 0
-            all_symbols = oset(symbols_enumerated)
-            for o in objectives:
-                f = o._formula_subs_one
-                n_symbols = sum(1 for _ in f.atoms(Symbol))
-                score += o.formula.count(s) / max(1, n_symbols)
-
-            # Score for max_loop_check_groups partially resolved by this symbol
-            tiles = what_tiles_symbol.get_outer_tiles(s, none_if_fail=True)
-            tiled_by = what_tiles_symbol.get_inner_tiles(s, none_if_fail=True)
-            for _, g in max_loop_check_groups:
-                s_affects_group = s in g or tiled_by in g or tiles in g
-
-                # If we affect the group and we haven't enumerated anything else in the
-                # group, we'll need to keep this symbol for the current iteration.
-                if s_affects_group and not (oset(g) & all_symbols):
-                    keep = True
-                    break
-
-                # Otherwise, add score for nearing the completion of the group.
-                remaining = oset(g) - all_symbols
-                if s in remaining:
-                    score += 1 / len(remaining)
-
-            score /= len(objectives) + len(max_loop_check_groups)
-
-            return (
-                -keep,
-                score,
-                min_size(s),
-            )
-
-        def max_formulas(s):
-            following = next_tile(s, none_if_fail=True)
-            constrains_following = (
-                isinstance(following, Symbol) and following not in keep_symbols
-            )
-            return (
-                # Sum number of times it appears in all objectives
-                sum(o.formula.count(s) for o in objectives) + 4**constrains_following,
-                # Number of objectives that have this symbol
-                len([o for o in objectives if s in o.formula.free_symbols])
-                + 4**constrains_following,
-                # Minimize size
-                min_size(s),
-            )
-
-        def min_loops_to_track(s):
-            max_f = prod(max_formulas(s))
-
-            def n_groups(s2):
-                return sum(1 for _, g in max_loop_check_groups if s2 in g) + (
-                    s2 in keep_symbols
-                )
-
-            x = 0
-            while s is not None:
-                x += n_groups(s)
-                s = next_tile(s, none_if_fail=True)
-            return (x, max_f)
-
-        def _porp_of_formula(s):
-            prev = next_tile(s, none_if_fail=True)
-            n = 0
-            for o in objectives:
-                f = o.formula
-                if s in f.free_symbols:
-                    # n += f.count(s) / sum(1 for _ in f.atoms(Symbol))
-                    n += 1 / len(f.free_symbols)
-            constrains_prev = isinstance(prev, Symbol) and prev not in keep_symbols
-            if constrains_prev:
-                n += 1
-            return n
-
-        def porp_of_formulas(s):
-            n = 0
-            scale = 1
-            cur = s
-            while cur is not None and isinstance(cur, Symbol):
-                n += _porp_of_formula(cur)
-                break
-                cur = next_tile(cur, none_if_fail=True)
-                scale /= 2
-
-            return n / what_tiles_symbol.get_max_size(s)  # (
-            #     n,
-            #     *max_formulas(s)
-            # )
-
-        def prod_others(s):
-            return prod(max_formulas(s))
-
-        def min_size(s):
-            return 1 / what_tiles_symbol.get_max_size(s)
-
-        if "smallest_first" in tile_shape_order:
-            objective = min_size
-        elif "most_formulas_first" in tile_shape_order:
-            objective = max_formulas
-        elif "prod_others" in tile_shape_order:
-            objective = prod_others
-        elif tile_shape_order in ["inner_to_outer", "outer_to_inner"]:
-            objective = lambda s: 1
-        elif "porp_of_formulas" in tile_shape_order:
-            objective = porp_of_formulas
-        elif "min_loops_to_track" in tile_shape_order:
-            objective = min_loops_to_track
-        elif "hybrid" in tile_shape_order:
-            objective = hybrid
-        else:
-            raise RuntimeError(f"BUG: invalid tile_shape_order: {tile_shape_order}")
-
-        choice, best = 0, objective(strides[0])
-        for i, s in enumerate(strides):
-            prev = prev_tile(s, none_if_fail=True)
-            if prev is not None and prev in symbols_remaining:
-                # Haven't made the prerequisite tile shape yet, so skip this symbol
-                continue
-            value = objective(s)
-            if value > best:
-                best = value
-                choice = i
-        choice = symbols_remaining.index(strides[choice])
-        log_message(
-            "Selected symbol", f"{symbols_remaining[choice]} with priority {best}"
-        )
-        return symbols_remaining.pop(choice)
-
-        raise RuntimeError(f"BUG: invalid TILE_SHAPE_ORDER: {TILE_SHAPE_ORDER}")
+    # Precompute symbol counts and free symbols for each objective so that
+    # grab_symbol doesn't need to call the expensive sympy subs().
+    for o in objectives:
+        o._free_symbols = o.formula.free_symbols
+        o._symbol_counts = {s: o.formula.count(s) for s in symbols}
 
     last_stride_symbol = None  # track the last stride symbol to select next symbol
     symbol = None
@@ -1233,7 +1239,16 @@ def get_tile_shape_choices(
         # ==============================================================================
         # Enumerate choices for a new symbol
         # ==============================================================================
-        symbol = grab_symbol(last_stride_symbol)
+        symbol = grab_symbol(
+            last_stride_symbol,
+            symbols_remaining,
+            what_tiles_symbol,
+            objectives,
+            symbols_enumerated,
+            keep_symbols,
+            max_loop_check_groups,
+            log_message,
+        )
 
         choices = []
         if what_tiles_symbol.is_stride(symbol):
