@@ -1191,13 +1191,27 @@ def analyze_storage(
     node: TensorHolder = mapping[node_idx]
 
     if not isinstance(count_upward_movement, dict):
-        count_upward_movement = {TensorName(t): count_upward_movement for t in node.tensors}
+        count_upward_movement = {
+            TensorName(t): count_upward_movement for t in node.tensors
+        }
     if not isinstance(count_downward_movement, dict):
-        count_downward_movement = {TensorName(t): count_downward_movement for t in node.tensors}
+        count_downward_movement = {
+            TensorName(t): count_downward_movement for t in node.tensors
+        }
 
     child_result = analyze_node(node_idx + 1, current_shape, info)
     component_object = find_component_object(node.component, info.job.flattened_arch)
-    skip_initial = isinstance(component_object, arch.Memory) and component_object.skip_initial_output_write
+
+    # Toll -> No initial output write because things just pass through. Keep
+    # skip_initial True so that it inherits the value from the child.
+    if isinstance(component_object, arch.Toll):
+        skip_initial = True
+    # Memory -> Skip initial output write is a setting
+    elif isinstance(component_object, arch.Memory):
+        skip_initial = component_object.skip_initial_output_write
+    else:
+        raise ValueError(f"Unknown component object: {component_object}")
+
     skip_initial = skip_initial and not info.is_copy_operation
 
     for tensor in node.tensors:
@@ -1251,8 +1265,7 @@ def analyze_storage(
 
             # For read+write tensors, we skip the first fill because the data will be
             # initialized with a zero value. This only applies where reads from
-            # parent actually occur (below the backing store). At and above the
-            # backing there are no parent reads to skip.
+            # parent actually occur (below the backing store).
             if (
                 tensor in info.workload.einsums[einsum_name].output_tensor_names
                 and not is_backing
@@ -1318,8 +1331,7 @@ def analyze_storage(
                         child.total_skipped_first_reads_to_parent * read_scale
                     )
                     stats.min_per_unit_skipped_first_read_actions += (
-                        child.min_per_parent_skipped_first_reads_to_parent
-                        * read_scale
+                        child.min_per_parent_skipped_first_reads_to_parent * read_scale
                     )
 
             if count_upward_movement[tensor]:  # Child -> Me
@@ -1417,7 +1429,9 @@ def analyze_compute(
     computes = 0 if info.is_copy_operation else 1
 
     component_object = find_component_object(node.component, info.job.flattened_arch)
-    skip_initial = component_object.skip_initial_output_write and not info.is_copy_operation
+    skip_initial = (
+        component_object.skip_initial_output_write and not info.is_copy_operation
+    )
 
     result_accumulator = SymbolicAnalysisOutput()
 
