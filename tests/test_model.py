@@ -41,11 +41,13 @@ class TestModel(unittest.TestCase):
         KN = 32
         BITS_PER_VALUE = 8
         spec = Spec.from_yaml(
-            EXAMPLES_DIR / "arches" / "simple_no_skip.yaml",
+            EXAMPLES_DIR / "arches" / "simple.yaml",
             EXAMPLES_DIR / "workloads" / "matmuls.yaml",
             EXAMPLES_DIR / "mappings" / "unfused_matmuls_to_simple.yaml",
             jinja_parse_data={"N_EINSUMS": 1, "M": M, "KN": KN},
         )
+
+        spec.arch["MainMemory"].skip_initial_output_write = False
 
         result = evaluate_mapping(spec)
         energy_breakdown = result.energy(per_component=True, per_tensor=True)
