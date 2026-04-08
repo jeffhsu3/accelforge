@@ -1,7 +1,7 @@
 import unittest
 
 from accelforge.frontend.spec import Spec
-from accelforge.model.main import evaluate_mapping
+from accelforge.model.main import evaluate_mapping, InvalidMappingError
 from accelforge.util.parallel import set_n_parallel_jobs
 
 try:
@@ -10,6 +10,19 @@ except ImportError:
     from paths import EXAMPLES_DIR
 
 set_n_parallel_jobs(1)
+
+
+class TestInvalidMapping(unittest.TestCase):
+    def test_matmul_to_simple(self):
+        M = 64
+        KN = 64
+        spec = Spec.from_yaml(
+            EXAMPLES_DIR / "arches" / "simple.yaml",
+            EXAMPLES_DIR / "workloads" / "matmuls.yaml",
+            "tests/input_files/mapping/invalid_matmul_to_simple.yaml",
+            jinja_parse_data={"N_EINSUMS": 1, "M": M, "KN": KN},
+        )
+        self.assertRaises(InvalidMappingError, lambda: evaluate_mapping(spec))
 
 
 class TestModel(unittest.TestCase):
