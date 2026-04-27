@@ -7,6 +7,7 @@ and emits just the type annotation. This extension subclasses AttributeDocumente
 looks up the default in `model_fields`, and adds a `:value:` line when the repr
 is short enough to be worth showing inline.
 """
+
 from sphinx.ext.autodoc import AttributeDocumenter
 
 # Defaults with reprs longer than this are skipped. A user reading the docs
