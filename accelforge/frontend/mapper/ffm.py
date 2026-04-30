@@ -78,6 +78,14 @@ class FFM(EvalableModel):
     3 means that the number of loops can be up to (the number of ranks + 3).
     """
 
+    explore_loop_orders: bool = True
+    """
+    Whether to explore loop orders for loops where we may get partial reuse. Note that
+    loop orders that don't matter (i.e., ones that have either full or no reuse) are not
+    explored, except in joining where we may join partial mappings who have
+    different-but-equivalent loop orders.
+    """
+
     _can_lower_outermost_memory: bool = False
     """
     Whether the storage node of outermost memory can be lowered. If set to True, the
@@ -89,7 +97,9 @@ class FFM(EvalableModel):
     "save_outermost_memory_usage".
     """
 
-    _only_output_pmapping_with_index: int | dict[EinsumName, int] | None = None
+    _only_output_pmapping_with_index: (
+        int | set[int] | dict[EinsumName, int | set[int]] | None
+    ) = None
     """
     For debugging. Only output the pmapping with this index. If a dictionary, then the
     keys are einsum names and the values are the indices.
@@ -154,4 +164,31 @@ class FFM(EvalableModel):
     """
     If set to True, we can have temporal loops above the backing storage for
     non-intermediate tensors, which effectively causes them to respawn.
+    """
+
+    _skip_invalid: bool = True
+    """
+    Whether to skip invalid joinings. This is used for a paper ablation study. Do not
+    use this unless you're ablating or want to burn CPU cycles.
+    """
+
+    _combine_reservations: bool = True
+    """
+    Whether to combine reservations to increase pruning effectiveness. This is used for
+    a paper ablation study. Do not use this unless you're ablating or want to burn CPU
+    cycles.
+    """
+
+    _runtime_log_file: str | None = None
+    """
+    If set, append per-step runtime as JSON lines to this file. Used for ablation study
+    measurements.
+    """
+
+    _metric_aggregator: Literal["sum", "prod", "any"] = "any"
+    """
+    How to aggregate metrics together to determine whether one pmapping is better than
+    another. "sum" means that the metrics are added together, "prod" means that the
+    metrics are multiplied together, and "any" means that any metric being better than
+    the other is enough to consider it non-dominated.
     """

@@ -64,7 +64,7 @@ def get_rank_variable_bounds_for_all_einsums(spec: Spec):
     return result
 
 
-def get_num_computes(spec: Spec, einsum_name: EinsumName | None = None) -> int:
+def get_n_computes(spec: Spec, einsum_name: EinsumName | None = None) -> int:
     einsums = spec.workload.einsums
     einsums = [einsum_name] if einsum_name is not None else spec.workload.einsum_names
     return sum(get_operation_space_size(spec.workload, e) for e in einsums)
@@ -97,12 +97,10 @@ def get_jobs(
     rank_variable_bounds = get_rank_variable_bounds_for_all_einsums(spec)
 
     einsum2spec: dict[EinsumName, Spec] = {}
-    s = f"Getting energy, latency, and leak power for components running "
-    pbar = tqdm(einsum_names, desc=s) if print_progress else einsum_names
-    for einsum_name in pbar:
-        if print_progress:
-            pbar.set_description(s + einsum_name)
-        einsum2spec[einsum_name] = (
+    s = "Getting energy, latency, and leak power for components running each Einsum. "
+
+    def _get_per_einsum_spec(spec, einsum_name):
+        result = (
             spec._spec_eval_expressions(
                 einsum_name=einsum_name,
                 eval_arch=True,
@@ -115,7 +113,16 @@ def get_jobs(
             ._for_einsum(einsum_name)
             ._clear_component_models()
         )
-        einsum2spec[einsum_name] = _memmap_read(einsum2spec[einsum_name])
+        return einsum_name, _memmap_read(result)
+
+    for einsum_name, result in parallel(
+        [
+            delayed(_get_per_einsum_spec)(spec, einsum_name)
+            for einsum_name in einsum_names
+        ],
+        pbar=s if print_progress else None,
+    ):
+        einsum2spec[einsum_name] = result
 
     def make_jobs_for_einsum(
         einsum_name: EinsumName,
@@ -273,8 +280,15 @@ def get_memories_to_track(
                 if mem.size == 0:
                     usage = 2  # FAIL
                 else:
-                    scale = mem.bits_per_value_scale[tensor] / mem.size
-                    usage += tensor_sizes[tensor] * scale
+                    workload_bpv = (
+                        spec.workload.einsums[einsum]
+                        .tensor_accesses[tensor]
+                        .bits_per_value
+                    )
+                    effective_bpv = mem.bits_per_value.get(tensor, workload_bpv)
+                    usage += (
+                        tensor_sizes[tensor] * effective_bpv / (workload_bpv * mem.size)
+                    )
 
         if usage <= 1:
             ignored_resources.add(memory)
@@ -377,18 +391,15 @@ def make_pmappings(
         return max([len(j2.mapping.nodes) for j2 in j])
 
     calls = sorted(calls, key=get_longest_mapping_length, reverse=True)
-    # # Randomly permute the calls
-    # import random
-    # random.shuffle(calls)
 
     pmapping_objects = {}
     pmapping_groups = {einsum_name: [] for einsum_name in spec.workload.einsum_names}
-    return_jobs = {}
+    keep_rates = []
     for (
         einsum_name,
         new_pmapping_groups,
         pmappings,
-        jobs_with_similar_compatibilities,
+        cur_keep_rates,
     ) in parallel(
         calls,
         pbar=f"Generating pmappings" if print_progress or one_pbar_only else None,
@@ -396,9 +407,7 @@ def make_pmappings(
     ):
         pmapping_groups[einsum_name].extend(new_pmapping_groups)
         pmapping_objects.setdefault(einsum_name, {}).update(pmappings)
-        return_jobs.setdefault(einsum_name, []).extend(
-            jobs_with_similar_compatibilities
-        )
+        keep_rates.extend(cur_keep_rates)
 
     for einsum_name in list(pmapping_groups.keys()):
         pmapping_groups[einsum_name] = PmappingGroup.combine_combineable(
@@ -407,6 +416,18 @@ def make_pmappings(
             pbar_postfix=f" for {einsum_name}",
             print_progress=print_progress,
         )
+
+    return_jobs = {
+        e: [j for jobs in v.values() for j in jobs] for e, v in einsum2jobs.items()
+    }
+
+    # Propagate keep_rates from worker-side job copies back to original jobs
+    id2keep_rates = {jid: (keep_rates, n) for jid, keep_rates, n in keep_rates}
+    for jobs in return_jobs.values():
+        for job in jobs:
+            assert job.job_id in id2keep_rates, f"Job {job.job_id} not found"
+            job.pmapping_keep_rates.update(id2keep_rates[job.job_id][0])
+            job.n_total_pmappings = id2keep_rates[job.job_id][1]
 
     return pmapping_groups, pmapping_objects, return_jobs
 
@@ -430,17 +451,6 @@ def _allocate_jobs(einsum2jobs, print_progress: bool = True):
         )
 
     split = True
-    # if (
-    #     not split
-    #     and is_using_parallel_processing()
-    #     and len(calls) < get_n_parallel_jobs() * 4
-    # ):
-    #     if print_progress:
-    #         print(
-    #             f"Insufficient jobs available to utilize available threads. "
-    #             f"Splitting jobs into smaller chunks."
-    #         )
-    #     split = True
 
     if split:
         calls = []

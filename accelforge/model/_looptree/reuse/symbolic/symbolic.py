@@ -50,6 +50,7 @@ from accelforge.util._sympy.broadcast_max import Min, Max, MaxGeqZero, MinGeqZer
 from accelforge.mapper.FFM._pareto_df.df_convention import iterations2col
 
 import sympy
+import symengine as se
 
 SYMBOL = "symbol"
 IMPERFECT = False
@@ -89,6 +90,7 @@ def min_nonzero(a: Any, b: Any) -> Any:
         return a
     return MinGeqZero(a, b)
 
+
 def max_dict(a: dict[Any, Any], b: dict[Any, Any]) -> dict[Any, Any]:
     new = {**a}
     for key, value in b.items():
@@ -104,7 +106,11 @@ class NetworkStats:
 
     def repeat(self, n_repeats):
         new = copy.copy(self)
-        new.total_hops *= n_repeats
+        if n_repeats == 1:
+            return new
+        if type(n_repeats) is float and n_repeats == int(n_repeats):
+            n_repeats = int(n_repeats)
+        new.total_hops = new.total_hops * n_repeats
         return new
 
     def combine(self, other: "NetworkStats"):
@@ -158,6 +164,10 @@ class BuffetStats:
 
     def repeat_temporal(self, factor: int, is_fully_relevant: bool) -> "BuffetStats":
         new = copy.copy(self)
+        if factor == 1:
+            return new
+        if type(factor) is float and factor == int(factor):
+            factor = int(factor)  # sympy Symbol * int is 4× faster than * float
         for k, v in new.__dict__.items():
             if not k.startswith(("total_", "max_", "min_")):
                 continue
@@ -169,18 +179,11 @@ class BuffetStats:
         return new
 
     def repeat_spatial(self, factor: int, reuse_parent_accesses: bool) -> "BuffetStats":
-        """
-        Duplicate attributes to account for spatial fanout.
-
-        Paramters
-        ---------
-        factor:
-            duplication factor
-        reuse_parent_access:
-            whether to reuse accesses to parent (if True, multicast is assumed
-            and accesses to parents are not duplicated).
-        """
         new = copy.copy(self)
+        if factor == 1:
+            return new
+        if type(factor) is float and factor == int(factor):
+            factor = int(factor)
         for k, v in new.__dict__.items():
             if not k.startswith(("total_", "max_", "min_")):
                 continue
@@ -214,9 +217,9 @@ class BuffetStats:
             elif v is None:
                 new.__dict__[k] = other_v
             else:
-                assert v == other_v, (
-                    f"BUG: {k} is different. self: {v} other: {other_v}"
-                )
+                assert (
+                    v == other_v
+                ), f"BUG: {k} is different. self: {v} other: {other_v}"
         return new
 
     def __iadd__(self, other: "BuffetStats") -> "BuffetStats":
@@ -263,15 +266,23 @@ class ComputeStats:
 
     def repeat_temporal(self, factor: int) -> "ComputeStats":
         new = copy.copy(self)
-        new.total_ops *= factor
-        new.max_per_unit_ops *= factor
-        new.max_latency *= factor
+        if factor == 1:
+            return new
+        if type(factor) is float and factor == int(factor):
+            factor = int(factor)
+        new.total_ops = new.total_ops * factor
+        new.max_per_unit_ops = new.max_per_unit_ops * factor
+        new.max_latency = new.max_latency * factor
         # NOTE: max_first_latency does not change
         return new
 
     def repeat_spatial(self, factor: int) -> "ComputeStats":
         new = copy.copy(self)
-        new.total_ops *= factor
+        if factor == 1:
+            return new
+        if type(factor) is float and factor == int(factor):
+            factor = int(factor)
+        new.total_ops = new.total_ops * factor
         return new
 
     def __add__(self, other: "ComputeStats") -> "ComputeStats":
@@ -380,7 +391,10 @@ class SymbolicAnalysisOutput:
         self.symbols.extend([s for s in other.symbols if s not in self.symbols])
         for key in self.compute_stats:
             if key in other.compute_stats:
-                assert self.compute_stats[key].total_ops == other.compute_stats[key].total_ops
+                assert (
+                    self.compute_stats[key].total_ops
+                    == other.compute_stats[key].total_ops
+                )
 
     def add_network_stats(self, other: "SymbolicAnalysisOutput"):
         assert not (oset(self.network_stats) & oset(other.network_stats)), "BUG"
@@ -432,10 +446,8 @@ class AnalysisInfo:
 
 
 def quick_insert_reservation_nodes(
-        job: Job,
-        mapping: Mapping | None = None,
-        tensors: oset[TensorName] | None = None
-    ) -> Mapping:
+    job: Job, mapping: Mapping | None = None, tensors: oset[TensorName] | None = None
+) -> Mapping:
     if mapping is None:
         mapping = list(job.mapping.nodes)
     else:
@@ -509,10 +521,7 @@ def convert_to_copy(
             j = i + 1
             while j < len(mapping):
                 node2 = mapping[j]
-                if (
-                    isinstance(node2, Reservation)
-                    and node.resource == node2.resource
-                ):
+                if isinstance(node2, Reservation) and node.resource == node2.resource:
                     mapping.pop(j)
                 else:
                     j += 1
@@ -543,6 +552,7 @@ def analyze_reuse_and_add_reservations_to_mapping(
         )
     else:
         tensor_to_backer_id = get_tensor_to_backer_id(mapping)
+
     if add_reservations:
         mapping = quick_insert_reservation_nodes(
             job,
@@ -610,8 +620,7 @@ def analyze_reuse_and_add_reservations_to_mapping(
     tensor2mapping = {}
     for tensor in [None] + sorted(tensors):
         rvs = einsum.tensor2rank_variables.get(
-            tensor,
-            oset.union(*einsum.tensor2rank_variables.values())
+            tensor, oset.union(*einsum.tensor2rank_variables.values())
         )
         cur_mapping = mapping._get_single_tensor_mapping(
             tensor,
@@ -651,7 +660,8 @@ def analyze_reuse_and_add_reservations_to_mapping(
     if is_copy_operation:
         for t in workload.einsums[einsum_name].tensor_names:
             tensor2mapping[t] = job.mapping._get_single_tensor_mapping(
-                t, job.flattened_arch,
+                t,
+                job.flattened_arch,
                 tensor_rank_variables=einsum.tensor2rank_variables[t],
             )
 
@@ -885,7 +895,7 @@ def _loop_stride_and_shape(node, current_shape, node_idx, info):
     # iteration count from the original mapping order.
     if (
         not info.is_recording_iterations
-        and node.rank_variable not in info.tensor_rank_variables # True -> irrelevant
+        and node.rank_variable not in info.tensor_rank_variables  # True -> irrelevant
     ):
         n_iters = info.precomputed_iterations[id(node)]
         stride = node.tile_shape
@@ -1045,10 +1055,11 @@ def analyze_spatial(node_idx, current_shape, info: AnalysisInfo):
             component_object = find_component_object(
                 network.component, info.job.flattened_arch
             )
-            bits_per_value_scale = component_object.bits_per_value_scale[network.tensor]
-            bits_per_value = (
-                bits_per_value_scale
-                * info.job.einsum.tensor_accesses[network.tensor].bits_per_value
+            workload_bpv = info.job.einsum.tensor_accesses[
+                network.tensor
+            ].bits_per_value
+            bits_per_value = component_object.bits_per_value.get(
+                network.tensor, workload_bpv
             )
             bits_per_action = component_object.bits_per_action
             if bits_per_action is not None:
@@ -1190,7 +1201,29 @@ def analyze_storage(
     einsum_name = mapping[-1].einsum
     node: TensorHolder = mapping[node_idx]
 
+    if not isinstance(count_upward_movement, dict):
+        count_upward_movement = {
+            TensorName(t): count_upward_movement for t in node.tensors
+        }
+    if not isinstance(count_downward_movement, dict):
+        count_downward_movement = {
+            TensorName(t): count_downward_movement for t in node.tensors
+        }
+
     child_result = analyze_node(node_idx + 1, current_shape, info)
+    component_object = find_component_object(node.component, info.job.flattened_arch)
+
+    # Toll -> No initial output write because things just pass through. Keep
+    # skip_initial True so that it inherits the value from the child.
+    if isinstance(component_object, arch.Toll):
+        skip_initial = True
+    # Memory -> Skip initial output write is a setting
+    elif isinstance(component_object, arch.Memory):
+        skip_initial = component_object.skip_initial_output_write
+    else:
+        raise ValueError(f"Unknown component object: {component_object}")
+
+    skip_initial = skip_initial and not info.is_copy_operation
 
     for tensor in node.tensors:
         tensor = TensorName(tensor)
@@ -1243,12 +1276,12 @@ def analyze_storage(
 
             # For read+write tensors, we skip the first fill because the data will be
             # initialized with a zero value. This only applies where reads from
-            # parent actually occur (below the backing store). At and above the
-            # backing there are no parent reads to skip.
+            # parent actually occur (below the backing store).
             if (
                 tensor in info.workload.einsums[einsum_name].output_tensor_names
                 and not is_backing
                 and below_backing
+                and skip_initial
             ):
                 inherit_add("total_skipped_first_reads_to_parent")
                 inherit_add("min_per_parent_skipped_first_reads_to_parent")
@@ -1257,14 +1290,8 @@ def analyze_storage(
         # Convert to actions. These are not used used upward; they are used to get
         # energy and latency.
         # ==============================================================================
-        component_object = find_component_object(
-            node.component, info.job.flattened_arch
-        )
-        bits_per_value_scale = component_object.bits_per_value_scale[tensor]
-        bits_per_value = (
-            bits_per_value_scale
-            * info.job.einsum.tensor_accesses[tensor].bits_per_value
-        )
+        workload_bpv = info.job.einsum.tensor_accesses[tensor].bits_per_value
+        bits_per_value = component_object.bits_per_value.get(tensor, workload_bpv)
         read_bits_per_action = component_object.actions["read"].bits_per_action
         read_scale = bits_per_value / read_bits_per_action
         if count_writes:
@@ -1275,7 +1302,7 @@ def analyze_storage(
 
         # ==========================
         # Data exchanges with parent
-        if count_downward_movement:  # Parent -> Me
+        if count_downward_movement[tensor]:  # Parent -> Me
             stats.total_write_actions += stats.total_reads_to_parent * write_scale
             stats.max_per_unit_write_actions += (
                 stats.total_reads_to_parent * write_scale
@@ -1287,7 +1314,7 @@ def analyze_storage(
                 stats.min_per_parent_skipped_first_reads_to_parent * write_scale
             )
 
-        if count_upward_movement:  # Me -> Parent
+        if count_upward_movement[tensor]:  # Me -> Parent
             # Comment this to have the final writeback to a buffer hit both that buffer and
             # go directly to the parent without incurring another read from the buffer.
             stats.total_read_actions += stats.total_writes_to_parent * read_scale
@@ -1301,20 +1328,21 @@ def analyze_storage(
         # =========================
         # Data exchanges with child
         if child is not None:
-            if count_downward_movement:  # Me -> Child
+            if count_downward_movement[tensor]:  # Me -> Child
                 stats.total_read_actions += child.total_reads_to_parent * read_scale
                 stats.max_per_unit_read_actions += (
                     child.max_per_parent_reads_to_parent * read_scale
                 )
                 # Skip first read
-                stats.total_skipped_first_read_actions += (
-                    child.total_skipped_first_reads_to_parent * read_scale
-                )
-                stats.min_per_unit_skipped_first_read_actions += (
-                    child.min_per_parent_skipped_first_reads_to_parent * read_scale
-                )
+                if skip_initial:
+                    stats.total_skipped_first_read_actions += (
+                        child.total_skipped_first_reads_to_parent * read_scale
+                    )
+                    stats.min_per_unit_skipped_first_read_actions += (
+                        child.min_per_parent_skipped_first_reads_to_parent * read_scale
+                    )
 
-            if count_upward_movement:  # Child -> Me
+            if count_upward_movement[tensor]:  # Child -> Me
                 stats.total_write_actions += child.total_writes_to_parent * write_scale
                 stats.max_per_unit_write_actions += (
                     child.max_per_parent_writes_to_parent * write_scale
@@ -1328,13 +1356,16 @@ def analyze_toll(node_idx, current_shape, info: AnalysisInfo):
     einsum_name = mapping[-1].einsum
     node = mapping[node_idx]
     component_object = find_component_object(node.component, info.job.flattened_arch)
+    direction = component_object.direction
+    count_up = {TensorName(t): direction[t] != "down" for t in node.tensors}
+    count_down = {TensorName(t): direction[t] != "up" for t in node.tensors}
     storage_result = analyze_storage(
         node_idx,
         current_shape,
         info,
         propagate_child_results=True,
-        count_upward_movement=component_object.direction != "down",
-        count_downward_movement=component_object.direction != "up",
+        count_upward_movement=count_up,
+        count_downward_movement=count_down,
         count_writes=False,
     )
     for tensor in node.tensors:
@@ -1366,10 +1397,8 @@ def analyze_reservation(node_idx, current_shape, info: AnalysisInfo):
     stats = BuffetStats()
     projection = info.einsum_tensor_to_projection[(einsum_name, tensor)]
     component_object = find_component_object(node.resource, info.job.flattened_arch)
-    bits_per_value_scale = component_object.bits_per_value_scale[tensor]
-    bits_per_value = (
-        bits_per_value_scale * info.job.einsum.tensor_accesses[tensor].bits_per_value
-    )
+    workload_bpv = info.job.einsum.tensor_accesses[tensor].bits_per_value
+    bits_per_value = component_object.bits_per_value.get(tensor, workload_bpv)
     stats.max_occupancy = (
         compute_dense_tile_occupancy(projection, current_shape) * bits_per_value
     )
@@ -1405,6 +1434,11 @@ def analyze_compute(
 
     computes = 0 if info.is_copy_operation else 1
 
+    component_object = find_component_object(node.component, info.job.flattened_arch)
+    skip_initial = (
+        component_object.skip_initial_output_write and not info.is_copy_operation
+    )
+
     result_accumulator = SymbolicAnalysisOutput()
 
     compute_key = Compute(einsum, node.component)
@@ -1426,8 +1460,9 @@ def analyze_compute(
         if tensor in info.workload.einsums[einsum].output_tensor_names:
             stats.total_writes_to_parent = 1
             stats.max_per_parent_writes_to_parent = 1
-            stats.total_skipped_first_reads_to_parent = 1
-            stats.min_per_parent_skipped_first_reads_to_parent = 1
+            if skip_initial:
+                stats.total_skipped_first_reads_to_parent = 1
+                stats.min_per_parent_skipped_first_reads_to_parent = 1
         stats.max_occupancy = 1
         result_accumulator.buffet_stats[buffet] = stats
 
@@ -1482,19 +1517,21 @@ def get_stride_and_tile_shape(node: Loop, full_shape, n: int, info: AnalysisInfo
     # - Node shape = stride
     # - # Iterations = ceil(total shape / stride)
     if IMPERFECT and initial_tile_shape is None:
-        factor = sympy.ceiling(rank_shape / stride)
-        stride_avg = stride / sympy.ceiling(rank_shape / stride)
+        factor = se.ceiling(rank_shape / stride)
+        stride_avg = stride / se.ceiling(rank_shape / stride)
         return StrideAndShape(stride_avg, RepeatedValue(stride, factor))
 
     if initial_tile_shape is None:
         if node._assume_perfect_factor or known_perfect_factor(stride, rank_shape):
             factor = rank_shape / stride
+            if type(factor) is float and factor == int(factor):
+                factor = int(factor)
             return StrideAndShape(stride, RepeatedValue(stride, factor))
         else:
-            factor = sympy.ceiling(rank_shape / sympy.MinGeqZero(stride, rank_shape))
+            factor = se.ceiling(rank_shape / MinGeqZero(stride, rank_shape))
             return make_possibly_different_last(stride, factor, rank_shape)
 
-    middle_shape_factor = sympy.ceiling((rank_shape - initial_tile_shape) / stride)
+    middle_shape_factor = se.ceiling((rank_shape - initial_tile_shape) / stride)
     # TODO: sometimes last_shape is 0, causing numerical instability
     # Currently, we are sometimes rounding up last shape.
     # last_shape = rank_shape - initial_tile_shape - stride*middle_shape_factor

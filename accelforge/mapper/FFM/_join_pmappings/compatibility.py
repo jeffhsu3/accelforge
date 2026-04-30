@@ -5,7 +5,7 @@ import itertools
 from numbers import Number
 from typing import Literal, TypeVar
 
-import pandas as pd
+from accelforge._accelerated_imports import pandas as pd
 from accelforge.frontend.mapping import (
     Mapping,
     Spatial,
@@ -266,7 +266,14 @@ class Compatibility(Updatable):
 
     @property
     def n_loops(self) -> int:
-        return max([len(s.loops) for s in self.tensors], default=0)
+        try:
+            return object.__getattribute__(self, "_n_loops_cached")
+        except AttributeError:
+            val = max(
+                (len(s.loops) for s in frozenset.__iter__(self.tensors)), default=0
+            )
+            object.__setattr__(self, "_n_loops_cached", val)
+            return val
 
     @property
     def loops(self) -> tuple[Loop, ...]:
@@ -279,14 +286,16 @@ class Compatibility(Updatable):
         return hash(self._get_hash_tuple())
 
     def __eq__(self, other):
+        if self is other:
+            return True
         return self._get_hash_tuple() == other._get_hash_tuple()
 
     def __post_init__(self):
-        assert isinstance(self.n_loops, int)
         assert isinstance(self.tensors, fzs)
         assert isinstance(self.splits, fzs)
         assert isinstance(self.reservation_indices, fzs)
         if self.check_reservation_indices:
+            assert isinstance(self.n_loops, int)
             assert (
                 max(self.reservation_indices, default=-1) <= self.n_loops
             ), f"Extra reservation indices {self.reservation_indices} are greater than n_loops {self.n_loops}"
@@ -400,6 +409,7 @@ class Compatibility(Updatable):
         self,
         right: "Compatibility",
         live_tensors: set[str],
+        _force_allow_invalid_only_for_runtime_test: bool = False,
     ) -> "Compatibility":
         self_freed = self.clear_dead_tensors(
             live_tensors, keep_reservation_indices_and_splits=True
@@ -407,7 +417,10 @@ class Compatibility(Updatable):
         right_freed = right.clear_dead_tensors(
             live_tensors, keep_reservation_indices_and_splits=True
         )
-        if self_freed.n_loops > right_freed.n_loops:
+        if (
+            self_freed.n_loops > right_freed.n_loops
+            and not _force_allow_invalid_only_for_runtime_test
+        ):
             # This can be relaxed if we have a way to do order-independent joining
             # and/or non-looptree mappings.
             raise ValueError(
@@ -672,6 +685,9 @@ class Compatibility(Updatable):
         my_symbols = oset(self.symbols())
         for c in my_symbols:
             assert c in mappings.columns, f"Column {c} not found in mappings"
-        should_drop = lambda x: is_fused_loop_col(x) and x not in my_symbols
-        drop = [c for c in mappings.columns if should_drop(c)]
-        return mappings.drop(columns=drop)
+        keep = [
+            c
+            for c in mappings.columns
+            if not (is_fused_loop_col(c) and c not in my_symbols)
+        ]
+        return mappings if len(keep) == len(mappings.columns) else mappings[keep]

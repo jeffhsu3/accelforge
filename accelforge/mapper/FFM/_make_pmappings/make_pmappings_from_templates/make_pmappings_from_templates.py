@@ -1,6 +1,6 @@
 import copy
 import math
-import pandas as pd
+from accelforge._accelerated_imports import pandas as pd
 from uuid import UUID
 from collections import defaultdict
 
@@ -42,7 +42,6 @@ from accelforge.util._mathfuncs import _count_factorizations
 def shift_reservations_by_null_loop_indices(
     mappings: pd.DataFrame, null_loop_indices: set[int]
 ):
-    prev = copy.deepcopy(mappings)  # TODO: Is this needed?
     target2newabovename = {}
     dropcols = []
     for c in mappings.columns:
@@ -62,13 +61,14 @@ def shift_reservations_by_null_loop_indices(
         else:
             target2newabovename[target] = (name, above)
 
-    mappings.drop(columns=dropcols, inplace=True)
+    if dropcols:
+        drop_set = set(dropcols)
+        mappings = mappings[[c for c in mappings.columns if c not in drop_set]]
     renames = {}
     for target, (name, above) in target2newabovename.items():
         renames[reservation2col(name, above)] = target
-    mappings.rename(columns=renames, inplace=True)
+    mappings = mappings.rename(columns=renames)
     if len(mappings.columns) != len(mappings.columns.unique()):
-        shift_reservations_by_null_loop_indices(prev, null_loop_indices)
         raise ValueError(f"Duplicate columns: {mappings.columns}")
     return mappings
 
@@ -230,10 +230,11 @@ def assert_all_jobs_have_same_symbols(
 
 def make_pmappings_from_templates(
     jobs_with_similar_compatibilities: SameCompatibilityJobs,
-) -> tuple[EinsumName, list[PmappingGroup], dict[UUID, Mapping], SameCompatibilityJobs]:
+) -> tuple[EinsumName, list[PmappingGroup], dict[UUID, Mapping]]:
     jwsc = jobs_with_similar_compatibilities
 
     results = []
+    pmapping_keep_rates = []
 
     for job in jobs_with_similar_compatibilities:
         try:
@@ -271,14 +272,18 @@ def make_pmappings_from_templates(
         )
 
         result[MAPPING_COLUMN] = job.job_id
-        cols_to_drop = []
+        drop_set = set()
         for col in result.columns:
             if is_reservation_col(col):
                 resource = col2reservation(col)[0]
                 if resource in job.memories_track_pmappings_only:
-                    cols_to_drop.append(col)
-        result.drop(columns=cols_to_drop, inplace=True)
+                    drop_set.add(col)
+        if drop_set:
+            result = result[[c for c in result.columns if c not in drop_set]]
         results.append(result)
+        pmapping_keep_rates.append(
+            (job.job_id, dict(job.pmapping_keep_rates), job.n_total_pmappings)
+        )
 
     fusable_tensors = jwsc.fusable_tensors
     einsum_name = jwsc.einsum_name
@@ -311,7 +316,7 @@ def make_pmappings_from_templates(
         skip_pareto=True,
     ).data
     if df.empty:
-        return einsum_name, [], {}, jobs_with_similar_compatibilities
+        return einsum_name, [], {}, pmapping_keep_rates
 
     tensor_cols = [tensor2col(tensor) for tensor in fusable_tensors]
     df.columns = [
@@ -400,7 +405,7 @@ def make_pmappings_from_templates(
         )
         for k, v in symbol_renames.items():
             mappings[v] = mappings[f"{einsum_name}<SEP>{k}"]
-        shift_reservations_by_null_loop_indices(mappings, null_loop_indices)
+        mappings = shift_reservations_by_null_loop_indices(mappings, null_loop_indices)
 
         energy_cols = [c for c in mappings.columns if "Total<SEP>energy" in c]
         if (mappings[energy_cols] < 0).any(axis=None):
@@ -442,9 +447,13 @@ def make_pmappings_from_templates(
             )
         pmapping_groups.append(PmappingGroup(compatibility, partial_mappings))
 
+    # Defragment to speed up pickling
+    for pg in pmapping_groups:
+        pg.mappings._data = pg.mappings._data.copy()
+
     return (
         einsum_name,
         pmapping_groups,
         pmapping_objects,
-        jobs_with_similar_compatibilities,
+        pmapping_keep_rates,
     )

@@ -150,7 +150,6 @@ def remove_unordered_spatial_temporal_loops(
     # Then the temporal/spatial pair will result in a non-contiguous tile of the
     # iteration space, which is not supported and must be removed.
 
-
     tensor2rvs = einsum.tensor2rank_variables
     disallowed_combinations: list[tuple[set[int], set[int]]] = []
     for i, node in enumerate(mapping):
@@ -164,7 +163,7 @@ def remove_unordered_spatial_temporal_loops(
         # Find the last spatial whose component's fanout is <= the TensorHolder's
         # component fanout. This spatial will affect the TensorHolder's tile.
         check_up_to = i
-        for j, node2 in enumerate(mapping[i+1:]):
+        for j, node2 in enumerate(mapping[i + 1 :]):
             if isinstance(node2, Spatial):
                 if fanouts[node.component] >= fanouts[node2.component]:
                     check_up_to = i + j + 1
@@ -173,17 +172,19 @@ def remove_unordered_spatial_temporal_loops(
         # spatial that affects it.
         rv2spatial = {}
         rv2temporal = {}
-        for node2 in mapping[i+1:check_up_to]:
+        for node2 in mapping[i + 1 : check_up_to]:
             if isinstance(node2, Spatial) and node2.rank_variable in relevent_rvs:
                 rv2spatial.setdefault(node2.rank_variable, []).append(node2)
             if isinstance(node2, Temporal):
                 rv2temporal.setdefault(node2.rank_variable, []).append(node2)
 
         for shared_rv in sorted(oset(rv2spatial) & oset(rv2temporal) & relevent_rvs):
-            disallowed_combinations.append((
-                tuple(id(x) for x in rv2spatial[shared_rv]),
-                tuple(id(x) for x in rv2temporal[shared_rv]),
-            ))
+            disallowed_combinations.append(
+                (
+                    tuple(id(x) for x in rv2spatial[shared_rv]),
+                    tuple(id(x) for x in rv2temporal[shared_rv]),
+                )
+            )
 
     if not explore_unordered_spatial_loops:
         disallowed_combinations = [x[1:] for x in disallowed_combinations]
@@ -191,7 +192,6 @@ def remove_unordered_spatial_temporal_loops(
     for combo in itertools.product(*disallowed_combinations):
         combo = oset.union(oset(), *combo)
         yield [n for n in mapping if id(n) not in combo]
-
 
 
 def pad_with_bottom_loops(mapping: list[MappingNode], einsum: Einsum):
@@ -273,9 +273,9 @@ def iterate_mappings_no_constraints(
     symbol_table = {r.name: r.source for r in einsum.renames}
     fusable_tensors = job.fusable_tensors
 
-    ranks_with_tile_pattern = {
+    ranks_with_tile_pattern = oset(
         r for r, c in job.initial_delta_choices.items() if len(c) > 1
-    }
+    )
     job.ranks_with_tile_pattern = ranks_with_tile_pattern
 
     fanouts = {}
@@ -311,6 +311,7 @@ def iterate_mappings_no_constraints(
             fusable_tensors,
             job.intermediate_tensors,
             spec.mapper._let_non_intermediate_tensors_respawn_in_backing_storage,
+            spec.mapper.explore_loop_orders,
         ):
             mapping = copy.deepcopy(mapping)
             insert_spatial_loops(
@@ -357,7 +358,12 @@ def iterate_mappings_constraints(
             job,
         ):
             mapping, constraints = get_constraints(
-                flattened_arch, mapping, symbol_table, einsum_name, tensor_to_relevancy
+                flattened_arch,
+                mapping,
+                symbol_table,
+                einsum_name,
+                tensor_to_relevancy,
+                is_copy_operation=spec.workload.einsums[einsum_name].is_copy_operation,
             )
 
             # This goes after the constraints because constraints may remove some loops,
@@ -424,16 +430,14 @@ def make_pmapping_templates(job: Job, print_progress: bool = True) -> SameEinsum
         )
 
     jobs = SameEinsumJobs()
-    only_output_pmapping_index = (
-        job.spec_one_einsum.mapper._only_output_pmapping_with_index
-    )
-    if isinstance(only_output_pmapping_index, dict):
-        only_output_pmapping_index = only_output_pmapping_index.get(
-            job.einsum_name, None
-        )
+    only_output_index = job.spec_one_einsum.mapper._only_output_pmapping_with_index
+    if isinstance(only_output_index, dict):
+        only_output_index = only_output_index.get(job.einsum_name, None)
 
     for i, (mapping, constraints, symbol_table) in enumerate(mappings_constraints):
-        if only_output_pmapping_index is not None and i != only_output_pmapping_index:
+        if only_output_index is not None and i != only_output_index:
+            continue
+        if isinstance(only_output_index, set) and i not in only_output_index:
             continue
         new_job = copy.copy(job)
         new_job.mapping = mapping

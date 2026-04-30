@@ -35,7 +35,9 @@ from accelforge.frontend.mapper.metrics import Metrics
 from accelforge.util._frozenset import fzs, oset
 import math
 import sympy
-import numpy as np
+import symengine as se
+from sympy.functions.elementary.miscellaneous import MinMaxBase as _MinMaxBase
+from accelforge._accelerated_imports import numpy as np
 from numbers import Number
 
 from accelforge.mapper.FFM._make_pmappings.make_pmappings_from_templates.symbol_relations import (
@@ -48,6 +50,48 @@ from accelforge.model.run_model import (
 import getpass
 
 DEBUG = getpass.getuser() == "tanner"
+
+
+# Sympy drops known-dominated terms from Maxes and Mins using two passes,
+# a fast and a slow path. The fast path (copy-pasted below) handles all of
+# our cases; the slow path isn't helpful for us and takes a long time. This
+# may leave known-dominated terms in Min/Max expressions, but these won't
+# affect correctness. Plus a result cache.
+_is_connected_cache: dict = {}
+_SENTINEL = object()
+
+
+@classmethod
+def _is_connected_cached(cls, x, y):
+    key = (x, y)
+    cached = _is_connected_cache.get(key, _SENTINEL)
+    if cached is not _SENTINEL:
+        return cached
+    if x == y:
+        result = True
+    else:
+        t, f, result = sympy.Max, sympy.Min, False
+        for _ in range(2):
+            for op in "><":
+                try:
+                    v = (x >= y) if op == ">" else (x <= y)
+                except TypeError:
+                    break
+                if not v.is_Relational:
+                    result = t if v else f
+                    break
+                t, f = f, t
+                x, y = y, x
+            if result is not False:
+                break
+            x, y = y, x
+    if len(_is_connected_cache) >= 200_000:
+        _is_connected_cache.clear()
+    _is_connected_cache[key] = result
+    return result
+
+
+_MinMaxBase._is_connected = _is_connected_cached
 
 
 class ComparisonResult(Enum):
@@ -478,9 +522,12 @@ def _partition_formula(
     absolute_tolerance = 0
 
     def _try_replace_unknowns(t: Expr):
+        replacements = {}
         for s in sorted(t.free_symbols - symbols_enumerated, key=str):
             if not affects_comparison(t, s, symbols_enumerated):
-                t = t.subs(s, 1)
+                replacements[s] = sympy.Integer(1)
+        if replacements:
+            t = t.xreplace(replacements)
         return t
 
     def _recombine_terms(terms: list[Expr], transform_terms: bool = True):
@@ -663,7 +710,7 @@ def append_vector(matrix: np.ndarray, vector: np.ndarray):
 
 @lru_cache(maxsize=10000)
 def simplify(f: Expr):
-    return f.simplify()
+    return sympy.expand(f)
 
 
 def symbol2int(symbol: Symbol):
@@ -676,7 +723,7 @@ def f_minus_other_f(f: Expr, symbols_enumerated: set[Symbol]):
         s: sympy.Symbol(f"{s}_2", integer=True, positive=True)
         for s in sorted(f.free_symbols & symbols_enumerated, key=str)
     }
-    return f.subs(fs) - f > 0
+    return f.xreplace(fs) - f > 0
 
 
 @lru_cache(maxsize=10000)
@@ -785,9 +832,9 @@ def coalesce_symbols(
     sym_enumerated_set = fzs(symbols_enumerated)
     new_symbol2goal = {}
 
-    log_message("coalesce symbols", f"initial")
+    DEBUG and log_message("coalesce symbols", f"initial")
     for s, g in symbol2goal.items():
-        log_message(f"\t{g.goal} {g.tolerance=} {g.absolute_tolerance=}: {s}")
+        DEBUG and log_message(f"\t{g.goal} {g.tolerance=} {g.absolute_tolerance=}: {s}")
 
     changed = True
     while changed:
@@ -803,7 +850,9 @@ def coalesce_symbols(
         for formula, goal in list(symbol2goal.items()):
             # Not dependent on any enumerated symbols, so drop it
             if not formula.free_symbols & sym_enumerated_set:
-                log_message("coalesce symbols", f"dropping constant: {formula}")
+                DEBUG and log_message(
+                    "coalesce symbols", f"dropping constant: {formula}"
+                )
                 continue
 
             # It is an enumerated symbol, so just keep it
@@ -823,7 +872,9 @@ def coalesce_symbols(
                     if len(term.free_symbols) != 0:
                         keep.append(term)
                     else:
-                        log_message("coalesce symbols", f"dropping constant: {term}")
+                        DEBUG and log_message(
+                            "coalesce symbols", f"dropping constant: {term}"
+                        )
                 formula = type(formula)(*keep) if len(keep) > 1 else keep[0]
 
             # If it's a product, remove any terms that are constant
@@ -835,7 +886,9 @@ def coalesce_symbols(
                     else:
                         if term < 0:
                             goal = ~goal
-                        log_message("coalesce symbols", f"dropping constant: {term}")
+                        DEBUG and log_message(
+                            "coalesce symbols", f"dropping constant: {term}"
+                        )
                 formula = type(formula)(*keep) if len(keep) > 1 else keep[0]
 
             # If it's a function of a non-enumerated symbol or a symbol that we can't
@@ -847,14 +900,14 @@ def coalesce_symbols(
                     continue
 
                 if not affects_comparison(formula, s, sym_enumerated_set):
-                    formula = formula.subs(s, 1)
-                    log_message(
+                    formula = formula.xreplace({s: sympy.Integer(1)})
+                    DEBUG and log_message(
                         "coalesce symbols",
                         f"dropping non-comparable symbol that does not affect comparison {s}: {formula}",
                     )
                     continue
                 else:
-                    log_message(
+                    DEBUG and log_message(
                         "coalesce symbols",
                         f"keeping dropping symbol that affects comparison {s}: {formula}",
                     )
@@ -868,7 +921,9 @@ def coalesce_symbols(
                 if new_goal is not None:
                     new_goal.tolerance = 0
                     new_goal.absolute_tolerance = 0
-                    log_message("coalesce symbols", f"replacing single term: {formula}")
+                    DEBUG and log_message(
+                        "coalesce symbols", f"replacing single term: {formula}"
+                    )
                     update_symbol2goal(formula, new_goal, new_symbol2goal)
 
             # If we're a fraction and all of our symbols are in the denominator, replace
@@ -881,7 +936,9 @@ def coalesce_symbols(
                         continue
                     break
                 else:
-                    log_message("coalesce symbols", f"replacing reciprocal: {formula}")
+                    DEBUG and log_message(
+                        "coalesce symbols", f"replacing reciprocal: {formula}"
+                    )
                     formula = 1 / formula
                     goal = ~goal
                     goal.tolerance = 0
@@ -892,23 +949,29 @@ def coalesce_symbols(
             for s in sorted(formula.free_symbols, key=str):
                 g = latest(s).goal if s in latest() else None
                 if g in ["min", "max"]:
-                    log_message(
+                    DEBUG and log_message(
                         "coalesce symbols", f"checking agreement with {s} and goal {g}"
                     )
                     diff_result = diff_geq_leq_zero(formula, s, bounds)
                     if diff_result == ComparisonResult.ALWAYS_LEQ_THAN_ZERO:
                         this_goal = (~goal).goal
-                        log_message("coalesce symbols", f"diff result for {s} <= 0")
+                        DEBUG and log_message(
+                            "coalesce symbols", f"diff result for {s} <= 0"
+                        )
                     elif diff_result == ComparisonResult.ALWAYS_GEQ_THAN_ZERO:
                         this_goal = (goal).goal
-                        log_message("coalesce symbols", f"diff result for {s} >= 0")
+                        DEBUG and log_message(
+                            "coalesce symbols", f"diff result for {s} >= 0"
+                        )
                     elif diff_result == ComparisonResult.UNKNOWN:
-                        log_message(
+                        DEBUG and log_message(
                             "coalesce symbols", f"diff result for {s} is unknown"
                         )
                         break
                     elif diff_result == ComparisonResult.ALWAYS_EQUAL_TO_ZERO:
-                        log_message("coalesce symbols", f"diff result for {s} = 0")
+                        DEBUG and log_message(
+                            "coalesce symbols", f"diff result for {s} = 0"
+                        )
                         this_goal = g  # Make it agree
                     else:
                         diff_geq_leq_zero(formula, s, bounds)
@@ -922,18 +985,18 @@ def coalesce_symbols(
             else:
                 # We didn't break! This formula agrees with all other goals, so we can
                 # remove it.
-                log_message(
+                DEBUG and log_message(
                     "coalesce symbols",
                     f"removing formula that agrees with all other goals: {formula}",
                 )
                 for s in disagrees:
-                    log_message(
+                    DEBUG and log_message(
                         "coalesce symbols",
                         f"previous formula disagreed with {s}. Changing goal to diff",
                     )
                     update_symbol2goal(s, Goal("diff"), new_symbol2goal)
                 continue
-            log_message(
+            DEBUG and log_message(
                 "coalesce symbols",
                 f"cannot change formula: {formula}",
             )
@@ -942,11 +1005,184 @@ def coalesce_symbols(
         changed = symbol2goal != new_symbol2goal
         symbol2goal = new_symbol2goal
 
-    log_message("coalesce symbols", f"final")
+    DEBUG and log_message("coalesce symbols", f"final")
     for s, g in symbol2goal.items():
-        log_message(f"\t{g.goal} {g.tolerance=} {g.absolute_tolerance=}: {s}")
+        DEBUG and log_message(f"\t{g.goal} {g.tolerance=} {g.absolute_tolerance=}: {s}")
 
     return symbol2goal
+
+
+_TILE_SHAPE_ORDER = "inner_to_outer_hybrid"
+
+
+def grab_symbol(
+    prev_symbol: Symbol,
+    symbols_remaining: list[Symbol],
+    what_tiles_symbol: "SymbolRelations",
+    objectives: list[Objective],
+    symbols_enumerated: list[Symbol],
+    keep_symbols: list[Symbol],
+    max_loop_check_groups: list[tuple[Number, list[Symbol]]],
+    log_message: Callable,
+):
+    strides = [s for s in symbols_remaining if what_tiles_symbol.is_stride(s)]
+    if not strides:
+        return symbols_remaining.pop(0)
+
+    tile_shape_order = _TILE_SHAPE_ORDER
+
+    if "inner_to_outer" in tile_shape_order:
+        strides = strides[::-1]
+        prev_tile = what_tiles_symbol.get_inner_tiles
+        next_tile = what_tiles_symbol.get_outer_tiles
+    elif "outer_to_inner" in tile_shape_order:
+        prev_tile = what_tiles_symbol.get_outer_tiles
+        next_tile = what_tiles_symbol.get_inner_tiles
+    else:
+        raise RuntimeError(f"BUG: invalid _TILE_SHAPE_ORDER: {_TILE_SHAPE_ORDER}")
+
+    if "one_rv_at_a_time" in tile_shape_order:
+        n = next_tile(prev_symbol, none_if_fail=True)
+        if n is not None and n in symbols_remaining:
+            symbols_remaining.remove(n)
+            return n
+        tile_shape_order = tile_shape_order.replace(
+            "one_rv_at_a_time", "smallest_first"
+        )
+
+    enumerated_set = oset(symbols_enumerated)
+
+    def _min_size(s):
+        return 1 / what_tiles_symbol.get_max_size(s)
+
+    def hybrid(s):
+        keep = s in keep_symbols
+
+        # Score for the % of symbols in objectives that are this symbol
+        score = 0
+        all_symbols = enumerated_set
+        for o in objectives:
+            n_symbols = sum(
+                c for s2, c in o._symbol_counts.items() if s2 not in enumerated_set
+            )
+            score += o._symbol_counts.get(s, 0) / max(1, n_symbols)
+
+        # Score for max_loop_check_groups partially resolved by this symbol
+        tiles = what_tiles_symbol.get_outer_tiles(s, none_if_fail=True)
+        tiled_by = what_tiles_symbol.get_inner_tiles(s, none_if_fail=True)
+        for _, g in max_loop_check_groups:
+            s_affects_group = s in g or tiled_by in g or tiles in g
+
+            # If we affect the group and we haven't enumerated anything else in the
+            # group, we'll need to keep this symbol for the current iteration.
+            if s_affects_group and not (oset(g) & all_symbols):
+                keep = True
+                break
+
+            # Otherwise, add score for nearing the completion of the group.
+            remaining = oset(g) - all_symbols
+            if s in remaining:
+                score += 1 / len(remaining)
+
+        score /= len(objectives) + len(max_loop_check_groups)
+
+        return (
+            -keep,
+            score,
+            _min_size(s),
+        )
+
+    def max_formulas(s):
+        following = next_tile(s, none_if_fail=True)
+        constrains_following = (
+            isinstance(following, Symbol) and following not in keep_symbols
+        )
+        return (
+            # Sum number of times it appears in all objectives
+            sum(o._symbol_counts.get(s, 0) for o in objectives)
+            + 4**constrains_following,
+            # Number of objectives that have this symbol
+            len([o for o in objectives if s in o._free_symbols])
+            + 4**constrains_following,
+            # Minimize size
+            _min_size(s),
+        )
+
+    def min_loops_to_track(s):
+        max_f = prod(max_formulas(s))
+
+        def n_groups(s2):
+            return sum(1 for _, g in max_loop_check_groups if s2 in g) + (
+                s2 in keep_symbols
+            )
+
+        x = 0
+        while s is not None:
+            x += n_groups(s)
+            s = next_tile(s, none_if_fail=True)
+        return (x, max_f)
+
+    def _porp_of_formula(s):
+        prev = next_tile(s, none_if_fail=True)
+        n = 0
+        for o in objectives:
+            if s in o._free_symbols:
+                n += 1 / len(o._free_symbols)
+        constrains_prev = isinstance(prev, Symbol) and prev not in keep_symbols
+        if constrains_prev:
+            n += 1
+        return n
+
+    def porp_of_formulas(s):
+        n = 0
+        scale = 1
+        cur = s
+        while cur is not None and isinstance(cur, Symbol):
+            n += _porp_of_formula(cur)
+            break
+            cur = next_tile(cur, none_if_fail=True)
+            scale /= 2
+
+        return n / what_tiles_symbol.get_max_size(s)  # (
+        #     n,
+        #     *max_formulas(s)
+        # )
+
+    def prod_others(s):
+        return prod(max_formulas(s))
+
+    if "smallest_first" in tile_shape_order:
+        objective = _min_size
+    elif "most_formulas_first" in tile_shape_order:
+        objective = max_formulas
+    elif "prod_others" in tile_shape_order:
+        objective = prod_others
+    elif tile_shape_order in ["inner_to_outer", "outer_to_inner"]:
+        objective = lambda s: 1
+    elif "porp_of_formulas" in tile_shape_order:
+        objective = porp_of_formulas
+    elif "min_loops_to_track" in tile_shape_order:
+        objective = min_loops_to_track
+    elif "hybrid" in tile_shape_order:
+        objective = hybrid
+    else:
+        raise RuntimeError(f"BUG: invalid tile_shape_order: {tile_shape_order}")
+
+    choice, best = 0, objective(strides[0])
+    for i, s in enumerate(strides):
+        prev = prev_tile(s, none_if_fail=True)
+        if prev is not None and prev in symbols_remaining:
+            # Haven't made the prerequisite tile shape yet, so skip this symbol
+            continue
+        value = objective(s)
+        if value > best:
+            best = value
+            choice = i
+    choice = symbols_remaining.index(strides[choice])
+    DEBUG and log_message(
+        "Selected symbol", f"{symbols_remaining[choice]} with priority {best}"
+    )
+    return symbols_remaining.pop(choice)
 
 
 def get_tile_shape_choices(
@@ -990,8 +1226,8 @@ def get_tile_shape_choices(
     max_loop_check_groups : list[tuple[Number, list[Symbol]]]
         The groups of symbols to check for loops.
     """
-    objectives = [copy.deepcopy(o) for o in objectives]
-    alt_objectives = [copy.deepcopy(o) for o in alt_objectives]
+    objectives = list(objectives)
+    alt_objectives = list(alt_objectives)
     max_loop_check_groups = [g for g in max_loop_check_groups if g[0] < len(g[1])]
 
     import time
@@ -1003,19 +1239,13 @@ def get_tile_shape_choices(
 
     imperfect = IMPERFECT
 
-    # Inner to outer faster if there's symbols to keep because those symbols end up in
-    # the outer loops, so it does those symbols (which end up multiplying our choices)
-    # last. Outer to inner is faster if there's no symbols to keep because that's what
-    # happened on exactly one workload that Tanner tested.
-    TILE_SHAPE_ORDER = "inner_to_outer_hybrid"  # "min_loops_to_track_one_rv_at_a_time"
-
     # For imperfect, we make inner tile shapes, then create outer tile shapes that are
     # multiples of the non-residual part of the inner tile shape. This way, the very
     # last iteration of the outer tile shape fully contains the reisudal part of the
     # inner tile shape, and we don't have any cases where there are residuals stacking
     # across multiple loop levels.
     if IMPERFECT:
-        assert "inner_to_outer" in TILE_SHAPE_ORDER
+        assert "inner_to_outer" in _TILE_SHAPE_ORDER
 
     paretoed_by = []
 
@@ -1037,7 +1267,7 @@ def get_tile_shape_choices(
             print(f"{time.time() - prev_time:.2f}s: {message} {' '.join(args)}")
         time_end(message)
 
-    log_message("init")
+    DEBUG and log_message("init")
 
     def eval_objective(
         formula: Expr | Objective,
@@ -1062,178 +1292,30 @@ def get_tile_shape_choices(
             **{str(k): v for k, v in padded_choices.items()},
         )
 
-    def grab_symbol(prev_symbol: Symbol = None):
-        strides = [s for s in symbols_remaining if what_tiles_symbol.is_stride(s)]
-        if not strides:
-            return symbols_remaining.pop(0)
-
-        tile_shape_order = TILE_SHAPE_ORDER
-
-        if "inner_to_outer" in tile_shape_order:
-            strides = strides[::-1]
-            prev_tile = what_tiles_symbol.get_inner_tiles
-            next_tile = what_tiles_symbol.get_outer_tiles
-        elif "outer_to_inner" in tile_shape_order:
-            prev_tile = what_tiles_symbol.get_outer_tiles
-            next_tile = what_tiles_symbol.get_inner_tiles
-        else:
-            raise RuntimeError(f"BUG: invalid TILE_SHAPE_ORDER: {TILE_SHAPE_ORDER}")
-
-        if "one_rv_at_a_time" in tile_shape_order:
-            n = next_tile(prev_symbol, none_if_fail=True)
-            if n is not None and n in symbols_remaining:
-                symbols_remaining.remove(n)
-                return n
-            tile_shape_order = tile_shape_order.replace(
-                "one_rv_at_a_time", "smallest_first"
-            )
-
-        for o in objectives:
-            o._formula_subs_one = o.formula.subs({g: 1 for g in symbols_enumerated})
-
-        def hybrid(s):
-            keep = s in keep_symbols
-
-            # Score for the % of symbols in objectives that are this symbol
-            score = 0
-            all_symbols = oset(symbols_enumerated)
-            for o in objectives:
-                f = o._formula_subs_one
-                n_symbols = sum(1 for _ in f.atoms(Symbol))
-                score += o.formula.count(s) / max(1, n_symbols)
-
-            # Score for max_loop_check_groups partially resolved by this symbol
-            tiles = what_tiles_symbol.get_outer_tiles(s, none_if_fail=True)
-            tiled_by = what_tiles_symbol.get_inner_tiles(s, none_if_fail=True)
-            for _, g in max_loop_check_groups:
-                s_affects_group = s in g or tiled_by in g or tiles in g
-
-                # If we affect the group and we haven't enumerated anything else in the
-                # group, we'll need to keep this symbol for the current iteration.
-                if s_affects_group and not (oset(g) & all_symbols):
-                    keep = True
-                    break
-
-                # Otherwise, add score for nearing the completion of the group.
-                remaining = oset(g) - all_symbols
-                if s in remaining:
-                    score += 1 / len(remaining)
-
-            score /= len(objectives) + len(max_loop_check_groups)
-
-            return (
-                -keep,
-                score,
-                min_size(s),
-            )
-
-        def max_formulas(s):
-            following = next_tile(s, none_if_fail=True)
-            constrains_following = (
-                isinstance(following, Symbol) and following not in keep_symbols
-            )
-            return (
-                # Sum number of times it appears in all objectives
-                sum(o.formula.count(s) for o in objectives) + 4**constrains_following,
-                # Number of objectives that have this symbol
-                len([o for o in objectives if s in o.formula.free_symbols])
-                + 4**constrains_following,
-                # Minimize size
-                min_size(s),
-            )
-
-        def min_loops_to_track(s):
-            max_f = prod(max_formulas(s))
-
-            def n_groups(s2):
-                return sum(1 for _, g in max_loop_check_groups if s2 in g) + (
-                    s2 in keep_symbols
-                )
-
-            x = 0
-            while s is not None:
-                x += n_groups(s)
-                s = next_tile(s, none_if_fail=True)
-            return (x, max_f)
-
-        def _porp_of_formula(s):
-            prev = next_tile(s, none_if_fail=True)
-            n = 0
-            for o in objectives:
-                f = o.formula
-                if s in f.free_symbols:
-                    # n += f.count(s) / sum(1 for _ in f.atoms(Symbol))
-                    n += 1 / len(f.free_symbols)
-            constrains_prev = isinstance(prev, Symbol) and prev not in keep_symbols
-            if constrains_prev:
-                n += 1
-            return n
-
-        def porp_of_formulas(s):
-            n = 0
-            scale = 1
-            cur = s
-            while cur is not None and isinstance(cur, Symbol):
-                n += _porp_of_formula(cur)
-                break
-                cur = next_tile(cur, none_if_fail=True)
-                scale /= 2
-
-            return n / what_tiles_symbol.get_max_size(s)  # (
-            #     n,
-            #     *max_formulas(s)
-            # )
-
-        def prod_others(s):
-            return prod(max_formulas(s))
-
-        def min_size(s):
-            return 1 / what_tiles_symbol.get_max_size(s)
-
-        if "smallest_first" in tile_shape_order:
-            objective = min_size
-        elif "most_formulas_first" in tile_shape_order:
-            objective = max_formulas
-        elif "prod_others" in tile_shape_order:
-            objective = prod_others
-        elif tile_shape_order in ["inner_to_outer", "outer_to_inner"]:
-            objective = lambda s: 1
-        elif "porp_of_formulas" in tile_shape_order:
-            objective = porp_of_formulas
-        elif "min_loops_to_track" in tile_shape_order:
-            objective = min_loops_to_track
-        elif "hybrid" in tile_shape_order:
-            objective = hybrid
-        else:
-            raise RuntimeError(f"BUG: invalid tile_shape_order: {tile_shape_order}")
-
-        choice, best = 0, objective(strides[0])
-        for i, s in enumerate(strides):
-            prev = prev_tile(s, none_if_fail=True)
-            if prev is not None and prev in symbols_remaining:
-                # Haven't made the prerequisite tile shape yet, so skip this symbol
-                continue
-            value = objective(s)
-            if value > best:
-                best = value
-                choice = i
-        choice = symbols_remaining.index(strides[choice])
-        log_message(
-            "Selected symbol", f"{symbols_remaining[choice]} with priority {best}"
-        )
-        return symbols_remaining.pop(choice)
-
-        raise RuntimeError(f"BUG: invalid TILE_SHAPE_ORDER: {TILE_SHAPE_ORDER}")
+    # Precompute symbol counts and free symbols for each objective so that
+    # grab_symbol doesn't need to call the expensive sympy subs().
+    for o in objectives:
+        o._free_symbols = o.formula.free_symbols
+        o._symbol_counts = {s: o.formula.count(s) for s in symbols}
 
     last_stride_symbol = None  # track the last stride symbol to select next symbol
     symbol = None
     while symbols_remaining:
         for _ in range(5):
-            log_message("")
+            DEBUG and log_message("")
         # ==============================================================================
         # Enumerate choices for a new symbol
         # ==============================================================================
-        symbol = grab_symbol(last_stride_symbol)
+        symbol = grab_symbol(
+            last_stride_symbol,
+            symbols_remaining,
+            what_tiles_symbol,
+            objectives,
+            symbols_enumerated,
+            keep_symbols,
+            max_loop_check_groups,
+            log_message,
+        )
 
         choices = []
         if what_tiles_symbol.is_stride(symbol):
@@ -1271,10 +1353,14 @@ def get_tile_shape_choices(
                 raise RuntimeError("BUG: both inner and outer tiles are unknown")
 
             # Use inner size and outer size to generate choices
-            if inner_tiles_type in oset(["set", "unknown"]) and outer_tiles_type in oset([
-                "set",
-                "unknown",
-            ]):
+            if inner_tiles_type in oset(
+                ["set", "unknown"]
+            ) and outer_tiles_type in oset(
+                [
+                    "set",
+                    "unknown",
+                ]
+            ):
                 factorize = math.ceil(outer_size / inner_size)
                 factors = list(get_possible_factor_sizes(factorize, imperfect))
                 scaled = np.array(factors) * inner_size
@@ -1344,7 +1430,9 @@ def get_tile_shape_choices(
         choices = None  # Let it be freed by the garbage collector
         job.n_total_pmappings *= choices_enumerated.shape[0] / max(1, prev_size)
         symbols_enumerated.append(symbol)
-        log_message("enumerate", f"{symbol}", f"size={choices_enumerated.shape[0]}")
+        DEBUG and log_message(
+            "enumerate", f"{symbol}", f"size={choices_enumerated.shape[0]}"
+        )
 
         # ==============================================================================
         # Max fused loops per rank check
@@ -1361,7 +1449,7 @@ def get_tile_shape_choices(
             f"max_fused_loops_or_max_per_rank_variable",
             choices_enumerated.shape[0] / max(1, prev_size),
         )
-        log_message(
+        DEBUG and log_message(
             "max_fused_loops_or_max_per_rank_variable",
             f"size {prev_size} -> {choices_enumerated.shape[0]}",
         )
@@ -1370,7 +1458,10 @@ def get_tile_shape_choices(
         # yield the same results. Generally, alt_objectives will be the objective
         # function chosen by the user, while alt_objectives will be actions.
 
-        prune_by = [objectives, alt_objectives]
+        # NOTE: DISABLED THE ABOVE. DOESN'T WORK. If total actions are the same
+        # but per-component actions are different, then the latency may be different!!
+
+        prune_by = [objectives]  # , alt_objectives]
         if alt_objectives_first:
             prune_by = prune_by[::-1]
 
@@ -1426,8 +1517,18 @@ def get_tile_shape_choices(
                 append = "" if direct_min_max else "_per_prime_factor"
                 if isinstance(tiles, Symbol) and tiles not in symbols_enumerated:
                     update_symbol2goal(s, Goal("min" + append))
+                    # TODO: Study on whether the following line makes things
+                    # faster. Doing "diff" no matter what may lead to less
+                    # pruning BUT it's much faster to prune using "diff"s than
+                    # "min"s.
+                    update_symbol2goal(s, Goal("diff"))
                 if isinstance(tiled_by, Symbol) and tiled_by not in symbols_enumerated:
                     update_symbol2goal(s, Goal("max" + append))
+                    # TODO: Study on whether the following line makes things
+                    # faster. Doing "diff" no matter what may lead to less
+                    # pruning BUT it's much faster to prune using "diff"s than
+                    # "min"s.
+                    update_symbol2goal(s, Goal("diff"))
 
                 for g in check:
                     # If this symbol != the one we tile, then a loop is added. Since
@@ -1435,12 +1536,12 @@ def get_tile_shape_choices(
                     # this one being == the outer as "good".
                     if s in g:
                         if known(tiles):
-                            log_message(
+                            DEBUG and log_message(
                                 f"{s=} is in group {g}. {tiles=} known; adding =="
                             )
                             pairs_have_eq.add(fzs((tiles, s)))
                         else:
-                            log_message(
+                            DEBUG and log_message(
                                 f"{s=} is in group {g}. {tiles=} unknown; diffing {s}"
                             )
                             update_symbol2goal(s, Goal("diff"))
@@ -1449,14 +1550,14 @@ def get_tile_shape_choices(
                     # we're running with a loop limit in this group, we need to track
                     # this one being == the inner as "good".
                     if tiled_by in g:
-                        log_message(f"{tiled_by} is in group {g}")
+                        DEBUG and log_message(f"{tiled_by} is in group {g}")
                         if known(tiled_by):
-                            log_message(
+                            DEBUG and log_message(
                                 f"{tiled_by=} is in group {g}. {tiled_by=} known; adding =="
                             )
                             pairs_have_eq.add(fzs((tiled_by, s)))
                         else:
-                            log_message(
+                            DEBUG and log_message(
                                 f"{tiled_by=} is in group {g}. {tiled_by=} unknown; diffing"
                             )
                             update_symbol2goal(s, Goal("diff"))
@@ -1476,7 +1577,7 @@ def get_tile_shape_choices(
                 job.spec_one_einsum.mapper._count_option_for_mapsapce_size_evaluation
                 != ()
             ):
-                log_message(
+                DEBUG and log_message(
                     "Skipping because we're counting options for space size evaluation",
                     f"{choices_enumerated.shape[0]} -> 1",
                 )
@@ -1496,7 +1597,7 @@ def get_tile_shape_choices(
             # Create functions to Pareto using objectives
             # ==========================================================================
             for objective in list(cur_objectives):
-                log_message(
+                DEBUG and log_message(
                     f"Checking objective", f"{objective.name}: {objective.formula}"
                 )
                 # ======================================================================
@@ -1532,15 +1633,9 @@ def get_tile_shape_choices(
                         f"{objective.name}",
                         sum(valid) / max(1, prev_size),
                     )
-                    log_message(f"Valid check", f"{objective.name}", f"porp={porp:.2%}")
-                    if complete:
-                        objective.max_value = None  # We don't care anymore
-                        objective.min_value = None
-                        if objective.only_care_if_valid:
-                            cur_objectives.remove(objective)
-                            log_message(
-                                f"Removed {objective.name} because it is always valid"
-                            )
+                    DEBUG and log_message(
+                        f"Valid check", f"{objective.name}", f"porp={porp:.2%}"
+                    )
 
                 if objective.min_value is not None:
                     try:
@@ -1564,13 +1659,13 @@ def get_tile_shape_choices(
                         if not objective.try_best_if_none_reaches_min:
                             choices_enumerated = choices_enumerated[valid]
                             choices_enumerated_float = choices_enumerated_float[valid]
-                        else:
+                        elif complete:
                             if valid.any():
                                 choices_enumerated = choices_enumerated[valid]
                                 choices_enumerated_float = choices_enumerated_float[
                                     valid
                                 ]
-                            elif complete:
+                            else:
                                 valid |= result == (
                                     result.max()
                                     if isinstance(result, np.ndarray)
@@ -1589,18 +1684,21 @@ def get_tile_shape_choices(
                         f"{objective.name}",
                         sum(valid) / max(1, prev_size),
                     )
-                    log_message(f"Valid check", f"{objective.name}", f"porp={porp:.2%}")
-                    if complete:
-                        objective.max_value = None  # We don't care anymore
-                        objective.min_value = None
-                        if objective.only_care_if_valid:
-                            cur_objectives.remove(objective)
-                            log_message(
-                                f"Removed {objective.name} because it is always valid"
-                            )
+                    DEBUG and log_message(
+                        f"Valid check", f"{objective.name}", f"porp={porp:.2%}"
+                    )
+
+                if complete:
+                    objective.max_value = None  # We don't care anymore
+                    objective.min_value = None
+                    if objective.only_care_if_valid:
+                        cur_objectives.remove(objective)
+                        DEBUG and log_message(
+                            f"Removed {objective.name} because it is always valid"
+                        )
 
             if not choices_enumerated.shape[0]:
-                log_message(
+                DEBUG and log_message(
                     "Skipping because we have no choices",
                     f"size {choices_enumerated.shape[0]}",
                 )
@@ -1616,7 +1714,7 @@ def get_tile_shape_choices(
                 complete = objective.formula.free_symbols.issubset(sym_enumerated_set)
                 prev_size = choices_enumerated.shape[0]
 
-                log_message(
+                DEBUG and log_message(
                     "Partitioning formula",
                     f"{objective.name} {objective.tolerance=} {objective.absolute_tolerance=}: {objective.formula}",
                 )
@@ -1630,11 +1728,11 @@ def get_tile_shape_choices(
                     objective.terms_do_not_cross_zero,
                 )
 
-                log_message(f"formula", f"{objective.formula}")
+                DEBUG and log_message(f"formula", f"{objective.formula}")
                 for k, v in goals.items():
                     tolerance = v.tolerance
                     absolute_tolerance = v.absolute_tolerance
-                    log_message(
+                    DEBUG and log_message(
                         "formula", f"\t -> {tolerance=} {absolute_tolerance=} {v}: {k}"
                     )
 
@@ -1657,7 +1755,7 @@ def get_tile_shape_choices(
                 bounds=what_tiles_symbol.bounds,
             )
 
-            log_message("coalesce symbols", f"{symbol2goal}")
+            DEBUG and log_message("coalesce symbols", f"{symbol2goal}")
 
             paretoed_by_key = fzs((f, g.goal) for f, g in symbol2goal.items())
             if any(p.issubset(paretoed_by_key) for p in paretoed_by):
@@ -1673,7 +1771,7 @@ def get_tile_shape_choices(
                     formula, choices_enumerated_float
                 )
                 symbol2goal[formula] = goal
-                log_message("eval", f"{goal.goal}", f"{formula}")
+                DEBUG and log_message("eval", f"{goal.goal}", f"{formula}")
 
             if not objective_values:
                 # Objective values don't depend on tile shapes
@@ -1686,12 +1784,14 @@ def get_tile_shape_choices(
                 to_pareto = np.concatenate(
                     [v.reshape(-1, 1) for v in objective_values.values()], axis=1
                 )
-                log_message("Pareto", f"size {to_pareto.shape[0]}", "with objectives:")
+                DEBUG and log_message(
+                    "Pareto", f"size {to_pareto.shape[0]}", "with objectives:"
+                )
                 for obj in cur_objectives:
-                    log_message(f"\t{obj.name}: {obj.formula}")
-                log_message("Formulas:")
+                    DEBUG and log_message(f"\t{obj.name}: {obj.formula}")
+                DEBUG and log_message("Formulas:")
                 for formula, goal in symbol2goal.items():
-                    log_message(
+                    DEBUG and log_message(
                         f"\t{goal.goal} {goal.tolerance=} {goal.absolute_tolerance=}: {formula}"
                     )
 
@@ -1720,7 +1820,7 @@ def get_tile_shape_choices(
                 job.log_porp_pmappings_kept(
                     f"Pareto", sum(keep) / choices_enumerated.shape[0]
                 )
-                log_message(
+                DEBUG and log_message(
                     "pareto", f"size {prev_size} -> {choices_enumerated.shape[0]}"
                 )
 
@@ -1751,9 +1851,11 @@ def get_tile_shape_choices(
     # Return the choices
     # ==================================================================================
     if choices_enumerated is not None:
-        log_message(f"Returning choices", f"size {choices_enumerated.shape[0]}")
+        DEBUG and log_message(
+            f"Returning choices", f"size {choices_enumerated.shape[0]}"
+        )
     else:
-        log_message(f"Returning no choices")
+        DEBUG and log_message(f"Returning no choices")
     t = time.time() - start_time
     if t > 60 and DEBUG:
         a = [
@@ -1924,6 +2026,59 @@ def _make_tile_shapes(job: "Job"):
         actions_df,
     ) = run_model(job)
 
+    # Boundary: walk the symengine tree from run_model and build the
+    # equivalent sympy tree. Much faster than sympy.sympify because we place
+    # assumption-bearing sympy symbols directly (skipping the xreplace round-
+    # trip) and build each unique sympy.Max/Min only once. `_refs` holds the
+    # top-level values so id()s don't get reused before the caches die.
+    _sp_syms = {s.name: s for s in symbols}
+    _id_cache: dict = {}
+    _refs: list = []
+    _minmax_cache: dict = {}
+
+    def _to_sp(v):
+        t = type(v)
+        if t is int or t is float:
+            return v
+        vid = id(v)
+        if (cached := _id_cache.get(vid)) is not None:
+            return cached
+        if t is se.Symbol:
+            r = _sp_syms.get(str(v)) or sympy.Symbol(str(v))
+        elif t is se.Integer:
+            r = sympy.Integer(int(v))
+        elif t is se.Rational:
+            r = sympy.Rational(int(v.p), int(v.q))
+        elif t is se.Add:
+            r = sympy.Add(*[_to_sp(a) for a in v.args])
+        elif t is se.Mul:
+            r = sympy.Mul(*[_to_sp(a) for a in v.args])
+        elif t is se.Pow:
+            r = sympy.Pow(*[_to_sp(a) for a in v.args])
+        elif t is se.Max or t is se.Min:
+            sp_args = tuple(sorted((_to_sp(a) for a in v.args), key=hash))
+            cls = sympy.Max if t is se.Max else sympy.Min
+            key = (cls, sp_args)
+            r = _minmax_cache.get(key)
+            if r is None:
+                r = _minmax_cache[key] = cls(*sp_args)
+        else:
+            sp_v = v if isinstance(v, sympy.Basic) else sympy.sympify(v)
+            subs = {
+                s: _sp_syms[s.name]
+                for s in sp_v.free_symbols
+                if s.name in _sp_syms and s is not _sp_syms[s.name]
+            }
+            r = sp_v.xreplace(subs) if subs else sp_v
+        _id_cache[vid] = r
+        _refs.append(v)
+        return r
+
+    symbolic_df = {k: _to_sp(v) for k, v in symbolic_df.items()}
+    per_memory_usage_df = {k: _to_sp(v) for k, v in per_memory_usage_df.items()}
+    usage_df = {k: _to_sp(v) for k, v in usage_df.items()}
+    actions_df = {k: _to_sp(v) for k, v in actions_df.items()}
+
     model_time = time.time() - t0
     shape = job.rank_variable_bounds
     what_tiles_symbol = SymbolRelations.from_pmapping_and_shape(
@@ -2057,10 +2212,13 @@ def _make_tile_shapes(job: "Job"):
         component_name,
         name,
     ), constraint in job.constraints.min_usage_constraints.items():
+        usage_key = f"usage<SEP>spatial<SEP>{component_name}<SEP>{name}"
+        if usage_key not in usage_df:
+            continue
         objectives.append(
             Objective(
                 name=f"min_usage_{component_name}_{name}",
-                formula=v,
+                formula=usage_df[usage_key],
                 symbols=symbols,
                 only_care_if_valid=True,
                 min_value=constraint.min_usage,
@@ -2188,9 +2346,20 @@ def _make_tile_shapes(job: "Job"):
             if any(l < 0 for l in val):
                 raise ValueError(f"Negative latency for {key}: {val}")
         if "energy" in key:
-            val = [df[key]] if isinstance(df[key], Number) else df[key]
-            if any(l < 0 for l in val):
-                raise ValueError(f"Negative energy for {key}: {val}")
+            arr = df[key]
+            if isinstance(arr, Number):
+                if arr < 0:
+                    raise ValueError(f"Negative energy for {key}: {arr}")
+            else:
+                neg_mask = arr < 0
+                if neg_mask.any():
+                    # Allow tiny negatives from float32 precision loss:
+                    # check that negatives are negligible relative to max.
+                    max_abs = np.max(np.abs(arr))
+                    if max_abs == 0 or (arr[neg_mask] / max_abs > -1e-4).all():
+                        df[key] = np.maximum(arr, 0)
+                    else:
+                        raise ValueError(f"Negative energy for {key}: {arr[neg_mask]}")
 
     # They come out separated from the model because it's easier for tile shape
     # exploration to handle. Now combine them back together.
@@ -2205,14 +2374,24 @@ def _make_tile_shapes(job: "Job"):
 
     energy_cols = [c for c in df.columns if "energy" in c]
     if (df[energy_cols] < 0).any(axis=None):
-        mapping_with_negative_energy = df[(df[energy_cols] < 0).any(axis=1)]
-        print(df.columns)
-        msg = ""
-        for _, row in mapping_with_negative_energy.iterrows():
-            for k, v in row.items():
-                msg += f"{k}: {v}\n"
-            msg += "\n"
-        raise RuntimeError(f"negative energy:\n{msg}")
+        for col in energy_cols:
+            series = df[col]
+            neg_mask = series < 0
+            if neg_mask.any():
+                # FP errors can make small negative values, so if they're indeed small,
+                # clip to zero.
+                max_abs = series.abs().max()
+                if max_abs > 0 and (series / series.abs().max() > -1e-4).all():
+                    df[col] = series.clip(lower=0)
+                else:
+                    mapping_with_negative_energy = df[series < 0]
+                    print(df.columns)
+                    msg = ""
+                    for _, row in mapping_with_negative_energy.iterrows():
+                        for k, v in row.items():
+                            msg += f"{k}: {v}\n"
+                        msg += "\n"
+                    raise RuntimeError(f"negative energy:\n{msg}")
 
     job.n_valid_pmappings = job.n_total_pmappings * prod(
         job.pmapping_keep_rates.values()

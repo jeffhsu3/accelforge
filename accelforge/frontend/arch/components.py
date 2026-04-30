@@ -727,7 +727,9 @@ COMPUTE_ACTIONS = EvalableList(
 
 
 def _eval_tensor2bits(
-    toeval: dict[str, Any], location: str, symbol_table: dict[str, Any]
+    toeval: dict[str, Any],
+    location: str,
+    symbol_table: dict[str, Any],
 ) -> dict[str, Any]:
     result = {}
     for key, value in toeval.items():
@@ -744,18 +746,51 @@ def _eval_tensor2bits(
             location=location,
         )
 
-    all = symbol_table["All"].instance
-    for k in result:
-        all -= k
-
-    if all:
-        raise EvaluationError(f"Missing bits_per_value_scale for {all}")
-
     for a, b in itertools.combinations(result.keys(), 2):
         if a & b:
-            raise EvaluationError(f"bits_per_value_scale for {a} and {b} overlap")
+            raise EvaluationError(f"{location} for {a} and {b} overlap")
 
     return {k2: v for k, v in result.items() for k2 in k}
+
+
+_VALID_DIRECTIONS = {"up", "down", "up_and_down"}
+
+
+def _eval_direction(toeval, symbol_table: dict[str, Any]) -> dict[str, str]:
+    """Evaluate a direction field. If a string, expand to all tensors. If a dict,
+    resolve tensor expression keys."""
+    if isinstance(toeval, str):
+        if toeval not in _VALID_DIRECTIONS:
+            raise EvaluationError(
+                f'Invalid direction: "{toeval}". '
+                f"Must be one of {sorted(_VALID_DIRECTIONS)}."
+            )
+        all_tensors = symbol_table["All"].instance
+        return {t: toeval for t in all_tensors}
+
+    result = {}
+    for key, value in toeval.items():
+        if value not in _VALID_DIRECTIONS:
+            raise EvaluationError(
+                f'Invalid direction for {key}: "{value}". '
+                f"Must be one of {sorted(_VALID_DIRECTIONS)}."
+            )
+        key_evaluated = eval_set_expression(
+            expression=key,
+            symbol_table=symbol_table,
+            expected_space=TensorName,
+            location=f"direction key {key}",
+        ).instance
+        result[key_evaluated] = value
+
+    all_tensors = symbol_table["All"].instance
+    for k in result:
+        all_tensors -= k
+
+    if all_tensors:
+        raise EvaluationError(f"Missing direction for {all_tensors}. Have {result}.")
+
+    return {t: v for k, v in result.items() for t in k}
 
 
 class Tensors(EvalableModel):
@@ -889,11 +924,11 @@ class TensorHolder(Component, Leaf):
     order their nodes may appear in the mapping.
     """
 
-    bits_per_value_scale: EvalsTo[dict] = {"All": 1}
+    bits_per_value: EvalsTo[dict] = {}
     """
-    A scaling factor for the bits per value of the tensors in this `TensorHolder`. If
-    this is a dictionary, keys in the dictionary are evaluated as expressions and may
-    reference one or more tensors.
+    Sets the bits per value for tensors in this `TensorHolder`. Keys are evaluated as
+    expressions and may reference one or more tensors. Tensors not listed use the
+    workload's bits_per_value.
     """
 
     bits_per_action: EvalsTo[int | float | None] = None
@@ -914,10 +949,10 @@ class TensorHolder(Component, Leaf):
 
         class MyPostCall(_PostCall):
             def __call__(self, field, value, evaluated, symbol_table):
-                if field == "bits_per_value_scale":
+                if field == "bits_per_value":
                     evaluated = _eval_tensor2bits(
                         evaluated,
-                        location="bits_per_value_scale",
+                        location="bits_per_value",
                         symbol_table=symbol_table,
                     )
                 return evaluated
@@ -953,6 +988,12 @@ class Memory(TensorHolder):
     physical units may be flattened into only one logical level.
     """
 
+    skip_initial_output_write: bool = True
+    """
+    If False, the initial value of output tensors will be fetched from above and used to
+    initalize outputs. If True, this initial fetch and fill is skipped.
+    """
+
     def _render_node_shape(self) -> str:
         return "cylinder"
 
@@ -984,10 +1025,15 @@ class Toll(TensorHolder):
     zero.
     """
 
-    direction: Literal["up", "down", "up_and_down"]
+    direction: TryEvalTo[dict]
     """
-    The direction in which data flows through this `Toll`. If "up", then data
-    flows from below `TensorHolder`, through this `Toll` (plus paying
+    The direction in which data flows through this `Toll`. Can be:
+
+    - A string: ``"up"``, ``"down"``, or ``"up_and_down"`` — applies to all tensors.
+    - A dict mapping tensor expressions to direction strings, e.g.
+      ``{input: "down", output: "up"}`` — sets direction per tensor.
+
+    If "up", then data flows from below `TensorHolder`, through this `Toll` (plus paying
     associated costs), and then to the next `TensorHolder` above it. Other data
     movements are assumed to avoid this Toll.
     """
@@ -997,6 +1043,32 @@ class Toll(TensorHolder):
 
     def model_post_init(self, __context__=None) -> None:
         self._update_actions(PROCESSING_STAGE_ACTIONS)
+
+    def _eval_expressions(self, *args, **kwargs):
+        if getattr(self, "_evaluated", False):
+            return super()._eval_expressions(*args, **kwargs)
+
+        # Override TensorHolder's _PostCall to also handle direction
+        class MyPostCall(_PostCall):
+            def __call__(self_pc, field, value, evaluated, symbol_table):
+                if field == "bits_per_value":
+                    evaluated = _eval_tensor2bits(
+                        evaluated,
+                        location="bits_per_value",
+                        symbol_table=symbol_table,
+                    )
+                if field == "direction":
+                    evaluated = _eval_direction(
+                        evaluated,
+                        symbol_table=symbol_table,
+                    )
+                return evaluated
+
+        # Skip TensorHolder's _eval_expressions (which adds its own post_calls
+        # for bits_per_value) since we handle it here too
+        return Component._eval_expressions(
+            self, *args, **kwargs, post_calls=(MyPostCall(),)
+        )
 
     def _render_node_shape(self) -> str:
         return "rarrow"
@@ -1021,6 +1093,12 @@ class Compute(Component, Leaf):
     consider tile shapes where K is a multiple of 128.
     """
 
+    skip_initial_output_write: bool = True
+    """
+    If False, the initial value of output tensors will be fetched from above and used to
+    initalize outputs. If True, this initial fetch and fill is skipped.
+    """
+
     def model_post_init(self, __context__=None) -> None:
         self._update_actions(COMPUTE_ACTIONS)
 
@@ -1039,11 +1117,11 @@ class Network(Component, Leaf):
     of the spatial nodes from top to bottom.
     """
 
-    bits_per_value_scale: EvalsTo[dict] = {"All": 1}
+    bits_per_value: EvalsTo[dict] = {}
     """
-    A scaling factor for the bits per value of the tensors in this `TensorHolder`. If
-    this is a dictionary, keys in the dictionary are evaluated as expressions and may
-    reference one or more tensors.
+    Sets the bits per value for tensors in this `TensorHolder`. Keys are evaluated as
+    expressions and may reference one or more tensors. Tensors not listed use the
+    workload's bits_per_value.
     """
 
     bits_per_action: EvalsTo[int | float | None] = None
@@ -1067,10 +1145,10 @@ class Network(Component, Leaf):
 
         class MyPostCall(_PostCall):
             def __call__(self, field, value, evaluated, symbol_table):
-                if field == "bits_per_value_scale":
+                if field == "bits_per_value":
                     evaluated = _eval_tensor2bits(
                         evaluated,
-                        location="bits_per_value_scale",
+                        location="bits_per_value",
                         symbol_table=symbol_table,
                     )
                 return evaluated

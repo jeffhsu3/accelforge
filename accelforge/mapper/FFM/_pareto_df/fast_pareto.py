@@ -16,22 +16,21 @@ SFS + Block-BNL (block size 16) with:
 
 """
 
-import numpy as np
+from accelforge._accelerated_imports import numpy as np
 import numba
-import pandas as pd
+from accelforge._accelerated_imports import pandas as pd
 from sympy import factorint
 import functools
 
 from accelforge.util import NUMPY_FLOAT_TYPE
 from accelforge.util._frozenset import oset
 
-
 # ============================================================================
 # Numba helpers
 # ============================================================================
 
 
-@numba.jit(nopython=True)
+@numba.jit(nopython=True, cache=True)
 def _is_constant(arr, n):
     """Check if a 1D array is constant. O(1) best case via early exit."""
     v0 = arr[0]
@@ -41,7 +40,7 @@ def _is_constant(arr, n):
     return True
 
 
-@numba.jit(nopython=True)
+@numba.jit(nopython=True, cache=True)
 def _counting_sort(codes, n_groups):
     """Counting sort: O(n + k)."""
     n = len(codes)
@@ -92,7 +91,7 @@ def prime_factor_counts(arr):
 # ============================================================================
 
 
-@numba.jit(nopython=True, fastmath=True)
+@numba.jit(nopython=True, fastmath=True, cache=True)
 def _sfs_bnl_core(data, sorted_idx, offsets, n_total_groups, result_mask):
     d = data.shape[1]
     max_n = numba.int64(0)
@@ -182,7 +181,7 @@ def _sfs_bnl_core(data, sorted_idx, offsets, n_total_groups, result_mask):
 
         if dv == 2:
             # 2D: sort by col0, group-aware sweep
-            order = np.argsort(local[:n, 0], kind='mergesort')
+            order = np.argsort(local[:n, 0], kind="mergesort")
             best_c1 = numba.float64(1e308)
             i_start = numba.int64(0)
             while i_start < n:
@@ -209,7 +208,7 @@ def _sfs_bnl_core(data, sorted_idx, offsets, n_total_groups, result_mask):
                 s += local[i, kk]
             sums_buf[i] = s
 
-        order = np.argsort(sums_buf[:n], kind='mergesort')
+        order = np.argsort(sums_buf[:n], kind="mergesort")
 
         n_blk = (n >> 4) + 1
         for b in range(n_blk):

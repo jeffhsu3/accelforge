@@ -383,6 +383,8 @@ class PmappingDataframe:
         compatibility_joined: Compatibility,
         ignored_resources: set[str],
         _pmapping_row_filter_function: Callable[[pd.Series], bool] | None = None,
+        _force_allow_invalid_only_for_runtime_test: bool = False,
+        _is_invalid: bool = False,
     ) -> "PmappingDataframe":
         """
            A  B            A2
@@ -466,7 +468,8 @@ class PmappingDataframe:
             sd = sd.iloc[0:0]
             rd = rd.iloc[0:0]
 
-        if left_match:
+        # _force_allow_invalid_only_for_runtime_test -> only merge matched ones
+        if left_match and not _force_allow_invalid_only_for_runtime_test:
             df = pd.merge(
                 sd,
                 rd,
@@ -617,6 +620,25 @@ class PmappingDataframe:
             result = result.filter_rows(_pmapping_row_filter_function)
         result.make_pareto()
 
+        # This join was invalid (we only ran it for runtime measurement). Clear all the
+        # mappings.
+        if _is_invalid:
+            result._data = result.data.iloc[0:0]
+
+        # If we're running _force_allow_invalid_only_for_runtime_test, we don't want to
+        # have all those invalid combinations, so return the actual merge result.
+        elif _force_allow_invalid_only_for_runtime_test:
+            return self.merge_next(
+                right,
+                duplicated_aliased_tensors,
+                compatibility_left,
+                compatibility_right,
+                compatibility_joined,
+                ignored_resources,
+                _pmapping_row_filter_function,
+                _force_allow_invalid_only_for_runtime_test=False,
+            )
+
         return result
 
     @error_check_wrapper
@@ -663,10 +685,17 @@ class PmappingDataframe:
                 resource, level - 1, l_reservations, r_reservations
             )
             if source:
+                assert (
+                    source in self.data.columns
+                ), f"{source} not in {sorted(self.data.columns)}"
                 add_to_col(self.data, target, source)
                 add_to_col(self.data, target, size)
             else:
                 self.data[target] = size
+
+            # We made a new column! Update our reservations so future iterations
+            # know about it.
+            l_reservations, r_reservations = self._make_reservations()
 
             # Assert all reservations are >= 0
             assert (self.data[target] >= 0).all(), f"Negative reservation: {target}"
@@ -772,12 +801,13 @@ class PmappingDataframe:
                         print(f"{col2}: {list[Any](self.data[col2])}")
                 self._data = self.data[self.data[col] <= 1 + tolerance]
                 if (
-                    l == 0
+                    l <= 0
                     and next_shared_loop_index == -1
                     # CAN'T DROP RESERVATIONS UNTIL WE'RE FINISHED JOINING. Persistent
                     # tensors may get saved later and would live at the same time as
                     # these reservations.
-                    and finished # self.drop_valid_reservations
+                    and finished
+                    and self.drop_valid_reservations
                     and resource not in ignored_resources
                     and (tolerance == 0 or not any(self.data[col] > 1))
                 ):
@@ -802,10 +832,11 @@ class PmappingDataframe:
                         print(f"{col2}: {list[Any](self.data[col2])}")
                 self._data = self.data[self.data[col] <= 1 + tolerance]
                 if (
-                    l == 0
+                    l <= 0
                     # CAN'T DROP RESERVATIONS UNTIL WE'RE FINISHED JOINING. Persistent
                     # tensors may get saved later.
-                    and finished # self.drop_valid_reservations
+                    and finished
+                    and self.drop_valid_reservations
                     and resource not in ignored_resources
                     and (tolerance == 0 or not any(self.data[col] > 1))
                 ):
@@ -820,7 +851,8 @@ class PmappingDataframe:
         objective_tolerance: float = 0,
         resource_usage_tolerance: float = 0,
         absolute_resource_usage_tolerance: float = 0,
-    ):
+        inplace: bool = True,
+    ) -> "PmappingDataframe":
         # The error for absolute_resource_usage_tolerance sums each time we modify the
         # df and prune, so if we use it more, we need to use a lower threshold. The
         # max_n_einsums value assumes that absolute_resource_usage_tolerance is only
@@ -828,13 +860,18 @@ class PmappingDataframe:
         if self.drop_valid_reservations:
             resource_usage_tolerance = objective_tolerance
 
-        self._data = makepareto(
+        new_data = makepareto(
             self.data,
             columns,
             resource_usage_tolerance=resource_usage_tolerance,
             absolute_resource_usage_tolerance=absolute_resource_usage_tolerance,
             objective_tolerance=objective_tolerance,
         )
+        if inplace:
+            self._data = new_data
+            return self
+        else:
+            return self.update(data=new_data, skip_pareto=True)
 
     def has_reservations(self):
         return any(col2reservation(c) is not None for c in self.data.columns)

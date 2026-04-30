@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from typing import Any
-from functools import reduce
+from functools import reduce, lru_cache
 from operator import mul
 
 import sympy
@@ -16,11 +16,15 @@ from accelforge.frontend.workload import (
 from ._isl import get_rank_variable_bounds
 
 
+@lru_cache(maxsize=4096)
+def parse_expr(s: str) -> sympy.Expr:
+    return sympy.parsing.sympy_parser.parse_expr(s)
+
+
 def get_projection_expr(einsum: Einsum, tensor: TensorName) -> dict[Rank, sympy.Expr]:
     projection = einsum.tensor_accesses[tensor].projection
     return {
-        rank_name: sympy.parsing.sympy_parser.parse_expr(proj_str)
-        for rank_name, proj_str in projection.items()
+        rank_name: parse_expr(proj_str) for rank_name, proj_str in projection.items()
     }
 
 
@@ -44,7 +48,7 @@ def get_rank_variable_relevancy(einsum: Einsum, tensor: TensorName):
     for rank_variable in einsum.rank_variables:
         relevancy[rank_variable] = Irrelevant()
         for rank_name, projection_str in projection.items():
-            projection_expr = sympy.parsing.sympy_parser.parse_expr(projection_str)
+            projection_expr = parse_expr(projection_str)
             is_simple = len(sympy.Add.make_args(projection_expr)) == 1
             is_relevant = (
                 sympy.symbols(f"{rank_variable}") in projection_expr.free_symbols
@@ -65,22 +69,24 @@ def get_rank_variable_relevancy(einsum: Einsum, tensor: TensorName):
 def compute_dense_tile_occupancy(
     projection_expr: dict[str, sympy.Expr], rank_variable_shapes: dict
 ):
-    substitutions = [
-        (rank_variable, rank_variable_shape - 1)
-        for rank_variable, rank_variable_shape in rank_variable_shapes.items()
-    ]
-    return reduce(
-        mul,
-        [index_expr.subs(substitutions) + 1 for index_expr in projection_expr.values()],
-    )
+    result = 1
+    for index_expr in projection_expr.values():
+        subs = {
+            s: rank_variable_shapes[s.name] - 1
+            for s in index_expr.free_symbols
+            if s.name in rank_variable_shapes
+        }
+        result = result * ((index_expr.xreplace(subs) if subs else index_expr) + 1)
+    return result
 
 
 def compute_rank_occupancy(projection_expr: sympy.Expr, rank_variable_shapes: dict):
-    substitutions = [
-        (rank_variable, rank_variable_shape - 1)
-        for rank_variable, rank_variable_shape in rank_variable_shapes.items()
-    ]
-    return projection_expr.subs(substitutions) + 1
+    subs = {
+        s: rank_variable_shapes[s.name] - 1
+        for s in projection_expr.free_symbols
+        if s.name in rank_variable_shapes
+    }
+    return (projection_expr.xreplace(subs) if subs else projection_expr) + 1
 
 
 def get_stride_and_halo_of_einsum(

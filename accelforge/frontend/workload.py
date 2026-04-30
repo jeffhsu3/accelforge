@@ -46,7 +46,6 @@ from accelforge.frontend.renames import (
     rename_list_factory,
 )
 
-
 CLIST_OPERATORS = [
     "EQ",
     "NE",
@@ -220,11 +219,19 @@ def _projection_factory(projection: dict | list):
         for i, x in enumerate(projection):
             if not isinstance(x, str):
                 raise TypeError(f"Element at index {i} must be a string, got {type(x)}")
+            if not x:
+                raise ValueError(f"Empty string in projection list at index {i}.")
             if not _ISL_REGEX.match(x):
                 raise ValueError(
                     f"Element '{x}' at index {i} is not a valid ISL identifier"
                     f"In a projection list, all elements must be valid ISL identifiers."
                     f"For expressions, use a dictionary projection."
+                )
+            if x[0].isupper():
+                raise ValueError(
+                    f"Rank variable '{x}' at index {i} in projection list must start "
+                    f"with a lowercase letter. Rank variables are lowercase; rank "
+                    f"names are uppercase. Did you mean to use a dictionary projection?"
                 )
         projection = ImpliedProjection({x.upper(): x for x in projection})
     elif not isinstance(projection, dict):
@@ -239,6 +246,14 @@ def _projection_factory(projection: dict | list):
             raise ValueError(
                 f"Invalid projection key: {key}. Must be a valid identifier. Check with "
                 f"the Python isidentifier() function."
+            )
+        if not key:
+            raise ValueError(f"Empty rank name in projection at index {i}.")
+        if key[0].islower():
+            raise ValueError(
+                f"Rank name '{key}' in projection must start with an uppercase letter. "
+                f"Rank names are uppercase (e.g., 'M'); rank variables are lowercase "
+                f"(e.g., 'm')."
             )
     return projection
 
@@ -362,12 +377,25 @@ def _parse_projection(proj_str: str) -> dict | list:
                 raise ValueError(
                     f"Invalid projection key: {k}. Must be a valid ISL identifier. {s}"
                 )
+            if k[0].islower():
+                raise ValueError(
+                    f"Rank name '{k}' must start with an uppercase letter. "
+                    f"Rank names are uppercase (e.g., 'M'); rank variables are  "
+                    f"lowercase(e.g., 'm'). {s}"
+                )
             if k in result:
                 raise ValueError(f"Duplicate rank entry: {k}. Must be unique. {s}")
             result[k] = v
         else:
             if not part:
                 raise ValueError(f"Empty projection entry. {s}")
+            if part[0].isupper():
+                raise ValueError(
+                    f"Rank variable '{part}' in shorthand projection must start with a "
+                    f"lowercase letter. Rank variables are lowercase (e.g., 'm'); rank "
+                    f"names are uppercase (e.g., 'M'). Use 'RankName:expression' "
+                    f"syntax for explicit rank names. {s}"
+                )
             if not re.fullmatch(_ISL_REGEX, part.upper()):
                 raise ValueError(
                     f"Invalid projection value: {part.upper()}. The uppercased form of "
@@ -447,6 +475,13 @@ class Einsum(EvalableModel):
                 f'Einsum name "Total" is reserved for totaling across Einsums.'
                 f"Use a different name for the Einsum."
             )
+        for rank in self.rank_sizes:
+            if rank[0].islower():
+                raise ValueError(
+                    f"Rank name '{rank}' in Einsum '{self.name}' rank_sizes must start "
+                    f"with an uppercase letter. Rank names are uppercase (e.g., 'M'); "
+                    f"rank variables are lowercase (e.g., 'm')."
+                )
 
     def __init__(self, *args, **kwargs):
         if "renames" in kwargs:
@@ -851,6 +886,20 @@ class Workload(EvalableModel):
         self._validate()
 
     def _validate(self):
+        for rank_var in self.iteration_space_shape:
+            if rank_var[0].isupper():
+                raise ValueError(
+                    f"Rank variable '{rank_var}' in workload iteration_space_shape must "
+                    f"start with a lowercase letter. Rank variables are lowercase "
+                    f"(e.g., 'm'); rank names are uppercase (e.g., 'M')."
+                )
+        for rank in self.rank_sizes:
+            if rank[0].islower():
+                raise ValueError(
+                    f"Rank name '{rank}' in workload rank_sizes must start with an "
+                    f"uppercase letter. Rank names are uppercase (e.g., 'M'); rank "
+                    f"variables are lowercase (e.g., 'm')."
+                )
         tensor2ranks = {}
         einsum_names = oset()
         for einsum in self.einsums:
@@ -859,10 +908,12 @@ class Workload(EvalableModel):
             einsum_names.add(einsum.name)
             for tensor_accesses in einsum.tensor_accesses:
                 tensor2ranks.setdefault(tensor_accesses.name, tensor_accesses.ranks)
-                if tensor2ranks[tensor_accesses.name] != tensor_accesses.ranks:
+                a = sorted(tensor2ranks[tensor_accesses.name])
+                b = sorted(tensor_accesses.ranks)
+                if a != b:
                     raise ValueError(
-                        f"TensorName {tensor_accesses.name} has inconsistent ranks. Found "
-                        f"{tensor2ranks[tensor_accesses.name]} and {tensor_accesses.ranks}. "
+                        f"TensorName {tensor_accesses.name} has inconsistent ranks. "
+                        f"Found {a} and {b}. "
                         "TensorName is in Einsums "
                         f"{', '.join(
                             e.name for e in self.einsums_with_tensor(tensor_accesses.name)
@@ -978,10 +1029,10 @@ class Workload(EvalableModel):
 
     def _check_consistent_persistent(self):
         for tensor in self.tensor_names:
-            persistents = {
+            persistents = oset(
                 e.tensor_accesses[tensor].persistent
                 for e in self.einsums_with_tensor(tensor)
-            }
+            )
             if len(persistents) > 1:
                 raise ValueError(
                     f"Tensor {tensor} is used in multiple Einsums with different "
@@ -992,7 +1043,9 @@ class Workload(EvalableModel):
     @property
     def tensor_names_used_in_multiple_einsums(self) -> set[TensorName]:
         """Returns the names of the tensors that are used in multiple Einsums."""
-        return oset(t for t in self.tensor_names if len(self.einsums_with_tensor(t)) > 1)
+        return oset(
+            t for t in self.tensor_names if len(self.einsums_with_tensor(t)) > 1
+        )
 
     @property
     def tensor_names(self) -> set[TensorName]:
@@ -1188,3 +1241,63 @@ class Workload(EvalableModel):
         from accelforge.frontend._workload_isl._isl import get_tensor_shape
 
         return get_tensor_shape(self, tensor)
+
+    def get_tensor_size(self, tensor: TensorName) -> int:
+        """
+        Returns the number of elements in the given tensor.
+
+        Parameters
+        ----------
+        tensor:
+            The name of the tensor.
+
+        Returns
+        -------
+        int
+            The number of elements in the tensor.
+        """
+        from accelforge.frontend._workload_isl._isl import get_tensor_size
+
+        return get_tensor_size(self, tensor)
+
+    def n_computes(self, einsum_name: str | None = None) -> int:
+        """
+        Returns the number of computes for the given Einsum name, or total computes
+        across all Einsums if ``einsum_name`` is ``None``.
+
+        Parameters
+        ----------
+        einsum_name:
+            The name of the Einsum. If ``None``, returns the total number of computes
+            across all Einsums.
+
+        Returns
+        -------
+        int
+            The number of computes.
+        """
+        from accelforge.frontend._workload_isl._isl import get_operation_space_size
+
+        if einsum_name is None:
+            return sum(get_operation_space_size(self, e) for e in self.einsum_names)
+        return get_operation_space_size(self, einsum_name)
+
+    def get_compute_intensity(self, einsum_name: str) -> float:
+        """
+        Returns the compute intensity of the given Einsum, defined as the number of
+        computes divided by the total number of tensor elements.
+
+        Parameters
+        ----------
+        einsum_name:
+            The name of the Einsum.
+
+        Returns
+        -------
+        float
+            The compute intensity in #computes / #tensor elements.
+        """
+        return self.n_computes(einsum_name) / sum(
+            self.get_tensor_size(tensor)
+            for tensor in self.einsums[einsum_name].tensor_names
+        )
